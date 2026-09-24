@@ -30,9 +30,6 @@ const REMINDER: &str = "Memory check: did this session produce a user decision, 
 or a verified fact, that memory doesn't hold yet or holds wrongly? If yes, save or fix it with memory_save. \
 If not, reply only: \"Nothing new to remember.\"";
 
-// Shown to the user by Claude Code; Copilot CLI hooks have no user-facing message.
-const PEBBLE: &str = "🪨 petit-poucet ·";
-
 #[derive(Clone, Copy, ValueEnum)]
 pub enum Agent {
     Claude,
@@ -45,25 +42,18 @@ fn field<'a>(event: &'a Value, snake: &str, camel: &str) -> Option<&'a Value> {
 }
 
 pub fn session_start(agent: Agent, event: &Value) -> Value {
-    let (context, message) = match memory_context(event) {
-        _ if !Config::is_set() => (
-            setup_context(),
-            format!("{PEBBLE} no vault yet: the agent will offer to create one"),
-        ),
-        Ok(loaded) => loaded,
-        Err(e) => (
-            format!(
-                "Agent memory is UNAVAILABLE ({e}). Tell the user before relying on remembered rules, \
-                 and do not write memory anywhere else."
-            ),
-            format!("{PEBBLE} memory unavailable: {e}"),
+    let context = match memory_context(event) {
+        _ if !Config::is_set() => setup_context(),
+        Ok(context) => context,
+        Err(e) => format!(
+            "Agent memory is UNAVAILABLE ({e}). Tell the user before relying on remembered rules, \
+             and do not write memory anywhere else."
         ),
     };
     match agent {
-        Agent::Claude => json!({
-            "systemMessage": message,
-            "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context},
-        }),
+        Agent::Claude => {
+            json!({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}})
+        }
         Agent::Copilot => json!({"additionalContext": context}),
     }
 }
@@ -78,8 +68,7 @@ fn setup_context() -> String {
     )
 }
 
-// Returns the context for the agent and the line shown to the user.
-fn memory_context(event: &Value) -> Result<(String, String), String> {
+fn memory_context(event: &Value) -> Result<String, String> {
     let vault = Vault::load(&Config::load()?.vault)?;
     let dir = event
         .get("cwd")
@@ -87,20 +76,11 @@ fn memory_context(event: &Value) -> Result<(String, String), String> {
         .map(PathBuf::from)
         .or_else(|| std::env::current_dir().ok());
     let project = dir.and_then(|d| project::resolve(&vault.projects, &d));
-    let loaded = vault
-        .notes
-        .iter()
-        .filter(|n| n.project().is_none() || n.project() == project)
-        .count();
-    let scope = project.map_or("preferences".to_string(), |p| format!("preferences + {p}"));
-    Ok((
-        format!("{RULES}\n{}", index::for_project(&vault, project)),
-        format!("{PEBBLE} {loaded} notes loaded ({scope})"),
-    ))
+    Ok(format!("{RULES}\n{}", index::for_project(&vault, project)))
 }
 
 // Counts stops per session in a temp file; reminds at the 3rd stop, then every 10th.
-pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
+pub fn stop(event: &Value) -> Option<Value> {
     if field(event, "stop_hook_active", "stopHookActive").and_then(Value::as_bool) == Some(true) {
         return None;
     }
@@ -115,12 +95,5 @@ pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
         + 1;
     fs::write(&counter, count.to_string()).ok()?;
     let due = count >= FIRST_REMINDER && (count - FIRST_REMINDER).is_multiple_of(EVERY);
-    due.then(|| match agent {
-        Agent::Claude => json!({
-            "decision": "block",
-            "reason": REMINDER,
-            "systemMessage": format!("{PEBBLE} checking whether this session is worth remembering"),
-        }),
-        Agent::Copilot => json!({"decision": "block", "reason": REMINDER}),
-    })
+    due.then(|| json!({"decision": "block", "reason": REMINDER}))
 }
