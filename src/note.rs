@@ -76,7 +76,11 @@ pub fn project_of(path: &str) -> Option<&str> {
 }
 
 pub fn render(frontmatter: &impl Serialize, body: &str) -> Result<String, String> {
-    let yaml = serde_saphyr::to_string(frontmatter).map_err(|e| e.to_string())?;
+    // One line per value: folded `>-` blocks are hard to edit by hand in Obsidian.
+    let mut options = serde_saphyr::SerializerOptions::default();
+    options.prefer_block_scalars = false;
+    let yaml =
+        serde_saphyr::to_string_with_options(frontmatter, options).map_err(|e| e.to_string())?;
     Ok(format!("---\n{yaml}---\n\n{body}"))
 }
 
@@ -160,6 +164,13 @@ mod tests {
         assert_eq!(parsed.tags, fm.tags);
         assert_eq!(again.title(), "Title");
         assert!(!text.contains("updated"), "{text}");
+
+        fm.summary = Some("a long summary ".repeat(10).trim().to_string());
+        let text = render(&fm, "").unwrap();
+        assert!(
+            text.contains(&format!("summary: {}\n", fm.summary.as_ref().unwrap())),
+            "{text}"
+        );
     }
 
     #[test]
