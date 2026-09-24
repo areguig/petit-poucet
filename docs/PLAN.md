@@ -170,7 +170,7 @@ Test every milestone on a **copy** of a vault in a temp folder, never on a real 
    **Switched 2026-09-24:** real vault migrated (backup in `~/agent_memory_db-backup-2026-09-24`, config backups `*.bak-2026-09-24`), binary in `~/.local/bin`, MCP server and hooks replaced in Claude Code and Copilot CLI, instruction files shortened. Afterwards: vault moved out of iCloud to `~/agent-memory`, Python hook and Obsidian MCP deleted, vault `check` clean. Codex is out of scope (owner's choice). Copilot CLI checked by the owner: it lists the MCP server.
    **Owner on the plugins since 2026-09-24:** manual wiring removed, both agents run the plugin installed from GitHub (v0.1.1).
 9. **0.2.0, released 2026-09-24** after the owner's local test (Claude Code and Copilot CLI); both installed plugins updated: pebble messages for Claude Code users; `migrate-memory` skill (one-pass migration of older file-based memory, confirmed by the user before saving); `tidy-memory` skill + read-only `memory-cleanup` subagent (proposes merges, fixes, deletions; the main agent applies what the user confirms); usage tracking (`<vault>/.petit-poucet/usage.json`: reads and last read per note, gitignored) and a `memory_review` tool feeding the subagent; topics (§3). Measure both skills with and without before keeping them. `main` holds released versions only. Docs: README rewritten (logo, badges, tools, skills, rules; built with Claude Code), landing page in `site/` deployed to GitHub Pages from `main`, social preview image `site/social-preview.png`.
-10. **Later:** Windows, Homebrew tap, semantic search. (Open-source release and licence: done in M6.)
+10. **Next:** see §13, Roadmap.
 
 ## 10. Current setup being replaced (for M7)
 
@@ -194,3 +194,26 @@ Borrow ideas, not code (licences differ; Basic Memory is AGPL).
 3. ~~Should `memory_save` refuse near-duplicates (search before write, like okf) or only warn?~~ Decided 2026-09-24: save and warn, listing the similar notes in the reply.
 4. ~~Can Copilot CLI plugins ship hooks?~~ Yes: `hooks` in the plugin's `plugin.json` (docs, 2026-09-24).
 5. ~~License at open-source time (MIT or Apache-2.0 are the usual choices for a CLI).~~ Decided 2026-09-24: Apache-2.0, repo public from M6.
+
+## 13. Roadmap
+
+Agreed 2026-09-24. Ordered by what real use is likely to show first; each item only when it earns its place.
+
+### 0.2.x: harden with real users
+- Teammate onboarding: first installs on clean machines; fix what the first-run path gets wrong (download, `init` offer, empty vault).
+- Measure `migrate-memory` and `tidy-memory` with and without the skill; keep only what makes a measurable difference.
+- Stop reminder: skip it while a subagent is still running; configurable cadence only if someone asks.
+- Copilot in IDEs (VS Code, IntelliJ): check that `${PLUGIN_ROOT}` is expanded there.
+
+### 0.3: memory quality over time
+- Usage-driven cleanup: after a few weeks of read counts, `tidy-memory` proposes notes nobody opens (`feedback` notes excluded: they are applied from the Index without being read).
+- Stale facts: `check` reports notes naming a file or path that no longer exists; report only, never an automatic fix.
+- Facts that expire: an optional "re-check by" date (versions, MR status, deploy targets) that tidy brings up when it passes.
+
+### Later, only when needed
+- Windows: a PowerShell launcher and a Windows build.
+- Install without the plugin: Homebrew tap or `cargo install`, for people who want the CLI.
+- Search that scales: better ranking (stems, BM25) once vaults reach several hundred notes; semantic search stays optional behind `memory_search`.
+
+### Out of scope
+Team or shared vaults, sharing or exporting notes between vaults, cloud sync, automatic capture from transcripts, a GUI of our own, and Codex.
