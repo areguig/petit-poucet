@@ -10,9 +10,11 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::config::Config;
+use crate::delete::{self, DeleteRequest};
+use crate::move_note::{self, MoveRequest};
 use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
-use crate::{index, project, search};
+use crate::{change, index, project, search};
 
 pub struct Server {
     config: Config,
@@ -47,6 +49,13 @@ impl Server {
     }
 }
 
+fn agent_name(client: &Peer<RoleServer>) -> String {
+    client
+        .peer_info()
+        .map(|info| info.client_info.name.clone())
+        .unwrap_or_else(|| "unknown agent".to_string())
+}
+
 // Copilot CLI starts servers in the plugin folder, so the working directory is only a fallback.
 fn project_key(vault: &Vault, dir: Option<PathBuf>) -> Option<String> {
     let dir = dir.or_else(|| std::env::current_dir().ok())?;
@@ -70,11 +79,9 @@ impl Server {
 
     #[tool(description = "Read one note.")]
     fn memory_read(&self, Parameters(req): Parameters<ReadRequest>) -> Result<String, String> {
-        let path = req.path.strip_suffix(".md").unwrap_or(&req.path);
-        if !self.vault()?.has_note(path) {
-            return Err(format!("no note at {path}"));
-        }
-        fs::read_to_string(self.config.vault.join(format!("{path}.md"))).map_err(|e| e.to_string())
+        let vault = self.vault()?;
+        let note = change::find_note(&vault, &req.path)?;
+        fs::read_to_string(vault.root.join(format!("{}.md", note.path))).map_err(|e| e.to_string())
     }
 
     #[tool(
@@ -85,12 +92,30 @@ impl Server {
         Parameters(req): Parameters<SaveRequest>,
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
-        let agent = client
-            .peer_info()
-            .map(|info| info.client_info.name.clone())
-            .unwrap_or_else(|| "unknown agent".to_string());
         let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
-        save::save(&self.config, req, &agent)
+        save::save(&self.config, req, &agent_name(&client))
+    }
+
+    #[tool(
+        description = "Delete a wrong or obsolete note and unlink it everywhere. Deleting a `feedback` note needs the user's confirmation."
+    )]
+    fn memory_delete(
+        &self,
+        Parameters(req): Parameters<DeleteRequest>,
+        client: Peer<RoleServer>,
+    ) -> Result<String, String> {
+        let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
+        delete::delete(&self.config, req, &agent_name(&client))
+    }
+
+    #[tool(description = "Rename a note or move it to another scope, rewriting every link to it.")]
+    fn memory_move(
+        &self,
+        Parameters(req): Parameters<MoveRequest>,
+        client: Peer<RoleServer>,
+    ) -> Result<String, String> {
+        let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
+        move_note::move_note(&self.config, req, &agent_name(&client))
     }
 
     #[tool(

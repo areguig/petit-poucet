@@ -77,7 +77,9 @@ fn an_agent_saves_finds_and_reads_a_note() {
     assert_eq!(
         names,
         [
+            "memory_delete",
             "memory_index",
+            "memory_move",
             "memory_read",
             "memory_save",
             "memory_search"
@@ -149,11 +151,34 @@ fn an_agent_saves_finds_and_reads_a_note() {
         "- [[Projects/my-repo/deploy-steps]] — deploy with make release"
     );
 
+    let (_, moved) = client.call(
+        "memory_move",
+        json!({"path": "Projects/my-repo/deploy-steps", "new_path": "Projects/my-repo/release"}),
+    );
+    assert_eq!(
+        moved,
+        "moved Projects/my-repo/deploy-steps to Projects/my-repo/release"
+    );
+    let (is_error, text) = client.call(
+        "memory_delete",
+        json!({"path": "Preferences/commit-rules", "reason": "test"}),
+    );
+    assert!(is_error && text.contains("user_confirmed"), "{text}");
+    let (_, deleted) = client.call(
+        "memory_delete",
+        json!({"path": "Preferences/commit-rules", "reason": "replaced", "user_confirmed": true}),
+    );
+    assert_eq!(deleted, "deleted Preferences/commit-rules");
+
     drop(client);
     assert!(child.wait().unwrap().success());
     let vault = vault.canonicalize().unwrap();
     assert_eq!(
         git_log(&vault),
-        "create: Projects/my-repo/deploy-steps (test-agent)\ncreate: Preferences/commit-rules (test-agent)\ninit: vault\n"
+        "delete: Preferences/commit-rules (test-agent)\n\
+         move: Projects/my-repo/deploy-steps -> Projects/my-repo/release (test-agent)\n\
+         create: Projects/my-repo/deploy-steps (test-agent)\n\
+         create: Preferences/commit-rules (test-agent)\n\
+         init: vault\n"
     );
 }

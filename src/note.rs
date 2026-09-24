@@ -122,6 +122,20 @@ pub fn map_links(body: &str, new_target: impl Fn(&str) -> Option<String>) -> Str
     .into_owned()
 }
 
+// Turns links to `target` into plain text: their alias, or `text` when they have none.
+pub fn unlink(body: &str, target: &str, text: &str) -> String {
+    LINK.replace_all(body, |c: &regex::Captures| {
+        if c[1].trim() != target {
+            return c[0].to_string();
+        }
+        match c.get(2).and_then(|m| m.as_str().split_once('|')) {
+            Some((_, alias)) => alias.to_string(),
+            None => text.to_string(),
+        }
+    })
+    .into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +202,15 @@ mod tests {
         assert_eq!(
             mapped,
             "[[Preferences/a]], [[Preferences/b|alias]], [[Preferences/a#Heading]] and [[c]]"
+        );
+    }
+
+    #[test]
+    fn unlinks_only_the_target_keeping_aliases() {
+        let body = "[[a]], [[a|the rule]], [[a#H]] and [[b]]";
+        assert_eq!(
+            unlink(body, "a", "Commit rules"),
+            "Commit rules, the rule, Commit rules and [[b]]"
         );
     }
 

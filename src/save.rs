@@ -8,8 +8,8 @@ use crate::check::MAX_BODY_CHARS;
 use crate::config::Config;
 use crate::note::{self, ALL_REPOS, Frontmatter, NoteType, REQUIRED_TAG};
 use crate::project::{self, IDENTITY_FILE};
-use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, Vault, write_atomic};
-use crate::{git, index, search, secrets};
+use crate::vault::{PREFERENCES, PROJECTS, Vault, write_atomic};
+use crate::{change, git, search, secrets};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SaveRequest {
@@ -44,19 +44,10 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<String, St
 
     let (path, created, identity) = match &req.path {
         Some(path) => {
-            let path = path.strip_suffix(".md").unwrap_or(path).to_string();
-            let existing = vault
-                .notes
-                .iter()
-                .find(|n| n.path == path)
-                .ok_or(format!("no note at {path}"))?;
-            let old = existing.frontmatter.as_ref().ok();
-            if old.is_some_and(|fm| fm.note_type == NoteType::Feedback) && !req.user_confirmed {
-                return Err(format!(
-                    "{path} is a rule the user stated: ask the user, then retry with user_confirmed: true"
-                ));
-            }
-            (path, old.map(|fm| fm.created), None)
+            let existing = change::find_note(&vault, path)?;
+            change::require_confirmation(existing, req.user_confirmed)?;
+            let created = existing.frontmatter.as_ref().ok().map(|fm| fm.created);
+            (existing.path.clone(), created, None)
         }
         None => {
             let (folder, identity) = target_folder(&vault, &req)?;
@@ -91,7 +82,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<String, St
     );
 
     let file = format!("{path}.md");
-    let mut changed = vec![file.clone(), INDEX_FILE.to_string()];
+    let mut changed = vec![file.clone()];
     if let Some((identity_file, text)) = identity {
         fs::create_dir_all(root.join(&identity_file).parent().unwrap())
             .map_err(|e| e.to_string())?;
@@ -99,14 +90,14 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<String, St
         changed.push(identity_file);
     }
     write_atomic(&root.join(&file), &note::render(&frontmatter, &body)?)?;
-    let vault = Vault::load(root)?;
-    write_atomic(&root.join(INDEX_FILE), &index::generate(&vault))?;
 
     let action = if created.is_some() {
         "update"
     } else {
         "create"
     };
+    let (vault, commit_warning) =
+        change::finish(config, changed, &format!("{action}: {path} ({agent})"))?;
     let mut reply = vec![format!("saved {path}")];
     let others = vault.notes.iter().filter(|n| n.path != path);
     let similar = search::similar(others, &req.title, &req.summary);
@@ -122,12 +113,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<String, St
             "warning: longer than {MAX_BODY_CHARS} characters: one short fact per note"
         ));
     }
-    if config.git_autocommit {
-        let paths: Vec<&str> = changed.iter().map(String::as_str).collect();
-        if let Err(e) = git::commit(root, &paths, &format!("{action}: {path} ({agent})")) {
-            reply.push(format!("not committed: {e}"));
-        }
-    }
+    reply.extend(commit_warning);
     Ok(reply.join("\n"))
 }
 

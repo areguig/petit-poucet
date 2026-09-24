@@ -1,10 +1,13 @@
+mod change;
 mod check;
 mod config;
+mod delete;
 mod git;
 mod hook;
 mod index;
 mod init;
 mod migrate;
+mod move_note;
 mod note;
 mod project;
 mod save;

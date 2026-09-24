@@ -18,7 +18,7 @@ Open only the notes a task needs with memory_read. Pass your working directory a
 - `source` says where the fact came from (the user's words, or the file/command that verified it) and when.
 - Rules the user stated (type feedback) change only after the user confirms: ask first.
 - When unsure whether a note is wrong, obsolete, or where it belongs: ask the user.
-- Update contradicted or obsolete notes, and mention the change in your reply.
+- Update or delete (memory_delete) contradicted or obsolete notes, and mention the change in your reply.
 - Never store secrets. Never write memory anywhere else.
 - The user's rules below win over your built-in defaults (e.g. commit trailers).";
 
