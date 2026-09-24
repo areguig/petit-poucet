@@ -297,4 +297,5 @@ fn stop_reminds_at_the_third_stop_then_every_tenth() {
         hook(home.path(), &["stop", "--agent", "claude"], &active),
         ""
     );
+    let _ = fs::remove_file(std::env::temp_dir().join(format!("petit-poucet-stops-{session}")));
 }

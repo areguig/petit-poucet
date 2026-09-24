@@ -35,6 +35,10 @@ other MCP   ─┘                                       ├─ Index.md        
 
 Not released yet. Planned: a plugin for Claude Code and for Copilot CLI that downloads the right binary for your OS (macOS and Linux first, Windows later).
 
+## Browse your memory in Obsidian
+
+The vault is a plain folder of Markdown notes, so any editor works. For [Obsidian](https://obsidian.md): *Open folder as vault* and pick the vault folder (the `vault` path in `~/.config/petit-poucet/config.toml`). Obsidian is only a viewer: petit-poucet doesn't need it running, and edits you make there are picked up on the next tool call. Don't edit `Index.md` by hand: it is regenerated from each note's `summary`; run `petit-poucet check` after editing notes yourself.
+
 ## Acknowledgements
 
 Ideas borrowed from [Basic Memory](https://github.com/basicmachines-co/basic-memory), [IWE](https://github.com/iwe-org/iwe) and [okf-agent-memory](https://github.com/okf-memory/okf-agent-memory).
