@@ -29,6 +29,11 @@ pub fn load(root: &Path) -> BTreeMap<String, Usage> {
 
 fn save(root: &Path, usage: &BTreeMap<String, Usage>) -> Result<(), String> {
     fs::create_dir_all(root.join(DIR)).map_err(|e| e.to_string())?;
+    // Ignores itself, so vaults created before this folder existed keep a clean git status.
+    let ignore = root.join(DIR).join(".gitignore");
+    if !ignore.exists() {
+        write_atomic(&ignore, "*\n")?;
+    }
     let text = serde_json::to_string_pretty(usage).map_err(|e| e.to_string())?;
     write_atomic(&file(root), &text)
 }
@@ -83,6 +88,10 @@ mod tests {
         relocate(tmp.path(), "Preferences/never-read", None).unwrap();
         let usage = load(tmp.path());
         assert_eq!(usage.keys().collect::<Vec<_>>(), ["Projects/p/a"]);
+        assert_eq!(
+            fs::read_to_string(tmp.path().join(DIR).join(".gitignore")).unwrap(),
+            "*\n"
+        );
         assert_eq!(usage["Projects/p/a"].reads, 2);
     }
 
