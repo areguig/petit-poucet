@@ -18,7 +18,12 @@ pub struct DeleteRequest {
     pub user_confirmed: bool,
 }
 
-pub fn delete(config: &Config, req: DeleteRequest, agent: &str) -> Result<String, String> {
+// Returns the reply and the other notes whose links were rewritten.
+pub fn delete(
+    config: &Config,
+    req: DeleteRequest,
+    agent: &str,
+) -> Result<(String, Vec<String>), String> {
     if req.reason.trim().is_empty() {
         return Err("reason is required".to_string());
     }
@@ -43,7 +48,7 @@ pub fn delete(config: &Config, req: DeleteRequest, agent: &str) -> Result<String
         ));
     }
     reply.extend(warning);
-    Ok(reply.join("\n"))
+    Ok((reply.join("\n"), unlinked))
 }
 
 #[cfg(test)]
@@ -87,7 +92,7 @@ mod tests {
                 "See [[Preferences/old]] and [[Preferences/old|that note]].",
             ),
         ]);
-        let reply = delete(&config, request("Preferences/old", false), "test").unwrap();
+        let (reply, _) = delete(&config, request("Preferences/old", false), "test").unwrap();
         assert_eq!(
             reply,
             "deleted Preferences/old\nlinks to it removed in: [[Preferences/user]]"

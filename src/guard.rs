@@ -46,6 +46,13 @@ impl ReadLog {
         }
     }
 
+    // After this session's own tool rewrote links in a note it had read, the new text counts as seen.
+    pub fn refresh(&self, root: &Path, path: &str) {
+        if self.0.lock().unwrap().contains_key(key(path)) {
+            self.record_file(root, path);
+        }
+    }
+
     pub fn record_file(&self, root: &Path, path: &str) {
         match fs::read_to_string(root.join(format!("{}.md", key(path)))) {
             Ok(text) => self.record(path, &text),
@@ -77,6 +84,19 @@ mod tests {
 
         log.record_file(tmp.path(), "note");
         assert!(log.check(tmp.path(), "note").is_ok());
+
+        fs::write(&file, "v3 from this session's own link rewrite").unwrap();
+        log.refresh(tmp.path(), "note");
+        assert!(
+            log.check(tmp.path(), "note").is_ok(),
+            "known notes are refreshed"
+        );
+        fs::write(tmp.path().join("unread.md"), "x").unwrap();
+        log.refresh(tmp.path(), "unread.md");
+        assert!(
+            log.check(tmp.path(), "unread").is_err(),
+            "unread notes stay unread"
+        );
 
         log.forget("note");
         assert!(log.check(tmp.path(), "note").is_err());

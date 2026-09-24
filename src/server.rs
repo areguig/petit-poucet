@@ -127,8 +127,11 @@ impl Server {
         let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
         self.reads.check(&self.config.vault, &req.path)?;
         let path = req.path.trim_end_matches(".md").to_string();
-        let reply = delete::delete(&self.config, req, &agent_name(&client))?;
+        let (reply, rewritten) = delete::delete(&self.config, req, &agent_name(&client))?;
         self.reads.forget(&path);
+        for file in &rewritten {
+            self.reads.refresh(&self.config.vault, file);
+        }
         usage::relocate(&self.config.vault, &path, None)?;
         Ok(reply)
     }
@@ -142,8 +145,11 @@ impl Server {
         let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
         let path = req.path.trim_end_matches(".md").to_string();
         let new_path = req.new_path.trim_end_matches(".md").to_string();
-        let reply = move_note::move_note(&self.config, req, &agent_name(&client))?;
+        let (reply, rewritten) = move_note::move_note(&self.config, req, &agent_name(&client))?;
         self.reads.forget(&path);
+        for file in &rewritten {
+            self.reads.refresh(&self.config.vault, file);
+        }
         usage::relocate(&self.config.vault, &path, Some(&new_path))?;
         Ok(reply)
     }

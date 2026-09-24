@@ -1,7 +1,6 @@
 ---
 name: migrate-memory
 description: "Move an agent's older file-based memory (MEMORY.md, memory folders, memory sections of CLAUDE.md, AGENTS.md or copilot-instructions.md) into petit-poucet in one pass. Use only when the user asks to migrate or import their old memory."
-disable-model-invocation: true
 ---
 
 # Migrate older memory into petit-poucet

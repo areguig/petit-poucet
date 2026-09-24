@@ -18,7 +18,12 @@ pub struct MoveRequest {
     pub user_confirmed: bool,
 }
 
-pub fn move_note(config: &Config, req: MoveRequest, agent: &str) -> Result<String, String> {
+// Returns the reply and the other notes whose links were rewritten.
+pub fn move_note(
+    config: &Config,
+    req: MoveRequest,
+    agent: &str,
+) -> Result<(String, Vec<String>), String> {
     let vault = Vault::load(&config.vault)?;
     let note = change::find_note(&vault, &req.path)?;
     let (old, new) = (note.path.as_str(), req.new_path.trim_end_matches(".md"));
@@ -50,7 +55,7 @@ pub fn move_note(config: &Config, req: MoveRequest, agent: &str) -> Result<Strin
         reply.push(format!("links updated in: {}", change::list(&relinked)));
     }
     reply.extend(warning);
-    Ok(reply.join("\n"))
+    Ok((reply.join("\n"), relinked))
 }
 
 fn check_destination(vault: &Vault, new: &str) -> Result<(), String> {
@@ -133,7 +138,7 @@ mod tests {
     #[test]
     fn moves_into_a_project_and_rewrites_links() {
         let (tmp, config) = vault();
-        let reply = move_note(
+        let (reply, _) = move_note(
             &config,
             request("Preferences/fact", "Projects/app/fact"),
             "test",

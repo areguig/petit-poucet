@@ -262,3 +262,50 @@ fn a_write_never_replaces_text_the_agent_has_not_seen() {
     drop(other);
     assert!(child.wait().unwrap().success() && other_child.wait().unwrap().success());
 }
+
+#[test]
+fn a_session_is_not_blocked_by_its_own_link_rewrites() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client) = start(home.path());
+    let note = |title: &str, fact: &str| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("{title} summary"), "fact": fact,
+            "source": "test on 2026-09-24", "how_to_apply": "Test.",
+        })
+    };
+    client.call("memory_save", note("Target", "The target."));
+    client.call("memory_save", note("Linker", "See [[Preferences/target]]."));
+    client.call("memory_save", note("Unseen", "See [[Preferences/target]]."));
+    // A new session: the only notes it has seen are the ones it reads.
+    drop(client);
+    child.wait().unwrap();
+    let (mut child, mut client) = start(home.path());
+    client.call("memory_read", json!({"path": "Preferences/linker"}));
+
+    let (_, moved) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/target", "new_path": "Preferences/renamed"}),
+    );
+    assert!(moved.contains("links updated in"), "{moved}");
+
+    let mut update = note("Linker", "See [[Preferences/renamed]], updated.");
+    update["path"] = json!("Preferences/linker");
+    let (is_error, text) = client.call("memory_save", update);
+    assert!(!is_error, "{text}");
+    let mut unseen = note("Unseen", "Changed.");
+    unseen["path"] = json!("Preferences/unseen");
+    let (is_error, text) = client.call("memory_save", unseen);
+    assert!(
+        is_error && text.contains("read Preferences/unseen first"),
+        "{text}"
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}

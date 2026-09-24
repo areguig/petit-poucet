@@ -1,7 +1,6 @@
 ---
 name: tidy-memory
 description: "Review the whole petit-poucet memory for duplicates, contradictions, stale or unused notes, and fix what the user confirms. Use only when the user asks to clean up, tidy or review their memory."
-disable-model-invocation: true
 ---
 
 # Tidy the memory
