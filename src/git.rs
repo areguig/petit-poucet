@@ -41,14 +41,12 @@ pub fn commit(dir: &Path, paths: &[&str], message: &str) -> Result<(), String> {
     git(dir, &commit).map(drop)
 }
 
-#[allow(dead_code, reason = "used by serve and hooks from M2")]
 pub fn toplevel(dir: &Path) -> Option<String> {
     git(dir, &["rev-parse", "--show-toplevel"])
         .ok()
         .map(|s| s.trim().to_string())
 }
 
-#[allow(dead_code, reason = "used by serve and hooks from M2")]
 pub fn remote_urls(dir: &Path) -> Vec<String> {
     let Ok(out) = git(dir, &["remote", "-v"]) else {
         return Vec::new();

@@ -5,7 +5,10 @@ mod index;
 mod init;
 mod note;
 mod project;
+mod save;
+mod search;
 mod secrets;
+mod server;
 mod vault;
 
 use std::path::PathBuf;
@@ -60,9 +63,8 @@ fn main() -> ExitCode {
             println!("{msg}");
             true
         }),
-        Command::Serve | Command::Hook { .. } | Command::Migrate => {
-            Err("not implemented yet".to_string())
-        }
+        Command::Serve => Config::load().and_then(server::serve).map(|()| true),
+        Command::Hook { .. } | Command::Migrate => Err("not implemented yet".to_string()),
     };
     match result {
         Ok(true) => ExitCode::SUCCESS,

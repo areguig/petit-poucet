@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::git;
 
 pub const IDENTITY_FILE: &str = "_project.md";
-const IDENTITY_TYPE: &str = "project-identity";
+pub const IDENTITY_TYPE: &str = "project-identity";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Identity {
@@ -49,7 +49,6 @@ pub fn normalise_remote(url: &str) -> String {
     format!("{host}/{}", path.trim_start_matches('/'))
 }
 
-#[allow(dead_code, reason = "used by serve and hooks from M2")]
 pub fn resolve<'a>(projects: &'a [Project], dir: &Path) -> Option<&'a str> {
     let known: Vec<(&str, &Identity)> = projects
         .iter()

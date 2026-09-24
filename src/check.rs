@@ -8,7 +8,7 @@ use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, Vault};
 use crate::{index, secrets};
 
 // A note is one short fact; past this the body is probably several facts or history.
-const MAX_BODY_CHARS: usize = 1500;
+pub const MAX_BODY_CHARS: usize = 1500;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
@@ -57,10 +57,7 @@ pub fn check(vault: &Vault) -> Vec<Issue> {
                     Some(s) if s.contains('\n') => error("summary must be one line".into()),
                     _ => {}
                 }
-                let expected_scope = match note.path.split('/').collect::<Vec<_>>()[..] {
-                    [PROJECTS, key, _] => key,
-                    _ => ALL_REPOS,
-                };
+                let expected_scope = note.project().unwrap_or(ALL_REPOS);
                 if fm.scope != expected_scope {
                     error(format!(
                         "scope is `{}`, expected `{expected_scope}`",

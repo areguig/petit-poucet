@@ -2,12 +2,12 @@ use std::sync::LazyLock;
 
 use jiff::civil::Date;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub const REQUIRED_TAG: &str = "agent-memory";
 pub const ALL_REPOS: &str = "all repos";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum NoteType {
     User,
@@ -16,17 +16,14 @@ pub enum NoteType {
     Reference,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Frontmatter {
     #[serde(rename = "type")]
-    #[allow(
-        dead_code,
-        reason = "validated on parse; read by the MCP tools from M2"
-    )]
     pub note_type: NoteType,
     pub scope: String,
     pub summary: Option<String>,
     pub created: Date,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub updated: Option<Date>,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -53,10 +50,34 @@ impl Note {
         }
     }
 
+    pub fn project(&self) -> Option<&str> {
+        project_of(&self.path)
+    }
+
+    pub fn title(&self) -> &str {
+        self.body
+            .lines()
+            .find_map(|line| line.strip_prefix("# "))
+            .map(str::trim)
+            .unwrap_or_else(|| self.path.rsplit('/').next().unwrap_or_default())
+    }
+
     pub fn summary(&self) -> Option<&str> {
         let summary = self.frontmatter.as_ref().ok()?.summary.as_deref()?.trim();
         (!summary.is_empty()).then_some(summary)
     }
+}
+
+pub fn project_of(path: &str) -> Option<&str> {
+    match path.split('/').collect::<Vec<_>>()[..] {
+        [crate::vault::PROJECTS, key, _] => Some(key),
+        _ => None,
+    }
+}
+
+pub fn render(frontmatter: &impl Serialize, body: &str) -> Result<String, String> {
+    let yaml = serde_saphyr::to_string(frontmatter).map_err(|e| e.to_string())?;
+    Ok(format!("---\n{yaml}---\n\n{body}"))
 }
 
 pub fn split_frontmatter(text: &str) -> Option<(&str, &str)> {
@@ -114,6 +135,29 @@ mod tests {
             Note::parse("x".into(), "# no frontmatter")
                 .frontmatter
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn render_round_trips_and_quotes_what_yaml_needs() {
+        let note = Note::parse("Preferences/commit".into(), GOOD);
+        let mut fm = note.frontmatter.unwrap();
+        fm.summary = Some("plugin + MCP server: 3 tools".into());
+        let text = render(&fm, "# Title\n\nBody\n").unwrap();
+        let again = Note::parse("Preferences/commit".into(), &text);
+        let parsed = again.frontmatter.as_ref().unwrap();
+        assert_eq!(parsed.summary, fm.summary);
+        assert_eq!(parsed.created, fm.created);
+        assert_eq!(parsed.tags, fm.tags);
+        assert_eq!(again.title(), "Title");
+        assert!(!text.contains("updated"), "{text}");
+    }
+
+    #[test]
+    fn title_falls_back_to_the_file_name() {
+        assert_eq!(
+            Note::parse("Preferences/commit".into(), "no heading").title(),
+            "commit"
         );
     }
 
