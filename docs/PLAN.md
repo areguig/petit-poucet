@@ -188,4 +188,4 @@ Borrow ideas, not code (licences differ; Basic Memory is AGPL).
 2. ~~`_project.md` format for project identity, or project identity stored elsewhere.~~ Decided: `_project.md` per project, resolved by remote then folder (§3).
 3. ~~Should `memory_save` refuse near-duplicates (search before write, like okf) or only warn?~~ Decided 2026-09-24: save and warn, listing the similar notes in the reply.
 4. Can Copilot CLI plugins ship hooks?
-5. License at open-source time (MIT or Apache-2.0 are the usual choices for a CLI).
+5. ~~License at open-source time (MIT or Apache-2.0 are the usual choices for a CLI).~~ Decided 2026-09-24: Apache-2.0, repo public from M6.

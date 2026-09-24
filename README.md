@@ -45,4 +45,4 @@ Ideas borrowed from [Basic Memory](https://github.com/basicmachines-co/basic-mem
 
 ## License
 
-To be decided before the first public release.
+[Apache-2.0](LICENSE)
