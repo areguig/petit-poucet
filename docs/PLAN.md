@@ -159,7 +159,7 @@ Test every milestone on a **copy** of a vault in a temp folder, never on a real 
 1. **M0 — scaffold:** cargo project, CI (fmt, clippy, tests), crate choices from §4, license choice deferred. **Done 2026-09-24.**
 2. **M1 — vault model:** parse and validate notes (§3), project identity, Index generation, `check`, `init`. Fixture vault in `tests/` shaped like the real one (Preferences, several projects, a bad note of each kind). **Done 2026-09-24.**
 3. **M2 — MCP server:** `serve` with `memory_index`, `memory_read`, `memory_save`, `memory_search`; atomic writes; git auto-commit. Try it from Claude Code with `claude mcp add` on a vault copy. **Built and tested 2026-09-24** (unit tests + an end-to-end MCP session over stdio); the Claude Code trial is still to do. The server re-reads the vault on every call (≈10 ms for 300 notes) instead of keeping it in memory.
-4. **M3 — hooks:** `hook session-start` and `hook stop` for both agents; wire them by hand in Claude Code and Copilot CLI settings and check a real session.
+4. **M3 — hooks:** `hook session-start` and `hook stop` for both agents; wire them by hand in Claude Code and Copilot CLI settings and check a real session. **Built and tested 2026-09-24** (reminder cadence is a constant for now); wired during the M7 switch-over.
 5. **M4 — delete and move:** link rewriting, `feedback` protection, orphan and broken-link handling.
 6. **M5 — live reload:** `notify` watching; edits made in Obsidian are seen without restart; concurrent-write guard.
 7. **M6 — packaging:** release workflow, both plugins, launcher, install docs in the README.

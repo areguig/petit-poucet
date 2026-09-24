@@ -1,6 +1,7 @@
 mod check;
 mod config;
 mod git;
+mod hook;
 mod index;
 mod init;
 mod migrate;
@@ -35,7 +36,7 @@ enum Command {
     Hook {
         event: HookEvent,
         #[arg(long)]
-        agent: Agent,
+        agent: hook::Agent,
     },
     /// Validate the vault
     Check,
@@ -49,12 +50,6 @@ enum Command {
 enum HookEvent {
     SessionStart,
     Stop,
-}
-
-#[derive(Clone, ValueEnum)]
-enum Agent {
-    Claude,
-    Copilot,
 }
 
 fn main() -> ExitCode {
@@ -71,7 +66,10 @@ fn main() -> ExitCode {
                 println!("{report}");
                 true
             }),
-        Command::Hook { .. } => Err("not implemented yet".to_string()),
+        Command::Hook { event, agent } => {
+            run_hook(event, agent);
+            Ok(true)
+        }
     };
     match result {
         Ok(true) => ExitCode::SUCCESS,
@@ -80,6 +78,18 @@ fn main() -> ExitCode {
             eprintln!("petit-poucet: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+// Hooks never fail the agent's session: problems are reported inside the output.
+fn run_hook(event: HookEvent, agent: hook::Agent) {
+    let input = serde_json::from_reader(std::io::stdin()).unwrap_or(serde_json::Value::Null);
+    let output = match event {
+        HookEvent::SessionStart => Some(hook::session_start(agent, &input)),
+        HookEvent::Stop => hook::stop(&input),
+    };
+    if let Some(output) = output {
+        println!("{output}");
     }
 }
 

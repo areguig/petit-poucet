@@ -204,3 +204,97 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
     );
     assert_eq!(git_log(&vault), "migrate: vault\n");
 }
+
+fn hook(home: &Path, args: &[&str], input: &str) -> String {
+    let output = petit_poucet(home)
+        .arg("hook")
+        .args(args)
+        .write_stdin(input)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "hooks never fail the session");
+    stdout(&output)
+}
+
+#[test]
+fn session_start_injects_rules_and_the_project_index() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let alpha_checkout = home.path().join("alpha");
+    fs::create_dir(&alpha_checkout).unwrap();
+    let event = serde_json::json!({"cwd": alpha_checkout}).to_string();
+
+    let claude: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        &event,
+    ))
+    .unwrap();
+    assert_eq!(
+        claude["hookSpecificOutput"]["hookEventName"],
+        "SessionStart"
+    );
+    let context = claude["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        context.starts_with("Agent memory (petit-poucet)"),
+        "{context}"
+    );
+    assert!(context.contains("[[Preferences/user-commits-themselves]]"));
+    assert!(context.contains("[[Projects/alpha/plugin-design]]"));
+    assert!(!context.contains("Projects/beta"));
+
+    let copilot: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "copilot"],
+        &event,
+    ))
+    .unwrap();
+    assert_eq!(copilot["additionalContext"].as_str(), Some(context));
+}
+
+#[test]
+fn session_start_says_when_memory_is_unavailable() {
+    let home = TempDir::new().unwrap();
+    let out = hook(
+        home.path(),
+        &["session-start", "--agent", "copilot"],
+        "not json",
+    );
+    let context: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(
+        context["additionalContext"]
+            .as_str()
+            .unwrap()
+            .starts_with("Agent memory is UNAVAILABLE (no vault configured")
+    );
+}
+
+#[test]
+fn stop_reminds_at_the_third_stop_then_every_tenth() {
+    let home = TempDir::new().unwrap();
+    let session = home
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let event = serde_json::json!({"sessionId": session}).to_string();
+    let reminded: Vec<u32> = (1..=23)
+        .filter(|_| !hook(home.path(), &["stop", "--agent", "copilot"], &event).is_empty())
+        .collect();
+    assert_eq!(reminded, [3, 13, 23]);
+
+    let active = serde_json::json!({"session_id": session, "stop_hook_active": true}).to_string();
+    assert_eq!(
+        hook(home.path(), &["stop", "--agent", "claude"], &active),
+        ""
+    );
+}
