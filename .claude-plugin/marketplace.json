@@ -1,0 +1,11 @@
+{
+  "name": "petit-poucet",
+  "owner": { "name": "areguig" },
+  "plugins": [
+    {
+      "name": "petit-poucet",
+      "source": "./plugin",
+      "description": "Curated, shared Markdown memory for coding agents: MCP tools plus session hooks."
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "type": "command", "bash": "sh \"$PLUGIN_ROOT/bin/petit-poucet\" hook session-start --agent copilot", "timeoutSec": 30 }
+    ],
+    "agentStop": [
+      { "type": "command", "bash": "sh \"$PLUGIN_ROOT/bin/petit-poucet\" hook stop --agent copilot", "timeoutSec": 10 }
+    ]
+  }
+}

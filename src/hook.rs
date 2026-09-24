@@ -40,6 +40,7 @@ fn field<'a>(event: &'a Value, snake: &str, camel: &str) -> Option<&'a Value> {
 
 pub fn session_start(agent: Agent, event: &Value) -> Value {
     let context = match memory_context(event) {
+        _ if !Config::is_set() => setup_context(),
         Ok(context) => context,
         Err(e) => format!(
             "Agent memory is UNAVAILABLE ({e}). Tell the user before relying on remembered rules, \
@@ -52,6 +53,16 @@ pub fn session_start(agent: Agent, event: &Value) -> Value {
         }
         Agent::Copilot => json!({"additionalContext": context}),
     }
+}
+
+// Plugin installs have no `petit-poucet` on PATH: the launcher says where it is.
+fn setup_context() -> String {
+    let command = std::env::var("PETIT_POUCET_LAUNCHER").unwrap_or_else(|_| "petit-poucet".into());
+    format!(
+        "Agent memory (petit-poucet) is installed but has no vault yet. Tell the user, and offer to create one \
+         in ~/agent-memory by running `{command} init` (or `{command} init <folder>` for another place). \
+         It takes effect in the next session. Until then, don't write memory anywhere else."
+    )
 }
 
 fn memory_context(event: &Value) -> Result<String, String> {

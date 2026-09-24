@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "petit-poucet": {
+      "type": "stdio",
+      "command": "sh",
+      "args": ["${PLUGIN_ROOT}/bin/petit-poucet", "serve"],
+      "tools": ["*"]
+    }
+  }
+}

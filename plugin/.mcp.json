@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "petit-poucet": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/petit-poucet",
+      "args": ["serve"]
+    }
+  }
+}

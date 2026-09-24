@@ -29,6 +29,10 @@ impl Config {
         Ok(home.join(".config/petit-poucet/config.toml"))
     }
 
+    pub fn is_set() -> bool {
+        std::env::var_os(VAULT_ENV).is_some() || Config::path().is_ok_and(|p| p.exists())
+    }
+
     pub fn load() -> Result<Config, String> {
         let path = Config::path()?;
         let file = match fs::read_to_string(&path) {

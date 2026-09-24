@@ -4,7 +4,7 @@
 
 In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, so every new session — in Claude Code, GitHub Copilot, or any MCP client — starts where the last one left off.
 
-**Status:** early development, not usable yet.
+**Status:** v0.1: works with Claude Code and GitHub Copilot CLI on macOS and Linux.
 
 ## Why
 
@@ -33,7 +33,23 @@ other MCP   ─┘                                       ├─ Index.md        
 
 ## Install
 
-Not released yet. Planned: a plugin for Claude Code and for Copilot CLI that downloads the right binary for your OS (macOS and Linux first, Windows later).
+Needs `git` and `curl` (macOS or Linux). The plugin downloads the petit-poucet binary for your platform on first use, checks its SHA-256 and caches it in `~/.cache/petit-poucet`.
+
+**Claude Code**
+
+```sh
+claude plugin marketplace add https://github.com/areguig/petit-poucet
+claude plugin install petit-poucet@petit-poucet
+```
+
+**GitHub Copilot CLI**
+
+```sh
+copilot plugin marketplace add areguig/petit-poucet
+copilot plugin install petit-poucet@petit-poucet
+```
+
+Then start a new session: the agent says memory has no vault yet and offers to create one in `~/agent-memory` (or wherever you prefer). The vault path lives in `~/.config/petit-poucet/config.toml`; both agents share it. The vault is a git repository with a local commit after every change: nothing is ever pushed.
 
 ## Browse your memory in Obsidian
 
@@ -42,6 +58,11 @@ The vault is a plain folder of Markdown notes, so any editor works. For [Obsidia
 ## Acknowledgements
 
 Ideas borrowed from [Basic Memory](https://github.com/basicmachines-co/basic-memory), [IWE](https://github.com/iwe-org/iwe) and [okf-agent-memory](https://github.com/okf-memory/okf-agent-memory).
+
+## Releasing
+
+1. Set the new version in `Cargo.toml`, `plugin/release.env`, both `plugin.json` files and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
+2. Commit, tag `vX.Y.Z` and push the tag: the release workflow builds the four binaries and publishes them with their checksums.
 
 ## License
 

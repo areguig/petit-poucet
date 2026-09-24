@@ -1,0 +1,56 @@
+#!/bin/sh
+# Runs the petit-poucet release pinned in ../release.env, downloading and verifying it on first use.
+# stdout carries the MCP protocol or hook output: every message from this script goes to stderr.
+set -eu
+
+log() { printf 'petit-poucet launcher: %s\n' "$*" >&2; }
+fail() { log "$*"; exit 1; }
+
+launcher=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
+export PETIT_POUCET_LAUNCHER="$launcher"
+
+# Local development: run a binary you built yourself
+if [ -n "${PETIT_POUCET_BIN:-}" ]; then
+  exec "$PETIT_POUCET_BIN" "$@"
+fi
+
+. "$(dirname -- "$launcher")/../release.env"
+
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) target=aarch64-apple-darwin ;;
+  Darwin-x86_64) target=x86_64-apple-darwin ;;
+  Linux-x86_64) target=x86_64-unknown-linux-musl ;;
+  Linux-aarch64 | Linux-arm64) target=aarch64-unknown-linux-musl ;;
+  *) fail "no release for $(uname -s) $(uname -m)" ;;
+esac
+
+# Cached outside the plugin so Claude Code and Copilot share it and plugin updates keep it
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/petit-poucet"
+bin="$cache/petit-poucet-$PETIT_POUCET_VERSION"
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+if [ ! -x "$bin" ]; then
+  releases="${PETIT_POUCET_RELEASES:-https://github.com/areguig/petit-poucet/releases/download}"
+  url="$releases/v$PETIT_POUCET_VERSION/petit-poucet-$target"
+  mkdir -p "$cache"
+  tmp="$bin.download.$$"
+  trap 'rm -f "$tmp"' EXIT
+  log "downloading petit-poucet $PETIT_POUCET_VERSION for $target"
+  curl --fail --silent --show-error --location --connect-timeout 15 --max-time 300 --output "$tmp" "$url" \
+    || fail "download failed: $url"
+  expected=$(curl --fail --silent --show-error --location --connect-timeout 15 "$url.sha256" | cut -d' ' -f1) \
+    || fail "checksum download failed: $url.sha256"
+  actual=$(sha256_of "$tmp")
+  [ -n "$expected" ] && [ "$actual" = "$expected" ] || fail "checksum mismatch for $url (expected $expected, got $actual)"
+  chmod +x "$tmp"
+  mv -f "$tmp" "$bin"
+  trap - EXIT
+  for old in "$cache"/petit-poucet-*; do
+    [ "$old" = "$bin" ] || rm -f "$old"
+  done
+fi
+
+exec "$bin" "$@"

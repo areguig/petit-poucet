@@ -262,17 +262,40 @@ fn session_start_injects_rules_and_the_project_index() {
 #[test]
 fn session_start_says_when_memory_is_unavailable() {
     let home = TempDir::new().unwrap();
-    let out = hook(
-        home.path(),
-        &["session-start", "--agent", "copilot"],
-        "not json",
-    );
-    let context: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let broken = home.path().join("gone");
+    let output = petit_poucet(home.path())
+        .env("PETIT_POUCET_VAULT", &broken)
+        .args(["hook", "session-start", "--agent", "copilot"])
+        .output()
+        .unwrap();
+    let context: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let context = context["additionalContext"].as_str().unwrap();
     assert!(
-        context["additionalContext"]
-            .as_str()
-            .unwrap()
-            .starts_with("Agent memory is UNAVAILABLE (no vault configured")
+        context.starts_with("Agent memory is UNAVAILABLE (vault not found"),
+        "{context}"
+    );
+}
+
+#[test]
+fn session_start_without_a_vault_offers_to_create_one() {
+    let home = TempDir::new().unwrap();
+    let output = petit_poucet(home.path())
+        .env(
+            "PETIT_POUCET_LAUNCHER",
+            "/plugins/petit-poucet/bin/petit-poucet",
+        )
+        .args(["hook", "session-start", "--agent", "claude"])
+        .write_stdin("not json")
+        .output()
+        .unwrap();
+    let context: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let context = context["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("has no vault yet"), "{context}");
+    assert!(
+        context.contains("`/plugins/petit-poucet/bin/petit-poucet init`"),
+        "{context}"
     );
 }
 
