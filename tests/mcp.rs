@@ -1,7 +1,8 @@
 mod common;
 
 use std::io::{BufRead, BufReader, Write};
-use std::process::{ChildStdout, Stdio};
+use std::path::Path;
+use std::process::{Child, ChildStdout, Stdio};
 
 use common::{command, git_log, petit_poucet};
 use serde_json::{Value, json};
@@ -40,16 +41,9 @@ impl Client {
     }
 }
 
-#[test]
-fn an_agent_saves_finds_and_reads_a_note() {
-    let home = TempDir::new().unwrap();
-    let vault = home.path().join("vault");
-    petit_poucet(home.path())
-        .args(["init", vault.to_str().unwrap()])
-        .assert()
-        .success();
-
-    let mut child = command(home.path())
+// One agent session: a `serve` process after the MCP handshake.
+fn start(home: &Path) -> (Child, Client) {
+    let mut child = command(home)
         .arg("serve")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -65,6 +59,19 @@ fn an_agent_saves_finds_and_reads_a_note() {
         json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test-agent", "version": "1"}}),
     );
     client.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+    (child, client)
+}
+
+#[test]
+fn an_agent_saves_finds_and_reads_a_note() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let (mut child, mut client) = start(home.path());
 
     let tools = client.request("tools/list", json!({}));
     let mut names: Vec<&str> = tools["tools"]
@@ -181,4 +188,70 @@ fn an_agent_saves_finds_and_reads_a_note() {
          create: Preferences/commit-rules (test-agent)\n\
          init: vault\n"
     );
+}
+
+#[test]
+fn a_write_never_replaces_text_the_agent_has_not_seen() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client) = start(home.path());
+    let note = |fact: &str| {
+        json!({
+            "path": "Preferences/editor", "type": "user", "title": "Editor",
+            "summary": "the user edits notes in Obsidian", "fact": fact,
+            "source": "the user said so on 2026-09-24", "how_to_apply": "Expect edits.",
+        })
+    };
+    let mut create = note("Uses Obsidian.");
+    create.as_object_mut().unwrap().remove("path");
+    create["scope"] = json!("all repos");
+    client.call("memory_save", create);
+    let (is_error, _) = client.call("memory_save", note("Uses Obsidian daily."));
+    assert!(!is_error, "the agent wrote it, so it has seen it");
+
+    let file = vault.join("Preferences/editor.md");
+    let edited = std::fs::read_to_string(&file)
+        .unwrap()
+        .replace("daily", "every day");
+    std::fs::write(&file, edited).unwrap();
+    for (tool, args) in [
+        ("memory_save", note("Overwrite.")),
+        (
+            "memory_delete",
+            json!({"path": "Preferences/editor", "reason": "test"}),
+        ),
+    ] {
+        let (is_error, text) = client.call(tool, args);
+        assert!(
+            is_error && text.contains("changed since you read it"),
+            "{tool}: {text}"
+        );
+    }
+    assert!(
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .contains("every day")
+    );
+
+    client.call("memory_read", json!({"path": "Preferences/editor"}));
+    assert!(
+        !client
+            .call("memory_save", note("Uses Obsidian every day."))
+            .0
+    );
+
+    let (mut other_child, mut other) = start(home.path());
+    let (is_error, text) = other.call("memory_save", note("Other agent."));
+    assert!(
+        is_error && text.contains("read Preferences/editor first"),
+        "{text}"
+    );
+
+    drop(client);
+    drop(other);
+    assert!(child.wait().unwrap().success() && other_child.wait().unwrap().success());
 }

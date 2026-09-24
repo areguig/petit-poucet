@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::delete::{self, DeleteRequest};
+use crate::guard::ReadLog;
 use crate::move_note::{self, MoveRequest};
 use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
@@ -20,6 +21,7 @@ pub struct Server {
     config: Config,
     // Saves rewrite the Index and commit: one at a time.
     write_lock: Mutex<()>,
+    reads: ReadLog,
     #[expect(dead_code, reason = "read by the code #[tool_handler] generates")]
     tool_router: ToolRouter<Self>,
 }
@@ -81,11 +83,14 @@ impl Server {
     fn memory_read(&self, Parameters(req): Parameters<ReadRequest>) -> Result<String, String> {
         let vault = self.vault()?;
         let note = change::find_note(&vault, &req.path)?;
-        fs::read_to_string(vault.root.join(format!("{}.md", note.path))).map_err(|e| e.to_string())
+        let text = fs::read_to_string(vault.root.join(format!("{}.md", note.path)))
+            .map_err(|e| e.to_string())?;
+        self.reads.record(&note.path, &text);
+        Ok(text)
     }
 
     #[tool(
-        description = "Create or update one short fact. Search first; updating a `feedback` note needs the user's confirmation."
+        description = "Create or update one short fact. Search first; read a note before updating it; updating a `feedback` note needs the user's confirmation."
     )]
     fn memory_save(
         &self,
@@ -93,7 +98,12 @@ impl Server {
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
         let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
-        save::save(&self.config, req, &agent_name(&client))
+        if let Some(path) = &req.path {
+            self.reads.check(&self.config.vault, path)?;
+        }
+        let (path, reply) = save::save(&self.config, req, &agent_name(&client))?;
+        self.reads.record_file(&self.config.vault, &path);
+        Ok(reply)
     }
 
     #[tool(
@@ -105,7 +115,11 @@ impl Server {
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
         let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
-        delete::delete(&self.config, req, &agent_name(&client))
+        self.reads.check(&self.config.vault, &req.path)?;
+        let path = req.path.clone();
+        let reply = delete::delete(&self.config, req, &agent_name(&client))?;
+        self.reads.forget(&path);
+        Ok(reply)
     }
 
     #[tool(description = "Rename a note or move it to another scope, rewriting every link to it.")]
@@ -115,7 +129,10 @@ impl Server {
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
         let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
-        move_note::move_note(&self.config, req, &agent_name(&client))
+        let path = req.path.clone();
+        let reply = move_note::move_note(&self.config, req, &agent_name(&client))?;
+        self.reads.forget(&path);
+        Ok(reply)
     }
 
     #[tool(
@@ -160,6 +177,7 @@ pub fn serve(config: Config) -> Result<(), String> {
     let server = Server {
         config,
         write_lock: Mutex::new(()),
+        reads: ReadLog::default(),
         tool_router: Server::tool_router(),
     };
     let runtime = tokio::runtime::Builder::new_current_thread()

@@ -3,6 +3,7 @@ mod check;
 mod config;
 mod delete;
 mod git;
+mod guard;
 mod hook;
 mod index;
 mod init;

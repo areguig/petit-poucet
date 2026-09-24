@@ -36,7 +36,8 @@ pub struct SaveRequest {
     pub user_confirmed: bool,
 }
 
-pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<String, String> {
+// Returns the saved note's path and the reply for the agent.
+pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, String), String> {
     validate(&req)?;
     let root = &config.vault;
     let vault = Vault::load(root)?;
@@ -114,7 +115,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<String, St
         ));
     }
     reply.extend(commit_warning);
-    Ok(reply.join("\n"))
+    Ok((path, reply.join("\n")))
 }
 
 fn validate(req: &SaveRequest) -> Result<(), String> {
@@ -226,7 +227,7 @@ mod tests {
     #[test]
     fn creates_a_valid_note_and_updates_the_index() {
         let (_tmp, config) = vault();
-        let reply = save(&config, request("Commit rules"), "test").unwrap();
+        let reply = save(&config, request("Commit rules"), "test").unwrap().1;
         assert_eq!(reply, "saved Preferences/commit-rules");
 
         let note = read(&config, "Preferences/commit-rules");
@@ -362,7 +363,7 @@ mod tests {
 
         let mut second = request("Commit locally");
         second.summary = "commit each step locally, no push".into();
-        let reply = save(&config, second, "test").unwrap();
+        let reply = save(&config, second, "test").unwrap().1;
         assert!(
             reply.ends_with(
                 "similar notes, merge if they say the same: [[Preferences/commit-rules]]"
