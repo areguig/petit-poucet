@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="petit-poucet: a trail of white pebbles">
+  <path d="M22 138 C 52 128, 40 96, 72 88 S 118 70, 108 44 S 128 18, 142 20" fill="none" stroke="#8a8578" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round"/>
+  <g fill="#f4f1ea" stroke="#5f5a50" stroke-width="3">
+    <ellipse cx="24" cy="137" rx="9" ry="7" transform="rotate(-12 24 137)"/>
+    <ellipse cx="50" cy="118" rx="10" ry="8" transform="rotate(18 50 118)"/>
+    <ellipse cx="74" cy="89" rx="11" ry="8.5" transform="rotate(-8 74 89)"/>
+    <ellipse cx="106" cy="66" rx="12" ry="9" transform="rotate(14 106 66)"/>
+    <ellipse cx="138" cy="22" rx="14" ry="11" transform="rotate(-10 138 22)"/>
+  </g>
+</svg>

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>petit-poucet</title>
+<meta name="description" content="Curated, shared Markdown memory for coding agents (Claude Code, GitHub Copilot CLI): one small Rust MCP server, a git-backed Obsidian-compatible vault, rules enforced in code.">
+<meta property="og:title" content="petit-poucet">
+<meta property="og:description" content="Leaves pebbles so your coding agents find their way back.">
+<meta property="og:image" content="https://areguig.github.io/petit-poucet/social-preview.png">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #f7f4ec;
+    --surface: #fffdf8;
+    --ink: #2b2822;
+    --muted: #6b6558;
+    --line: #e2dccd;
+    --accent: #2f6b4f;
+    --accent-ink: #ffffff;
+    --code-bg: #1f1d19;
+    --code-ink: #efe9dc;
+    --code-dim: #a39c8c;
+    --pebble: #f4f1ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15140f;
+      --surface: #1d1b16;
+      --ink: #ece6d8;
+      --muted: #a39c8c;
+      --line: #34302a;
+      --accent: #7cc4a0;
+      --accent-ink: #10231a;
+      --code-bg: #0f0e0b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 0 16px 64px; }
+  h1, h2 { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-weight: 600; line-height: 1.2; }
+  h2 { font-size: 1.7rem; margin: 64px 0 16px; }
+  p { margin: 0 0 16px; }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86em; }
+  :not(pre) > code { background: var(--line); padding: 1px 6px; border-radius: 5px; }
+
+  .hero { text-align: center; padding: 72px 0 24px; }
+  .hero img { width: 112px; height: 112px; }
+  .hero h1 { font-size: clamp(2.4rem, 7vw, 3.6rem); margin: 16px 0 8px; }
+  .tagline { font-size: 1.25rem; color: var(--muted); font-style: italic; margin-bottom: 28px; }
+  .tale { max-width: 620px; margin: 0 auto 32px; }
+  .buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .button { display: inline-block; padding: 11px 22px; border-radius: 999px; text-decoration: none; font-weight: 600; border: 1px solid var(--accent); }
+  .button.primary { background: var(--accent); color: var(--accent-ink); }
+
+  pre {
+    background: var(--code-bg); color: var(--code-ink);
+    padding: 18px 20px; border-radius: 12px; overflow-x: auto; margin: 0 0 16px; line-height: 1.55;
+  }
+  pre .dim { color: var(--code-dim); }
+  pre .pebble { color: var(--pebble); font-weight: 600; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px; }
+  .cards > *, .install > * { min-width: 0; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+  .install { display: grid; gap: 8px; }
+  .install h3 { margin: 0 0 8px; font-size: 1rem; }
+  .note { color: var(--muted); font-size: 0.95rem; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 72px; padding-top: 24px; color: var(--muted); font-size: 0.9rem; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <img src="logo.svg" alt="">
+    <h1>petit-poucet</h1>
+    <p class="tagline">Leaves pebbles so your coding agents find their way back.</p>
+    <p class="tale">In the French tale, Le Petit Poucet drops white pebbles along the path to find his way home. petit-poucet keeps a small, curated memory of your rules, decisions and verified facts, so every new session in Claude Code or GitHub Copilot CLI starts where the last one left off.</p>
+    <div class="buttons">
+      <a class="button primary" href="#install">Install</a>
+      <a class="button" href="https://github.com/areguig/petit-poucet">View on GitHub</a>
+    </div>
+  </section>
+
+  <h2>What your agent sees</h2>
+  <p>At the start of every session, your preferences and the current repo's notes, one line each. The agent opens only the notes a task needs.</p>
+<pre><span class="pebble">🪨 petit-poucet · 20 notes loaded (preferences + chargepath-api)</span>
+
+<span class="dim">## Preferences (all repos)</span>
+- [[Preferences/commit-rules]] — commit locally per step, never push
+- [[Preferences/never-read-secrets]] — pipe secret values, never print them
+
+<span class="dim">## Projects / chargepath-api</span>
+- [[Projects/chargepath-api/prod-db-no-postgis]] — spatial queries must work without PostGIS
+
+<span class="dim">Topics (searched on demand): homelab (8), work-mac (3)</span></pre>
+
+  <h2>One memory, your rules</h2>
+  <div class="cards">
+    <div class="card"><h3>Plain Markdown</h3><p>A folder of short notes you can read and edit in Obsidian or any editor. No database, no cloud.</p></div>
+    <div class="card"><h3>Curated, not recorded</h3><p>Agents save a decision, a correction or a verified fact on purpose, with its source. Nothing is scraped from transcripts.</p></div>
+    <div class="card"><h3>Your rules stay yours</h3><p>Rules you stated are never changed or deleted without your confirmation, and your own edits are never overwritten.</p></div>
+    <div class="card"><h3>Every change in git</h3><p>The vault is a git repository with a local commit after each change: inspect or undo any agent edit.</p></div>
+    <div class="card"><h3>Shared across agents</h3><p>Claude Code and Copilot CLI read and write the same memory, per repo, with topics for everything else.</p></div>
+    <div class="card"><h3>One small binary</h3><p>A Rust MCP server plus session hooks, installed as a plugin. No runtime, no service to run.</p></div>
+  </div>
+
+  <h2>How it works</h2>
+<pre>Claude Code ─┐
+Copilot CLI ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
+other MCP   ─┘                                       ├─ Preferences/       every repo
+                                                     ├─ Projects/&lt;repo&gt;/   that repo
+                                                     └─ Topics/&lt;topic&gt;/    searched on demand</pre>
+  <p class="note">Two skills come with it: <code>migrate-memory</code> moves your older file-based agent memory in, and <code>tidy-memory</code> has a subagent propose merges and fixes for you to confirm.</p>
+
+  <h2 id="install">Install</h2>
+  <div class="install">
+    <div>
+      <h3>Claude Code</h3>
+<pre>claude plugin marketplace add https://github.com/areguig/petit-poucet
+claude plugin install petit-poucet@petit-poucet</pre>
+    </div>
+    <div>
+      <h3>GitHub Copilot CLI</h3>
+<pre>copilot plugin marketplace add areguig/petit-poucet
+copilot plugin install petit-poucet@petit-poucet</pre>
+    </div>
+  </div>
+  <p class="note">macOS or Linux, with <code>git</code> and <code>curl</code>. Start a new session: the agent offers to create your vault in <code>~/agent-memory</code>.</p>
+
+  <footer>
+    <p>Apache-2.0 · <a href="https://github.com/areguig/petit-poucet">github.com/areguig/petit-poucet</a> · built with <a href="https://claude.com/claude-code">Claude Code</a></p>
+  </footer>
+</main>
+</body>
+</html>
