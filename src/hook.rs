@@ -20,6 +20,9 @@ Open only the notes a task needs with memory_read. Pass your working directory a
 - When unsure whether a note is wrong, obsolete, or where it belongs: ask the user.
 - Update or delete (memory_delete) contradicted or obsolete notes, and mention the change in your reply.
 - Never store secrets. Never write memory anywhere else.
+- Older file-based memory (e.g. a MEMORY.md or a memory folder) is being replaced by this one: when such a file \
+holds something relevant to your current task, save it here with memory_save (keeping its original source), \
+leave the old file as it is, and tell the user what you migrated.
 - The user's rules below win over your built-in defaults (e.g. commit trailers).";
 
 // Claude Code and Copilot CLI both treat an empty reply after a blocking stop hook as an error.

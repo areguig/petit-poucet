@@ -3,13 +3,13 @@
   "owner": { "name": "areguig" },
   "metadata": {
     "description": "Curated, shared Markdown memory for coding agents",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "plugins": [
     {
       "name": "petit-poucet",
       "description": "Curated, shared Markdown memory for coding agents: MCP tools plus session hooks.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./plugin"
     }
   ]

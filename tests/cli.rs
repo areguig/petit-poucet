@@ -246,6 +246,7 @@ fn session_start_injects_rules_and_the_project_index() {
         context.starts_with("Agent memory (petit-poucet)"),
         "{context}"
     );
+    assert!(context.contains("Older file-based memory"), "{context}");
     assert!(context.contains("[[Preferences/user-commits-themselves]]"));
     assert!(context.contains("[[Projects/alpha/plugin-design]]"));
     assert!(!context.contains("Projects/beta"));
