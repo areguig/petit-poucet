@@ -258,6 +258,14 @@ fn session_start_injects_rules_and_the_project_index() {
     ))
     .unwrap();
     assert_eq!(copilot["additionalContext"].as_str(), Some(context));
+    assert_eq!(
+        claude["systemMessage"],
+        "🪨 petit-poucet · 10 notes loaded (preferences + alpha)"
+    );
+    assert!(
+        copilot.get("systemMessage").is_none(),
+        "Copilot has no user message"
+    );
 }
 
 #[test]
@@ -294,6 +302,11 @@ fn session_start_without_a_vault_offers_to_create_one() {
         .as_str()
         .unwrap();
     assert!(context.contains("has no vault yet"), "{context}");
+    let message: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        message["systemMessage"],
+        "🪨 petit-poucet · no vault yet: the agent will offer to create one"
+    );
     assert!(
         context.contains("`/plugins/petit-poucet/bin/petit-poucet init`"),
         "{context}"
@@ -322,6 +335,27 @@ fn stop_reminds_at_the_third_stop_then_every_tenth() {
         ""
     );
     let _ = fs::remove_file(std::env::temp_dir().join(format!("petit-poucet-stops-{session}")));
+}
+
+#[test]
+fn stop_reminder_shows_a_line_to_claude_code_users_only() {
+    let home = TempDir::new().unwrap();
+    for agent in ["claude", "copilot"] {
+        let session = format!(
+            "{}-{agent}",
+            home.path().file_name().unwrap().to_str().unwrap()
+        );
+        let event = serde_json::json!({"session_id": session}).to_string();
+        let stop = || hook(home.path(), &["stop", "--agent", agent], &event);
+        let _ = (stop(), stop());
+        let third = stop();
+        let reminder: serde_json::Value = serde_json::from_str(&third).unwrap();
+        assert_eq!(reminder["decision"], "block");
+        let expected = (agent == "claude")
+            .then_some("🪨 petit-poucet · checking whether this session is worth remembering");
+        assert_eq!(reminder["systemMessage"].as_str(), expected, "{agent}");
+        let _ = fs::remove_file(std::env::temp_dir().join(format!("petit-poucet-stops-{session}")));
+    }
 }
 
 #[test]
