@@ -5,6 +5,22 @@ use crate::config::Config;
 use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, Vault, write_atomic};
 use crate::{git, index};
 
+pub const GITIGNORE: &str = ".gitignore";
+
+// Obsidian rewrites its workspace files constantly; only the notes belong in the history.
+const IGNORED: &str = ".obsidian/\n.trash/\n.DS_Store\n";
+
+pub fn ensure_repo(root: &Path) -> Result<(), String> {
+    if !git::is_repo(root) {
+        git::init(root)?;
+    }
+    let gitignore = root.join(GITIGNORE);
+    if !gitignore.exists() {
+        write_atomic(&gitignore, IGNORED)?;
+    }
+    Ok(())
+}
+
 pub fn init(path: &Path) -> Result<String, String> {
     for dir in [PREFERENCES, PROJECTS] {
         fs::create_dir_all(path.join(dir)).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -31,13 +47,11 @@ pub fn init(path: &Path) -> Result<String, String> {
         }
     };
 
-    if !git::is_repo(&root) {
-        git::init(&root)?;
-    }
+    ensure_repo(&root)?;
     let vault = Vault::load(&root)?;
     write_atomic(&root.join(INDEX_FILE), &index::generate(&vault))?;
     if config.git_autocommit {
-        git::commit(&root, &[INDEX_FILE], "init: vault")?;
+        git::commit(&root, &[INDEX_FILE, GITIGNORE], "init: vault")?;
     }
     Ok(format!(
         "vault ready at {} ({} notes); config: {}",

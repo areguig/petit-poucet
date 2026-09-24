@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::check::MAX_BODY_CHARS;
 use crate::config::Config;
@@ -34,14 +34,6 @@ pub struct SaveRequest {
     /// Required to update a `feedback` note: set only after the user confirmed the change.
     #[serde(default)]
     pub user_confirmed: bool,
-}
-
-#[derive(Serialize)]
-struct NewIdentity<'a> {
-    #[serde(rename = "type")]
-    kind: &'a str,
-    remotes: Vec<String>,
-    folders: Vec<String>,
 }
 
 pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<String, String> {
@@ -201,15 +193,7 @@ fn target_folder(
     if vault.root.join(&identity_file).exists() {
         return Err(format!("{identity_file} is invalid: fix it first"));
     }
-    let identity = NewIdentity {
-        kind: project::IDENTITY_TYPE,
-        remotes: git::remote_urls(dir)
-            .iter()
-            .map(|u| project::normalise_remote(u))
-            .collect(),
-        folders: vec![key.clone()],
-    };
-    let text = note::render(&identity, "")?;
+    let text = project::render_identity(&git::remote_urls(dir), &key)?;
     Ok((format!("{PROJECTS}/{key}"), Some((identity_file, text))))
 }
 

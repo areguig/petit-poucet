@@ -3,6 +3,8 @@ use std::fmt::Write;
 
 use crate::vault::{PREFERENCES, PROJECTS, Vault};
 
+pub const NO_SUMMARY: &str = "(no summary)";
+
 const HEADER: &str = "---
 type: index
 tags: [agent-memory]
@@ -25,7 +27,7 @@ pub fn for_project(vault: &Vault, project: Option<&str>) -> String {
 fn sections(vault: &Vault, keep: impl Fn(Option<&str>) -> bool) -> String {
     let mut sections: BTreeMap<Option<&str>, Vec<String>> = BTreeMap::new();
     for note in vault.notes.iter().filter(|n| keep(n.project())) {
-        let summary = note.summary().unwrap_or("(no summary)");
+        let summary = note.summary().unwrap_or(NO_SUMMARY);
         sections
             .entry(note.project())
             .or_default()

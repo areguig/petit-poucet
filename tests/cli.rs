@@ -149,3 +149,58 @@ fn init_does_not_commit_when_autocommit_is_off() {
     assert!(vault.join("Index.md").is_file());
     assert_eq!(git_log(&vault), "");
 }
+
+#[test]
+fn migrate_upgrades_a_hand_maintained_vault_once() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(&Path::new(FIXTURE).with_file_name("legacy-vault"), &vault);
+    let migrate = || {
+        petit_poucet(home.path())
+            .env("PETIT_POUCET_VAULT", &vault)
+            .arg("migrate")
+            .output()
+            .unwrap()
+    };
+
+    let first = migrate();
+    assert!(first.status.success());
+    assert_eq!(
+        stdout(&first),
+        format!(
+            "migrated {}: 4 summaries added, 2 links rewritten, 2 projects identified\n\
+             Projects/beta/unlisted.md: no Index line to take a summary from\n",
+            vault.display()
+        )
+    );
+    let read = |path: &str| fs::read_to_string(vault.join(path)).unwrap();
+    assert!(
+        read("Preferences/commit-rules.md")
+            .contains("summary: \"commit locally per step: never push\"")
+    );
+    assert!(
+        read("Preferences/commit-rules.md")
+            .contains("[[Projects/alpha/design|the design]] and [[Preferences/setup]]")
+    );
+    assert!(read("Projects/alpha/design.md").contains("[[Preferences/commit-rules#Details]]"));
+    assert!(read("Projects/alpha/setup.md").contains("Ambiguous [[setup]]"));
+    assert!(read("Projects/alpha/_project.md").contains("type: project-identity"));
+    assert_eq!(read(".gitignore"), ".obsidian/\n.trash/\n.DS_Store\n");
+
+    let check = petit_poucet(home.path())
+        .env("PETIT_POUCET_VAULT", &vault)
+        .arg("check")
+        .output()
+        .unwrap();
+    assert_eq!(
+        stdout(&check),
+        "Projects/alpha/setup.md: error: broken link [[setup]]\n\
+         Projects/beta/unlisted.md: error: missing summary\n\
+         notes: 5, errors: 2, warnings: 0\n"
+    );
+
+    assert!(
+        stdout(&migrate()).contains("0 summaries added, 0 links rewritten, 0 projects identified")
+    );
+    assert_eq!(git_log(&vault), "migrate: vault\n");
+}

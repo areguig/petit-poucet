@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::git;
 
 pub const IDENTITY_FILE: &str = "_project.md";
-pub const IDENTITY_TYPE: &str = "project-identity";
+const IDENTITY_TYPE: &str = "project-identity";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Identity {
@@ -26,6 +26,23 @@ impl Identity {
         }
         Ok(identity)
     }
+}
+
+#[derive(Serialize)]
+struct NewIdentity<'a> {
+    #[serde(rename = "type")]
+    kind: &'a str,
+    remotes: Vec<String>,
+    folders: Vec<&'a str>,
+}
+
+pub fn render_identity(remotes: &[String], folder: &str) -> Result<String, String> {
+    let identity = NewIdentity {
+        kind: IDENTITY_TYPE,
+        remotes: remotes.iter().map(|u| normalise_remote(u)).collect(),
+        folders: vec![folder],
+    };
+    crate::note::render(&identity, "")
 }
 
 pub struct Project {

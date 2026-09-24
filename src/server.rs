@@ -113,7 +113,7 @@ impl Server {
                 format!(
                     "- [[{}]] — {}",
                     n.path,
-                    n.summary().unwrap_or("(no summary)")
+                    n.summary().unwrap_or(index::NO_SUMMARY)
                 )
             })
             .collect();

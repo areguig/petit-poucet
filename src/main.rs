@@ -3,6 +3,7 @@ mod config;
 mod git;
 mod index;
 mod init;
+mod migrate;
 mod note;
 mod project;
 mod save;
@@ -64,7 +65,13 @@ fn main() -> ExitCode {
             true
         }),
         Command::Serve => Config::load().and_then(server::serve).map(|()| true),
-        Command::Hook { .. } | Command::Migrate => Err("not implemented yet".to_string()),
+        Command::Migrate => Config::load()
+            .and_then(|config| migrate::migrate(&config))
+            .map(|report| {
+                println!("{report}");
+                true
+            }),
+        Command::Hook { .. } => Err("not implemented yet".to_string()),
     };
     match result {
         Ok(true) => ExitCode::SUCCESS,

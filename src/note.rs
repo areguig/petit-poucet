@@ -16,7 +16,7 @@ pub enum NoteType {
     Reference,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Frontmatter {
     #[serde(rename = "type")]
     pub note_type: NoteType,
@@ -102,11 +102,20 @@ pub fn parse_yaml<'a, T: Deserialize<'a>>(yaml: &'a str) -> Result<T, String> {
 }
 
 static LINK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]").unwrap());
+    LazyLock::new(|| Regex::new(r"\[\[([^\]|#]+)([#|][^\]]*)?\]\]").unwrap());
 
 pub fn links(body: &str) -> impl Iterator<Item = &str> {
     LINK.captures_iter(body)
         .map(|c| c.get(1).unwrap().as_str().trim())
+}
+
+// Replaces each link target for which `new_target` returns Some, keeping `#heading` and `|alias`.
+pub fn map_links(body: &str, new_target: impl Fn(&str) -> Option<String>) -> String {
+    LINK.replace_all(body, |c: &regex::Captures| match new_target(c[1].trim()) {
+        Some(target) => format!("[[{target}{}]]", c.get(2).map_or("", |m| m.as_str())),
+        None => c[0].to_string(),
+    })
+    .into_owned()
 }
 
 #[cfg(test)]
@@ -158,6 +167,16 @@ mod tests {
         assert_eq!(
             Note::parse("Preferences/commit".into(), "no heading").title(),
             "commit"
+        );
+    }
+
+    #[test]
+    fn maps_links_keeping_heading_and_alias() {
+        let body = "[[a]], [[b|alias]], [[a#Heading]] and [[c]]";
+        let mapped = map_links(body, |t| (t != "c").then(|| format!("Preferences/{t}")));
+        assert_eq!(
+            mapped,
+            "[[Preferences/a]], [[Preferences/b|alias]], [[Preferences/a#Heading]] and [[c]]"
         );
     }
 

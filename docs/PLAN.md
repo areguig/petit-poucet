@@ -163,7 +163,7 @@ Test every milestone on a **copy** of a vault in a temp folder, never on a real 
 5. **M4 — delete and move:** link rewriting, `feedback` protection, orphan and broken-link handling.
 6. **M5 — live reload:** `notify` watching; edits made in Obsidian are seen without restart; concurrent-write guard.
 7. **M6 — packaging:** release workflow, both plugins, launcher, install docs in the README.
-8. **M7 — migration and switch-over:** `migrate` the real `agent_memory_db` vault (add `summary`, quoted: several current Index lines contain `: `, which is invalid unquoted YAML; add `_project.md`, `git init`), install the plugins, remove the Obsidian MCP plugin config (`~/.claude.json` user scope, `~/.copilot/mcp-config.json`, `~/.codex/config.toml`), the Python hook and its hook entries, and shorten the memory section of `~/.claude/CLAUDE.md`, `~/.copilot/copilot-instructions.md`, `~/.codex/AGENTS.md` to "use petit-poucet".
+8. **M7 — migration and switch-over** (brought forward on the owner's request 2026-09-24, before M3–M6; `migrate` built and tested): `migrate` the real `agent_memory_db` vault (add `summary`, quoted: several current Index lines contain `: `, which is invalid unquoted YAML; add `_project.md`, `git init`), install the plugins, remove the Obsidian MCP plugin config (`~/.claude.json` user scope, `~/.copilot/mcp-config.json`, `~/.codex/config.toml`), the Python hook and its hook entries, and shorten the memory section of `~/.claude/CLAUDE.md`, `~/.copilot/copilot-instructions.md`, `~/.codex/AGENTS.md` to "use petit-poucet".
 9. **Later:** Windows, Homebrew, semantic search, open-source release and license.
 
 ## 10. Current setup being replaced (for M7)
