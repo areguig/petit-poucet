@@ -90,7 +90,7 @@ fn run_hook(event: HookEvent, agent: hook::Agent) {
     let input = serde_json::from_reader(std::io::stdin()).unwrap_or(serde_json::Value::Null);
     let output = match event {
         HookEvent::SessionStart => Some(hook::session_start(agent, &input)),
-        HookEvent::Stop => hook::stop(&input),
+        HookEvent::Stop => hook::stop(agent, &input),
     };
     if let Some(output) = output {
         println!("{output}");
