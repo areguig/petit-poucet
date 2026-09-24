@@ -63,13 +63,12 @@ Ideas borrowed from [Basic Memory](https://github.com/basicmachines-co/basic-mem
 
 `main` is what plugin users get: it only ever holds released versions. Work happens on `dev`.
 
-Try a local build before any release: build it, then start an agent with the plugin folder from your checkout and the binary you built (disable the installed plugin first so they don't both load):
+Try a local build before any release: build it, then start an agent with the plugin folder from your checkout. Loaded from a checkout, the plugin runs the binary built there (`target/release/petit-poucet`) instead of downloading a release. Disable the installed plugin first so they don't both load:
 
 ```sh
 cargo build --release
 claude plugin disable petit-poucet@petit-poucet          # or: copilot plugin disable petit-poucet
-PETIT_POUCET_BIN=$PWD/target/release/petit-poucet claude --plugin-dir ./plugin
-PETIT_POUCET_BIN=$PWD/target/release/petit-poucet copilot --plugin-dir ./plugin
+claude --plugin-dir ./plugin                             # or: copilot --plugin-dir ./plugin
 ```
 
 Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot plugin enable …`).

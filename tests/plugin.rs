@@ -48,9 +48,22 @@ fn every_manifest_is_valid_and_pins_the_crate_version() {
     );
 }
 
+// A copy of the plugin folder under `dir`: run from this checkout, the launcher would use its own build.
+fn copy_plugin(dir: &Path) -> std::path::PathBuf {
+    fs::create_dir_all(dir.join("plugin/bin")).unwrap();
+    for file in ["bin/petit-poucet", "release.env"] {
+        fs::copy(
+            Path::new(ROOT).join("plugin").join(file),
+            dir.join("plugin").join(file),
+        )
+        .unwrap();
+    }
+    dir.join("plugin/bin/petit-poucet")
+}
+
 fn launcher(home: &Path, envs: &[(&str, &Path)], args: &[&str]) -> Output {
     let mut cmd = Command::new("sh");
-    cmd.arg(Path::new(ROOT).join("plugin/bin/petit-poucet"))
+    cmd.arg(copy_plugin(home))
         .args(args)
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap())
@@ -89,8 +102,25 @@ fn launcher_runs_a_local_binary_override() {
     fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let output = launcher(home.path(), &[("PETIT_POUCET_BIN", &bin)], &["serve"]);
     assert!(output.status.success());
-    let expected = format!("fake serve from {ROOT}/plugin/bin/petit-poucet\n");
-    assert_eq!(text(&output), expected);
+    assert!(text(&output).starts_with("fake serve from "));
+    assert!(text(&output).ends_with("/plugin/bin/petit-poucet\n"));
+}
+
+#[test]
+fn launcher_runs_the_build_of_the_checkout_it_belongs_to() {
+    let home = TempDir::new().unwrap();
+    let build = home.path().join("target/release/petit-poucet");
+    fs::create_dir_all(build.parent().unwrap()).unwrap();
+    fake_binary(&build);
+    fs::set_permissions(&build, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let output = launcher(home.path(), &[], &["serve"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(text(&output).starts_with("fake serve from "));
+    assert!(!home.path().join(".cache").exists(), "nothing downloaded");
 }
 
 #[test]
