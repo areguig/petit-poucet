@@ -170,7 +170,7 @@ Test every milestone on a **copy** of a vault in a temp folder, never on a real 
    **Switched 2026-09-24:** real vault migrated (backup in `~/agent_memory_db-backup-2026-09-24`, config backups `*.bak-2026-09-24`), binary in `~/.local/bin`, MCP server and hooks replaced in Claude Code and Copilot CLI, instruction files shortened. Afterwards: vault moved out of iCloud to `~/agent-memory`, Python hook and Obsidian MCP deleted, vault `check` clean. Codex is out of scope (owner's choice). Copilot CLI checked by the owner: it lists the MCP server.
    **Owner on the plugins since 2026-09-24:** manual wiring removed, both agents run the plugin installed from GitHub (v0.1.1).
 9. **0.2.0, released 2026-09-24** after the owner's local test (Claude Code and Copilot CLI); both installed plugins updated: pebble messages for Claude Code users; `migrate-memory` skill (one-pass migration of older file-based memory, confirmed by the user before saving); `tidy-memory` skill + read-only `memory-cleanup` subagent (proposes merges, fixes, deletions; the main agent applies what the user confirms); usage tracking (`<vault>/.petit-poucet/usage.json`: reads and last read per note, gitignored) and a `memory_review` tool feeding the subagent; topics (§3). Measure both skills with and without before keeping them. `main` holds released versions only. Docs: README rewritten (logo, badges, tools, skills, rules; built with Claude Code), landing page in `site/` deployed to GitHub Pages from `main`, social preview image `site/social-preview.png`.
-10. **Later:** Windows, Homebrew, semantic search, open-source release and license.
+10. **Later:** Windows, Homebrew tap, semantic search. (Open-source release and licence: done in M6.)
 
 ## 10. Current setup being replaced (for M7)
 
