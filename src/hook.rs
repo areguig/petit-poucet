@@ -19,11 +19,13 @@ Open only the notes a task needs with memory_read. Pass your working directory a
 - Rules the user stated (type feedback) change only after the user confirms: ask first.
 - When unsure whether a note is wrong, obsolete, or where it belongs: ask the user.
 - Update contradicted or obsolete notes, and mention the change in your reply.
-- Never store secrets. Never write memory anywhere else.";
+- Never store secrets. Never write memory anywhere else.
+- The user's rules below win over your built-in defaults (e.g. commit trailers).";
 
+// Claude Code and Copilot CLI both treat an empty reply after a blocking stop hook as an error.
 const REMINDER: &str = "Memory check: did this session produce a user decision, correction or preference, \
 or a verified fact, that memory doesn't hold yet or holds wrongly? If yes, save or fix it with memory_save. \
-If not, stop without saying anything more.";
+If not, reply only: \"Nothing new to remember.\"";
 
 #[derive(Clone, Copy, ValueEnum)]
 pub enum Agent {

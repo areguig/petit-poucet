@@ -108,7 +108,7 @@ One binary, `petit-poucet`, with subcommands:
 
 Config: `~/.config/petit-poucet/config.toml` (`vault` path, `git_autocommit = true`, reminder cadence); `PETIT_POUCET_VAULT` env var overrides the path.
 
-Crates: `rmcp` (official Rust MCP SDK), `clap`, `serde` + `serde-saphyr` for frontmatter **(decided 2026-09-24:** maintained, serde read and write, panic-free on bad input; `serde_yaml`/`serde_yml` are deprecated, the forks idle since 2024**)**, `notify` (file watching), `tracing`. Git: the `git` CLI via `std::process::Command` **(decided 2026-09-24:** respects the user's config, hooks and signing, no dependency, simple musl builds; `gix` not needed**)**. Each crate is added in the milestone that first uses it.
+Crates: `rmcp` (official Rust MCP SDK), `clap`, `serde` + `serde-saphyr` for frontmatter **(decided 2026-09-24:** maintained, serde read and write, panic-free on bad input; `serde_yaml`/`serde_yml` are deprecated, the forks idle since 2024**)**, `tracing`. Git: the `git` CLI via `std::process::Command` **(decided 2026-09-24:** respects the user's config, hooks and signing, no dependency, simple musl builds; `gix` not needed**)**. Each crate is added in the milestone that first uses it.
 
 ### Writes
 
@@ -131,7 +131,7 @@ Keep descriptions short and responses terse (plain text, no tips, no suggestions
 
 ## 6. Search and indexing
 
-No SQLite in v1. A personal vault is tens to a few hundred short notes: load them all into memory at startup and keep them fresh with `notify`. Searching in memory takes milliseconds and there is no second copy to go stale when the user edits in Obsidian or iCloud syncs.
+No SQLite in v1. A personal vault is tens to a few hundred short notes: every tool call re-reads them from disk (≈10 ms for 300 notes), so edits made in Obsidian are always seen and there is no second copy to go stale. **(decided 2026-09-24:** no in-memory copy and no `notify` watcher until a vault gets slow**)**
 
 Search sits behind one trait. If it gets slow or poor (thousands of notes), add `tantivy` or SQLite FTS5 as a cache rebuilt from the files, never as the source of truth. Embeddings (semantic search) are an optional later feature behind the same tool.
 
@@ -161,7 +161,7 @@ Test every milestone on a **copy** of a vault in a temp folder, never on a real 
 3. **M2 — MCP server:** `serve` with `memory_index`, `memory_read`, `memory_save`, `memory_search`; atomic writes; git auto-commit. Try it from Claude Code with `claude mcp add` on a vault copy. **Built and tested 2026-09-24** (unit tests + an end-to-end MCP session over stdio); the Claude Code trial is still to do. The server re-reads the vault on every call (≈10 ms for 300 notes) instead of keeping it in memory.
 4. **M3 — hooks:** `hook session-start` and `hook stop` for both agents; wire them by hand in Claude Code and Copilot CLI settings and check a real session. **Built and tested 2026-09-24** (reminder cadence is a constant for now); wired during the M7 switch-over.
 5. **M4 — delete and move:** link rewriting, `feedback` protection, orphan and broken-link handling.
-6. **M5 — live reload:** `notify` watching; edits made in Obsidian are seen without restart; concurrent-write guard.
+6. **M5 — concurrent-write guard:** a save refuses to overwrite a note changed on disk since the agent read it. (Live reload needs no watcher: the server re-reads the vault on every call.)
 7. **M6 — packaging:** release workflow, both plugins, launcher, install docs in the README.
 8. **M7 — migration and switch-over** (brought forward on the owner's request 2026-09-24, before M3–M6; `migrate` built and tested): `migrate` the real `agent_memory_db` vault (add `summary`, quoted: several current Index lines contain `: `, which is invalid unquoted YAML; add `_project.md`, `git init`), install the plugins, remove the Obsidian MCP plugin config (`~/.claude.json` user scope, `~/.copilot/mcp-config.json`, `~/.codex/config.toml`), the Python hook and its hook entries, and shorten the memory section of `~/.claude/CLAUDE.md`, `~/.copilot/copilot-instructions.md`, `~/.codex/AGENTS.md` to "use petit-poucet".
    **Switched 2026-09-24:** real vault migrated (backup in `~/agent_memory_db-backup-2026-09-24`, config backups `*.bak-2026-09-24`), binary in `~/.local/bin`, MCP server and hooks replaced in Claude Code and Copilot CLI, instruction files shortened. Afterwards: vault moved out of iCloud to `~/agent-memory`, Python hook and Obsidian MCP deleted, vault `check` clean. Codex is out of scope (owner's choice). Copilot CLI checked by the owner: it lists the MCP server.
