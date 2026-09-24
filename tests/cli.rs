@@ -1,0 +1,191 @@
+use std::fs;
+use std::path::Path;
+use std::process::Output;
+
+use assert_cmd::Command;
+use tempfile::TempDir;
+
+const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/vault");
+
+// A fake HOME keeps the real config untouched; git runs without the user's global config.
+fn petit_poucet(home: &Path) -> Command {
+    let mut cmd = Command::cargo_bin("petit-poucet").unwrap();
+    cmd.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap())
+        .env("HOME", home)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com");
+    cmd
+}
+
+fn stdout(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn git_log(vault: &Path) -> String {
+    let out = std::process::Command::new("git")
+        .args(["-C", vault.to_str().unwrap(), "log", "--format=%s"])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    for entry in walkdir::WalkDir::new(from) {
+        let entry = entry.unwrap();
+        let target = to.join(entry.path().strip_prefix(from).unwrap());
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(&target).unwrap();
+        } else {
+            fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
+#[test]
+fn check_reports_every_bad_note_of_the_fixture() {
+    let home = TempDir::new().unwrap();
+    let output = petit_poucet(home.path())
+        .env("PETIT_POUCET_VAULT", FIXTURE)
+        .arg("check")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert_eq!(
+        stdout(&output),
+        "\
+Index.md: error: does not list [[Projects/beta/too-long]]
+Index.md: error: lists missing note [[Preferences/deleted-note]]
+Preferences/bad-type.md: error: frontmatter: line 1 column 7: unknown variant `opinion`, expected one of user, feedback, project, reference
+Preferences/no-summary.md: error: missing summary
+Preferences/wrong-scope.md: error: scope is `alpha`, expected `all repos`
+Projects/alpha/_project.md: error: remote github.com/example/alpha is claimed by projects alpha, delta
+Projects/alpha/broken-link.md: error: broken link [[Projects/alpha/nowhere]]
+Projects/alpha/missing-tag.md: error: tags must include `agent-memory`
+Projects/alpha/no-why.md: error: missing **Why:** line
+Projects/beta/bad-dates.md: error: updated is before created
+Projects/beta/bad-yaml.md: error: frontmatter: line 3 column 10: expected string scalar
+Projects/beta/no-frontmatter.md: error: frontmatter: no frontmatter
+Projects/beta/secret.md: error: looks like a secret (AWS access key)
+Projects/beta/too-long.md: warning: longer than 1500 characters: one short fact per note
+Projects/delta/_project.md: error: remote github.com/example/alpha is claimed by projects alpha, delta
+Projects/gamma/_project.md: error: missing
+scratch.md: error: not in Preferences/ or Projects/<project>/
+notes: 18, errors: 16, warnings: 1
+"
+    );
+}
+
+#[test]
+fn check_without_a_configured_vault_says_how_to_create_one() {
+    let home = TempDir::new().unwrap();
+    let output = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("run `petit-poucet init <path>`"));
+}
+
+#[test]
+fn init_creates_a_valid_vault_a_config_and_a_commit() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+
+    assert!(vault.join("Preferences").is_dir() && vault.join("Projects").is_dir());
+    let config = fs::read_to_string(home.path().join(".config/petit-poucet/config.toml")).unwrap();
+    let vault = vault.canonicalize().unwrap();
+    assert!(
+        config.contains(&format!("vault = \"{}\"", vault.display())),
+        "{config}"
+    );
+    assert!(config.contains("git_autocommit = true"), "{config}");
+    assert_eq!(git_log(&vault), "init: vault\n");
+
+    let output = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(stdout(&output), "notes: 0, errors: 0, warnings: 0\n");
+}
+
+#[test]
+fn init_on_an_existing_vault_regenerates_the_index_and_keeps_the_notes() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    let note = vault.join("Preferences/user-commits-themselves.md");
+    let before = fs::read_to_string(&note).unwrap();
+
+    for _ in 0..2 {
+        petit_poucet(home.path())
+            .args(["init", vault.to_str().unwrap()])
+            .assert()
+            .success();
+    }
+
+    assert_eq!(fs::read_to_string(&note).unwrap(), before);
+    let index = fs::read_to_string(vault.join("Index.md")).unwrap();
+    assert!(index.contains("- [[Projects/beta/too-long]] — several facts in one note"));
+    assert!(!index.contains("deleted-note"));
+    assert_eq!(
+        git_log(&vault),
+        "init: vault\n",
+        "a second init has nothing to commit"
+    );
+}
+
+#[test]
+fn init_refuses_to_switch_the_configured_vault() {
+    let home = TempDir::new().unwrap();
+    let init = |name: &str| {
+        petit_poucet(home.path())
+            .args(["init", home.path().join(name).to_str().unwrap()])
+            .output()
+            .unwrap()
+    };
+    assert!(init("first").status.success());
+    let second = init("second");
+    assert!(!second.status.success());
+    assert!(String::from_utf8_lossy(&second.stderr).contains("already points to"));
+}
+
+#[test]
+fn env_var_overrides_the_configured_vault() {
+    let home = TempDir::new().unwrap();
+    petit_poucet(home.path())
+        .args(["init", home.path().join("configured").to_str().unwrap()])
+        .assert()
+        .success();
+    let output = petit_poucet(home.path())
+        .env("PETIT_POUCET_VAULT", FIXTURE)
+        .arg("check")
+        .output()
+        .unwrap();
+    assert!(stdout(&output).ends_with("notes: 18, errors: 16, warnings: 1\n"));
+}
+
+#[test]
+fn init_does_not_commit_when_autocommit_is_off() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    fs::create_dir(&vault).unwrap();
+    let config_dir = home.path().join(".config/petit-poucet");
+    fs::create_dir_all(&config_dir).unwrap();
+    let vault = vault.canonicalize().unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        format!("vault = \"{}\"\ngit_autocommit = false\n", vault.display()),
+    )
+    .unwrap();
+
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    assert!(vault.join("Index.md").is_file());
+    assert_eq!(git_log(&vault), "");
+}

@@ -1,7 +1,20 @@
+mod check;
+mod config;
+mod git;
+mod index;
+mod init;
+mod note;
+mod project;
+mod secrets;
+mod vault;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
+
+use crate::config::Config;
+use crate::vault::Vault;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -41,16 +54,42 @@ enum Agent {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let name = match cli.command {
-        Command::Serve => "serve",
-        Command::Hook { .. } => "hook",
-        Command::Check => "check",
-        Command::Init { .. } => "init",
-        Command::Migrate => "migrate",
+    let result = match Cli::parse().command {
+        Command::Check => run_check(),
+        Command::Init { path } => init::init(&path).map(|msg| {
+            println!("{msg}");
+            true
+        }),
+        Command::Serve | Command::Hook { .. } | Command::Migrate => {
+            Err("not implemented yet".to_string())
+        }
     };
-    eprintln!("{name}: not implemented yet");
-    ExitCode::FAILURE
+    match result {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
+        Err(e) => {
+            eprintln!("petit-poucet: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_check() -> Result<bool, String> {
+    let vault = Vault::load(&Config::load()?.vault)?;
+    let issues = check::check(&vault);
+    for issue in &issues {
+        println!("{issue}");
+    }
+    let errors = issues
+        .iter()
+        .filter(|i| i.level == check::Level::Error)
+        .count();
+    println!(
+        "notes: {}, errors: {errors}, warnings: {}",
+        vault.notes.len(),
+        issues.len() - errors
+    );
+    Ok(errors == 0)
 }
 
 #[cfg(test)]
