@@ -8,17 +8,29 @@ use crate::{git, index};
 pub const GITIGNORE: &str = ".gitignore";
 
 // Obsidian rewrites its workspace files constantly; only the notes belong in the history.
-const IGNORED: &str = ".obsidian/\n.trash/\n.DS_Store\n";
+const IGNORED: [&str; 4] = [".obsidian/", ".trash/", ".DS_Store", ".petit-poucet/"];
 
 pub fn ensure_repo(root: &Path) -> Result<(), String> {
     if !git::is_repo(root) {
         git::init(root)?;
     }
     let gitignore = root.join(GITIGNORE);
-    if !gitignore.exists() {
-        write_atomic(&gitignore, IGNORED)?;
+    let mut text = fs::read_to_string(&gitignore).unwrap_or_default();
+    let missing: Vec<&str> = IGNORED
+        .into_iter()
+        .filter(|entry| !text.lines().any(|line| line == *entry))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
     }
-    Ok(())
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    for entry in missing {
+        text.push_str(entry);
+        text.push('\n');
+    }
+    write_atomic(&gitignore, &text)
 }
 
 const DEFAULT_VAULT: &str = "agent-memory";
@@ -67,4 +79,22 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
         vault.notes.len(),
         config_path.display()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_repo_adds_only_the_missing_ignore_lines() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(GITIGNORE), "custom\n.obsidian/").unwrap();
+        ensure_repo(tmp.path()).unwrap();
+        ensure_repo(tmp.path()).unwrap();
+        assert_eq!(
+            fs::read_to_string(tmp.path().join(GITIGNORE)).unwrap(),
+            "custom\n.obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n"
+        );
+        assert!(git::is_repo(tmp.path()));
+    }
 }

@@ -16,6 +16,17 @@ pub enum NoteType {
     Reference,
 }
 
+impl NoteType {
+    pub fn name(self) -> &'static str {
+        match self {
+            NoteType::User => "user",
+            NoteType::Feedback => "feedback",
+            NoteType::Project => "project",
+            NoteType::Reference => "reference",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Frontmatter {
     #[serde(rename = "type")]

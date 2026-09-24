@@ -146,3 +146,60 @@ fn launcher_refuses_a_binary_with_a_wrong_checksum() {
     let cache = home.path().join(".cache/petit-poucet");
     assert_eq!(fs::read_dir(cache).unwrap().count(), 0, "nothing cached");
 }
+
+#[derive(serde::Deserialize)]
+struct Frontmatter {
+    name: String,
+    description: String,
+}
+
+// Copilot silently ignores a skill or agent whose frontmatter is invalid YAML.
+fn frontmatter_and_body(path: &str) -> (Frontmatter, String) {
+    let text = fs::read_to_string(Path::new(ROOT).join(path)).unwrap();
+    let (yaml, body) = text
+        .strip_prefix("---\n")
+        .and_then(|rest| rest.split_once("\n---\n"))
+        .unwrap_or_else(|| panic!("{path}: no frontmatter"));
+    let frontmatter: Frontmatter =
+        serde_saphyr::from_str(yaml).unwrap_or_else(|e| panic!("{path}: {e}"));
+    (frontmatter, body.trim().to_string())
+}
+
+#[test]
+fn skills_and_agents_have_valid_frontmatter() {
+    for (path, name) in [
+        ("plugin/skills/migrate-memory/SKILL.md", "migrate-memory"),
+        ("plugin/skills/tidy-memory/SKILL.md", "tidy-memory"),
+        ("plugin/agents/memory-cleanup.md", "memory-cleanup"),
+        (
+            "plugin/copilot/agents/memory-cleanup.agent.md",
+            "memory-cleanup",
+        ),
+    ] {
+        let (frontmatter, body) = frontmatter_and_body(path);
+        assert_eq!(frontmatter.name, name, "{path}");
+        assert!(
+            !frontmatter.description.is_empty() && !body.is_empty(),
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn both_agents_get_the_same_cleanup_instructions() {
+    let (_, claude) = frontmatter_and_body("plugin/agents/memory-cleanup.md");
+    let (_, copilot) = frontmatter_and_body("plugin/copilot/agents/memory-cleanup.agent.md");
+    assert_eq!(claude, copilot);
+}
+
+#[test]
+fn copilot_manifest_points_to_existing_files() {
+    let manifest = json("plugin/plugin.json");
+    for key in ["mcpServers", "hooks", "agents", "skills"] {
+        let path = manifest[key].as_str().unwrap();
+        assert!(
+            Path::new(ROOT).join("plugin").join(path).exists(),
+            "{key}: {path}"
+        );
+    }
+}

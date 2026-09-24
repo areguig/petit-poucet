@@ -59,10 +59,27 @@ The vault is a plain folder of Markdown notes, so any editor works. For [Obsidia
 
 Ideas borrowed from [Basic Memory](https://github.com/basicmachines-co/basic-memory), [IWE](https://github.com/iwe-org/iwe) and [okf-agent-memory](https://github.com/okf-memory/okf-agent-memory).
 
+## Developing
+
+`main` is what plugin users get: it only ever holds released versions. Work happens on `dev`.
+
+Try a local build before any release: build it, then start an agent with the plugin folder from your checkout and the binary you built (disable the installed plugin first so they don't both load):
+
+```sh
+cargo build --release
+claude plugin disable petit-poucet@petit-poucet          # or: copilot plugin disable petit-poucet
+PETIT_POUCET_BIN=$PWD/target/release/petit-poucet claude --plugin-dir ./plugin
+PETIT_POUCET_BIN=$PWD/target/release/petit-poucet copilot --plugin-dir ./plugin
+```
+
+Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot plugin enable …`).
+
 ## Releasing
 
-1. Set the new version in `Cargo.toml`, `plugin/release.env`, both `plugin.json` files and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
-2. Commit, tag `vX.Y.Z` and push the tag: the release workflow builds the four binaries and publishes them with their checksums.
+Only after the change was tried locally:
+
+1. On `dev`, set the new version in `Cargo.toml`, `plugin/release.env`, both `plugin.json` files and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
+2. Merge `dev` into `main`, tag `vX.Y.Z` on `main` and push both: the release workflow builds the four binaries and publishes them with their checksums.
 
 ## License
 

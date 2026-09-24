@@ -15,7 +15,7 @@ use crate::guard::ReadLog;
 use crate::move_note::{self, MoveRequest};
 use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
-use crate::{change, index, project, search};
+use crate::{change, index, project, review, search, usage};
 
 pub struct Server {
     config: Config,
@@ -86,7 +86,17 @@ impl Server {
         let text = fs::read_to_string(vault.root.join(format!("{}.md", note.path)))
             .map_err(|e| e.to_string())?;
         self.reads.record(&note.path, &text);
+        if let Err(e) = usage::record_read(&vault.root, &note.path, jiff::Zoned::now().date()) {
+            eprintln!("petit-poucet: usage not recorded: {e}");
+        }
         Ok(text)
+    }
+
+    #[tool(
+        description = "Every note in one line (type, dates, reads, summary) plus the vault's check findings, for a memory cleanup review. Only for the memory-cleanup agent."
+    )]
+    fn memory_review(&self) -> Result<String, String> {
+        review::review(&self.config)
     }
 
     #[tool(
@@ -116,9 +126,10 @@ impl Server {
     ) -> Result<String, String> {
         let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
         self.reads.check(&self.config.vault, &req.path)?;
-        let path = req.path.clone();
+        let path = req.path.trim_end_matches(".md").to_string();
         let reply = delete::delete(&self.config, req, &agent_name(&client))?;
         self.reads.forget(&path);
+        usage::relocate(&self.config.vault, &path, None)?;
         Ok(reply)
     }
 
@@ -129,9 +140,11 @@ impl Server {
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
         let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
-        let path = req.path.clone();
+        let path = req.path.trim_end_matches(".md").to_string();
+        let new_path = req.new_path.trim_end_matches(".md").to_string();
         let reply = move_note::move_note(&self.config, req, &agent_name(&client))?;
         self.reads.forget(&path);
+        usage::relocate(&self.config.vault, &path, Some(&new_path))?;
         Ok(reply)
     }
 

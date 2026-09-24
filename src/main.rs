@@ -11,10 +11,12 @@ mod migrate;
 mod move_note;
 mod note;
 mod project;
+mod review;
 mod save;
 mod search;
 mod secrets;
 mod server;
+mod usage;
 mod vault;
 
 use std::path::PathBuf;

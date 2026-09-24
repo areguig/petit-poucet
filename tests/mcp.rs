@@ -88,6 +88,7 @@ fn an_agent_saves_finds_and_reads_a_note() {
             "memory_index",
             "memory_move",
             "memory_read",
+            "memory_review",
             "memory_save",
             "memory_search"
         ]
@@ -126,6 +127,12 @@ fn an_agent_saves_finds_and_reads_a_note() {
     assert!(
         note.contains("**Why:** the user said so on 2026-09-24"),
         "{note}"
+    );
+    let (_, review) = client.call("memory_review", json!({}));
+    assert!(
+        review.contains("- Preferences/commit-rules | feedback | ")
+            && review.contains(" | 1 reads, last "),
+        "{review}"
     );
     let (is_error, _) = client.call("memory_read", json!({"path": "../../etc/passwd"}));
     assert!(is_error);
