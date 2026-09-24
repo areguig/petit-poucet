@@ -108,7 +108,7 @@ One binary, `petit-poucet`, with subcommands:
 
 Config: `~/.config/petit-poucet/config.toml` (`vault` path, `git_autocommit = true`, reminder cadence); `PETIT_POUCET_VAULT` env var overrides the path.
 
-Crates to evaluate at M0: `rmcp` (official Rust MCP SDK), `clap`, `serde` + a maintained YAML crate (`serde_yaml` is deprecated), `notify` (file watching), `tracing`. Git: shelling out to the `git` CLI is simplest; `gix` only if needed.
+Crates: `rmcp` (official Rust MCP SDK), `clap`, `serde` + `serde-saphyr` for frontmatter **(decided 2026-09-24:** maintained, serde read and write, panic-free on bad input; `serde_yaml`/`serde_yml` are deprecated, the forks idle since 2024**)**, `notify` (file watching), `tracing`. Git: the `git` CLI via `std::process::Command` **(decided 2026-09-24:** respects the user's config, hooks and signing, no dependency, simple musl builds; `gix` not needed**)**. Each crate is added in the milestone that first uses it.
 
 ### Writes
 
@@ -156,7 +156,7 @@ Replace today's `~/.config/agent-memory/memory-hook.py` (a working prototype wor
 
 Test every milestone on a **copy** of a vault in a temp folder, never on a real vault, until M7.
 
-1. **M0 — scaffold:** cargo project, CI (fmt, clippy, tests), crate choices from §4, license choice deferred.
+1. **M0 — scaffold:** cargo project, CI (fmt, clippy, tests), crate choices from §4, license choice deferred. **Done 2026-09-24.**
 2. **M1 — vault model:** parse and validate notes (§3), project identity, Index generation, `check`, `init`. Fixture vault in `tests/` shaped like the real one (Preferences, several projects, a bad note of each kind).
 3. **M2 — MCP server:** `serve` with `memory_index`, `memory_read`, `memory_save`, `memory_search`; atomic writes; git auto-commit. Try it from Claude Code with `claude mcp add` on a vault copy.
 4. **M3 — hooks:** `hook session-start` and `hook stop` for both agents; wire them by hand in Claude Code and Copilot CLI settings and check a real session.
@@ -183,7 +183,7 @@ Borrow ideas, not code (licences differ; Basic Memory is AGPL).
 
 ## 12. Open questions
 
-1. YAML crate choice; `git` CLI vs `gix`.
+1. ~~YAML crate choice; `git` CLI vs `gix`.~~ Decided: `serde-saphyr`, `git` CLI (§4).
 2. `_project.md` format for project identity, or project identity stored elsewhere.
 3. Should `memory_save` refuse near-duplicates (search before write, like okf) or only warn?
 4. Can Copilot CLI plugins ship hooks?
