@@ -4,6 +4,8 @@ use jiff::civil::Date;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use crate::vault::{PROJECTS, TOPICS};
+
 pub const REQUIRED_TAG: &str = "agent-memory";
 pub const ALL_REPOS: &str = "all repos";
 
@@ -61,8 +63,8 @@ impl Note {
         }
     }
 
-    pub fn project(&self) -> Option<&str> {
-        project_of(&self.path)
+    pub fn place(&self) -> Place<'_> {
+        Place::of(&self.path)
     }
 
     pub fn title(&self) -> &str {
@@ -79,10 +81,28 @@ impl Note {
     }
 }
 
-pub fn project_of(path: &str) -> Option<&str> {
-    match path.split('/').collect::<Vec<_>>()[..] {
-        [crate::vault::PROJECTS, key, _] => Some(key),
-        _ => None,
+// Where a note lives; its folder decides its scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Place<'a> {
+    Preferences,
+    Project(&'a str),
+    Topic(&'a str),
+}
+
+impl<'a> Place<'a> {
+    pub fn of(path: &'a str) -> Place<'a> {
+        match path.split('/').collect::<Vec<_>>()[..] {
+            [PROJECTS, key, _] => Place::Project(key),
+            [TOPICS, key, _] => Place::Topic(key),
+            _ => Place::Preferences,
+        }
+    }
+
+    pub fn scope(self) -> &'a str {
+        match self {
+            Place::Preferences => ALL_REPOS,
+            Place::Project(key) | Place::Topic(key) => key,
+        }
     }
 }
 
@@ -196,6 +216,14 @@ mod tests {
             text.contains(&format!("summary: {}\n", fm.summary.as_ref().unwrap())),
             "{text}"
         );
+    }
+
+    #[test]
+    fn a_notes_folder_decides_its_place_and_scope() {
+        assert_eq!(Place::of("Preferences/a"), Place::Preferences);
+        assert_eq!(Place::of("Projects/app/a"), Place::Project("app"));
+        assert_eq!(Place::of("Topics/homelab/a").scope(), "homelab");
+        assert_eq!(Place::Preferences.scope(), ALL_REPOS);
     }
 
     #[test]

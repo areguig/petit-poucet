@@ -34,8 +34,9 @@ Projects/beta/secret.md: error: looks like a secret (AWS access key)
 Projects/beta/too-long.md: warning: longer than 1500 characters: one short fact per note
 Projects/delta/_project.md: error: remote github.com/example/alpha is claimed by projects alpha, delta
 Projects/gamma/_project.md: error: missing
-scratch.md: error: not in Preferences/ or Projects/<project>/
-notes: 18, errors: 16, warnings: 1
+Topics/homelab/wrong-scope.md: error: scope is `all repos`, expected `homelab`
+scratch.md: error: not in Preferences/, Projects/<project>/ or Topics/<topic>/
+notes: 20, errors: 17, warnings: 1
 "
     );
 }
@@ -125,7 +126,7 @@ fn env_var_overrides_the_configured_vault() {
         .arg("check")
         .output()
         .unwrap();
-    assert!(stdout(&output).ends_with("notes: 18, errors: 16, warnings: 1\n"));
+    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 1\n"));
 }
 
 #[test]
@@ -253,6 +254,11 @@ fn session_start_injects_rules_and_the_project_index() {
     assert!(context.contains("[[Preferences/user-commits-themselves]]"));
     assert!(context.contains("[[Projects/alpha/plugin-design]]"));
     assert!(!context.contains("Projects/beta"));
+    assert!(!context.contains("[[Topics/"), "topic notes are not loaded");
+    assert!(
+        context.ends_with("memory_index with `topic` lists one): homelab (2)\n"),
+        "{context}"
+    );
 
     let copilot: serde_json::Value = serde_json::from_str(&hook(
         home.path(),

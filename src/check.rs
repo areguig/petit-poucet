@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
 
-use crate::note::{self, ALL_REPOS, REQUIRED_TAG};
+use crate::note::{self, REQUIRED_TAG};
 use crate::project::IDENTITY_FILE;
-use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, Vault};
+use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, TOPICS, Vault};
 use crate::{index, secrets};
 
 // A note is one short fact; past this the body is probably several facts or history.
@@ -57,7 +57,7 @@ pub fn check(vault: &Vault) -> Vec<Issue> {
                     Some(s) if s.contains('\n') => error("summary must be one line".into()),
                     _ => {}
                 }
-                let expected_scope = note.project().unwrap_or(ALL_REPOS);
+                let expected_scope = note.place().scope();
                 if fm.scope != expected_scope {
                     error(format!(
                         "scope is `{}`, expected `{expected_scope}`",
@@ -121,7 +121,7 @@ pub fn check(vault: &Vault) -> Vec<Issue> {
     for file in &vault.stray {
         issues.push(Issue::error(
             file,
-            format!("not in {PREFERENCES}/ or {PROJECTS}/<project>/"),
+            format!("not in {PREFERENCES}/, {PROJECTS}/<project>/ or {TOPICS}/<topic>/"),
         ));
     }
 

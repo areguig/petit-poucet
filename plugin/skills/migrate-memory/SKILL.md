@@ -14,7 +14,7 @@ description: "Move an agent's older file-based memory (MEMORY.md, memory folders
 2. **Sort what they hold.** Memory is a preference, a rule, a decision or a verified fact about the user or a project. Build and test commands, repo documentation and agent setup (tool or MCP configuration) are not memory: leave them where they are.
 3. **Prepare one note per fact.** Search first (`memory_search`): skip what memory already holds, or plan an update when the old text is more precise. For each new note choose:
    - `type`: `feedback` for rules the user stated, else `user`, `project` or `reference`;
-   - scope: `all repos`, or the project it is about (pass that repo's folder as `project_dir`, or its key as `scope`);
+   - where it goes: `all repos` for the user's general rules; the project it is about (pass that repo's folder as `project_dir`, or its key as `scope`); or a `topic` for knowledge tied to no repo (a homelab, a server, the work machine), split into short notes;
    - `source`: "migrated from <file>", plus the original source and date when the old text gives them.
 4. **Ask before saving.** Show the user the list: new notes, updates, duplicates skipped, items left in place. Let them confirm or correct it.
 5. **Save what they confirmed.** Never edit or delete the old files. At the end, tell the user which files are now fully migrated, so they can remove them themselves.

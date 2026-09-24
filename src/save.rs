@@ -8,7 +8,7 @@ use crate::check::MAX_BODY_CHARS;
 use crate::config::Config;
 use crate::note::{self, ALL_REPOS, Frontmatter, NoteType, REQUIRED_TAG};
 use crate::project::{self, IDENTITY_FILE};
-use crate::vault::{PREFERENCES, PROJECTS, Vault, write_atomic};
+use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
 use crate::{change, git, search, secrets};
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -17,6 +17,8 @@ pub struct SaveRequest {
     pub path: Option<String>,
     #[serde(rename = "type")]
     pub note_type: NoteType,
+    /// A subject tied to no repo, e.g. `homelab` or `work-mac`: the note goes to Topics/<topic>. Overrides scope and project_dir.
+    pub topic: Option<String>,
     /// `all repos`, or a project key; overrides project_dir.
     pub scope: Option<String>,
     /// The agent's working directory, used to find the project.
@@ -68,7 +70,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     }
     let frontmatter = Frontmatter {
         note_type: req.note_type,
-        scope: note::project_of(&path).unwrap_or(ALL_REPOS).to_string(),
+        scope: note::Place::of(&path).scope().to_string(),
         summary: Some(req.summary.trim().to_string()),
         created: created.unwrap_or(today),
         updated: created.map(|_| today),
@@ -90,6 +92,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         write_atomic(&root.join(&identity_file), &text)?;
         changed.push(identity_file);
     }
+    fs::create_dir_all(root.join(&file).parent().unwrap()).map_err(|e| e.to_string())?;
     write_atomic(&root.join(&file), &note::render(&frontmatter, &body)?)?;
 
     let action = if created.is_some() {
@@ -149,6 +152,13 @@ fn target_folder(
     vault: &Vault,
     req: &SaveRequest,
 ) -> Result<(String, Option<(String, String)>), String> {
+    if let Some(topic) = &req.topic {
+        let key = slug::slugify(topic);
+        if key.is_empty() {
+            return Err("topic needs a name".to_string());
+        }
+        return Ok((format!("{TOPICS}/{key}"), None));
+    }
     match req.scope.as_deref() {
         Some(ALL_REPOS) => return Ok((PREFERENCES.to_string(), None)),
         Some(key) if vault.projects.iter().any(|p| p.key == key) => {
@@ -209,6 +219,7 @@ mod tests {
             note_type: NoteType::Feedback,
             scope: Some(ALL_REPOS.into()),
             project_dir: None,
+            topic: None,
             title: title.into(),
             summary: format!("{title} summary"),
             fact: "The fact.".into(),
@@ -369,6 +380,29 @@ mod tests {
                 "similar notes, merge if they say the same: [[Preferences/commit-rules]]"
             ),
             "{reply}"
+        );
+    }
+
+    #[test]
+    fn a_topic_note_goes_to_its_folder_with_the_topic_as_scope() {
+        let (_tmp, config) = vault();
+        let mut req = request("NAS backups");
+        req.note_type = NoteType::Reference;
+        req.topic = Some("Home Lab".into());
+        req.scope = Some("app".into());
+        assert_eq!(
+            save(&config, req, "test").unwrap().1,
+            "saved Topics/home-lab/nas-backups"
+        );
+        let note = read(&config, "Topics/home-lab/nas-backups");
+        assert_eq!(note.frontmatter.unwrap().scope, "home-lab");
+        assert!(crate::check::check(&Vault::load(&config.vault).unwrap()).is_empty());
+
+        let mut nameless = request("x");
+        nameless.topic = Some("  ".into());
+        assert_eq!(
+            save(&config, nameless, "test").unwrap_err(),
+            "topic needs a name"
         );
     }
 }

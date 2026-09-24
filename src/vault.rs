@@ -10,6 +10,7 @@ use crate::project::{IDENTITY_FILE, Identity, Project};
 pub const INDEX_FILE: &str = "Index.md";
 pub const PREFERENCES: &str = "Preferences";
 pub const PROJECTS: &str = "Projects";
+pub const TOPICS: &str = "Topics";
 
 pub struct Vault {
     pub root: PathBuf,
@@ -63,7 +64,7 @@ impl Vault {
             };
             match parts[..] {
                 [INDEX_FILE] | [PROJECTS, _, IDENTITY_FILE] => {}
-                [PREFERENCES, _] | [PROJECTS, _, _] => {
+                [PREFERENCES, _] | [PROJECTS, _, _] | [TOPICS, _, _] => {
                     let note = match read(entry.path()) {
                         Ok(text) => Note::parse(stem, &text),
                         Err(e) => Note {

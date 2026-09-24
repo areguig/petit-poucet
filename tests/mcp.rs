@@ -184,12 +184,41 @@ fn an_agent_saves_finds_and_reads_a_note() {
     );
     assert_eq!(deleted, "deleted Preferences/commit-rules");
 
+    let topic_note = json!({
+        "type": "reference", "topic": "homelab", "title": "NAS backups",
+        "summary": "nightly NAS backups go to the offsite disk", "fact": "Nightly at 02:00.",
+        "source": "the user said so on 2026-09-24", "how_to_apply": "When touching backups.",
+    });
+    assert_eq!(
+        client.call("memory_save", topic_note).1,
+        "saved Topics/homelab/nas-backups"
+    );
+    let (_, found) = client.call(
+        "memory_search",
+        json!({"query": "backups", "project_dir": repo}),
+    );
+    assert_eq!(
+        found,
+        "- [[Topics/homelab/nas-backups]] — nightly NAS backups go to the offsite disk"
+    );
+    let (_, index) = client.call("memory_index", json!({"project_dir": repo}));
+    assert!(
+        index.ends_with("homelab (1)") && !index.contains("[[Topics/"),
+        "{index}"
+    );
+    let (_, topic) = client.call("memory_index", json!({"topic": "homelab"}));
+    assert_eq!(
+        topic,
+        "## Topics / homelab\n- [[Topics/homelab/nas-backups]] — nightly NAS backups go to the offsite disk"
+    );
+
     drop(client);
     assert!(child.wait().unwrap().success());
     let vault = vault.canonicalize().unwrap();
     assert_eq!(
         git_log(&vault),
-        "delete: Preferences/commit-rules (test-agent)\n\
+        "create: Topics/homelab/nas-backups (test-agent)\n\
+         delete: Preferences/commit-rules (test-agent)\n\
          move: Projects/my-repo/deploy-steps -> Projects/my-repo/release (test-agent)\n\
          create: Projects/my-repo/deploy-steps (test-agent)\n\
          create: Preferences/commit-rules (test-agent)\n\

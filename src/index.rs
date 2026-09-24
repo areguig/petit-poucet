@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use crate::vault::{PREFERENCES, PROJECTS, Vault};
+use crate::note::Place;
+use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault};
 
 pub const NO_SUMMARY: &str = "(no summary)";
 
@@ -19,25 +20,50 @@ pub fn generate(vault: &Vault) -> String {
     HEADER.to_string() + &sections(vault, |_| true)
 }
 
-// What an agent needs at session start: the preferences and its own project only.
-pub fn for_project(vault: &Vault, project: Option<&str>) -> String {
-    sections(vault, |key| key.is_none() || key == project)
+pub fn in_session(place: Place, project: Option<&str>) -> bool {
+    place == Place::Preferences || project.is_some_and(|p| place == Place::Project(p))
 }
 
-fn sections(vault: &Vault, keep: impl Fn(Option<&str>) -> bool) -> String {
-    let mut sections: BTreeMap<Option<&str>, Vec<String>> = BTreeMap::new();
-    for note in vault.notes.iter().filter(|n| keep(n.project())) {
+// What an agent needs at session start: the preferences, its own project, and only the names of the topics.
+pub fn for_project(vault: &Vault, project: Option<&str>) -> String {
+    let mut out = sections(vault, |place| in_session(place, project));
+    let mut topics: BTreeMap<&str, usize> = BTreeMap::new();
+    for note in &vault.notes {
+        if let Place::Topic(topic) = note.place() {
+            *topics.entry(topic).or_default() += 1;
+        }
+    }
+    if !topics.is_empty() {
+        let list: Vec<String> = topics.iter().map(|(t, n)| format!("{t} ({n})")).collect();
+        write!(
+            out,
+            "\n{TOPICS} (not loaded: memory_search covers them, memory_index with `topic` lists one): {}\n",
+            list.join(", ")
+        )
+        .unwrap();
+    }
+    out
+}
+
+pub fn for_topic(vault: &Vault, topic: &str) -> String {
+    sections(vault, |place| place == Place::Topic(topic))
+}
+
+fn sections(vault: &Vault, keep: impl Fn(Place) -> bool) -> String {
+    let mut sections: BTreeMap<Place, Vec<String>> = BTreeMap::new();
+    for note in vault.notes.iter().filter(|n| keep(n.place())) {
         let summary = note.summary().unwrap_or(NO_SUMMARY);
         sections
-            .entry(note.project())
+            .entry(note.place())
             .or_default()
             .push(format!("- [[{}]] — {summary}", note.path));
     }
     let mut out = String::new();
-    for (project, lines) in sections {
-        let title = match project {
-            None => format!("{PREFERENCES} (all repos)"),
-            Some(key) => format!("{PROJECTS} / {key}"),
+    for (place, lines) in sections {
+        let title = match place {
+            Place::Preferences => format!("{PREFERENCES} (all repos)"),
+            Place::Project(key) => format!("{PROJECTS} / {key}"),
+            Place::Topic(key) => format!("{TOPICS} / {key}"),
         };
         write!(out, "\n## {title}\n{}\n", lines.join("\n")).unwrap();
     }
@@ -103,5 +129,41 @@ mod tests {
         assert!(view.contains("[[Preferences/p]]") && view.contains("[[Projects/alpha/a]]"));
         assert!(!view.contains("zeta"));
         assert!(!for_project(&vault, None).contains("Projects"));
+        assert!(!view.contains("Topics"), "no topics, no topic line");
+    }
+
+    #[test]
+    fn topics_are_listed_in_full_in_the_file_and_by_name_at_session_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        for path in [
+            "Preferences/p.md",
+            "Topics/homelab/nas.md",
+            "Topics/homelab/vpn.md",
+            "Topics/work-mac/proxy.md",
+        ] {
+            let path = tmp.path().join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "x").unwrap();
+        }
+        let vault = Vault::load(tmp.path()).unwrap();
+        let file = generate(&vault);
+        assert!(
+            file.contains("\n## Topics / homelab\n- [[Topics/homelab/nas]] — (no summary)\n"),
+            "{file}"
+        );
+
+        let session = for_project(&vault, None);
+        assert!(!session.contains("[[Topics/"), "{session}");
+        assert!(
+            session.ends_with(": homelab (2), work-mac (1)\n"),
+            "{session}"
+        );
+
+        let topic = for_topic(&vault, "homelab");
+        assert!(
+            topic.contains("[[Topics/homelab/vpn]]")
+                && !topic.contains("work-mac")
+                && !topic.contains("Preferences")
+        );
     }
 }

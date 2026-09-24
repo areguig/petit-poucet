@@ -24,7 +24,8 @@ Claude Code ─┐
 Copilot CLI ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ vault/ (Markdown + git)
 other MCP   ─┘                                       ├─ Index.md           generated
                                                      ├─ Preferences/       every repo
-                                                     └─ Projects/<repo>/   one repo
+                                                     ├─ Projects/<repo>/   one repo
+                                                     └─ Topics/<topic>/    no repo (homelab, …), searched on demand
 ```
 
 - **Session start:** a hook injects the index of your memory (preferences plus the current repo's notes) into the agent's context.

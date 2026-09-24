@@ -5,8 +5,8 @@ use serde::Deserialize;
 
 use crate::change;
 use crate::config::Config;
-use crate::note::{self, ALL_REPOS};
-use crate::vault::{PREFERENCES, PROJECTS, Vault, write_atomic};
+use crate::note;
+use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MoveRequest {
@@ -29,7 +29,7 @@ pub fn move_note(
     let (old, new) = (note.path.as_str(), req.new_path.trim_end_matches(".md"));
     check_destination(&vault, new)?;
 
-    let scope = note::project_of(new).unwrap_or(ALL_REPOS);
+    let scope = note::Place::of(new).scope();
     let old_file = vault.root.join(format!("{old}.md"));
     let text = match &note.frontmatter {
         Ok(fm) if fm.scope != scope => {
@@ -41,7 +41,9 @@ pub fn move_note(
         }
         _ => fs::read_to_string(&old_file).map_err(|e| e.to_string())?,
     };
-    write_atomic(&vault.root.join(format!("{new}.md")), &text)?;
+    let new_file = vault.root.join(format!("{new}.md"));
+    fs::create_dir_all(new_file.parent().unwrap()).map_err(|e| e.to_string())?;
+    write_atomic(&new_file, &text)?;
     fs::remove_file(&old_file).map_err(|e| e.to_string())?;
     let relinked = change::rewrite_links(&vault, old, |text| {
         note::map_links(text, |target| (target == old).then(|| new.to_string()))
@@ -69,11 +71,12 @@ fn check_destination(vault: &Vault, new: &str) -> Result<(), String> {
     let valid = match new.split('/').collect::<Vec<_>>()[..] {
         [PREFERENCES, name] => valid_name(name),
         [PROJECTS, key, name] => valid_name(name) && known_project(key),
+        [TOPICS, key, name] => valid_name(name) && slug::slugify(key) == key,
         _ => false,
     };
     if !valid {
         return Err(format!(
-            "new_path must be {PREFERENCES}/<name> or {PROJECTS}/<known project>/<name>"
+            "new_path must be {PREFERENCES}/<name>, {PROJECTS}/<known project>/<name> or {TOPICS}/<topic>/<name>"
         ));
     }
     if vault.root.join(format!("{new}.md")).exists() {
@@ -202,10 +205,30 @@ mod tests {
             ("Projects/app/_project", "known project"),
             ("Preferences/../x", "new_path must be"),
             ("Elsewhere/fact", "new_path must be"),
+            ("Topics/Bad Name/fact", "new_path must be"),
         ] {
             let err =
                 move_note(&config, request("Preferences/other", new_path), "test").unwrap_err();
             assert!(err.contains(expected), "{new_path}: {err}");
         }
+    }
+
+    #[test]
+    fn moves_into_a_new_topic() {
+        let (tmp, config) = vault();
+        move_note(
+            &config,
+            request("Preferences/fact", "Topics/homelab/fact"),
+            "test",
+        )
+        .unwrap();
+        let moved = fs::read_to_string(tmp.path().join("Topics/homelab/fact.md")).unwrap();
+        assert_eq!(
+            Note::parse("Topics/homelab/fact".into(), &moved)
+                .frontmatter
+                .unwrap()
+                .scope,
+            "homelab"
+        );
     }
 }

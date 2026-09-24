@@ -13,6 +13,7 @@ use crate::config::Config;
 use crate::delete::{self, DeleteRequest};
 use crate::guard::ReadLog;
 use crate::move_note::{self, MoveRequest};
+use crate::note::Place;
 use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
 use crate::{change, index, project, review, search, usage};
@@ -27,9 +28,11 @@ pub struct Server {
 }
 
 #[derive(Deserialize, JsonSchema)]
-pub struct ProjectDir {
+pub struct IndexRequest {
     /// The agent's working directory, used to find the project.
     project_dir: Option<PathBuf>,
+    /// List this topic's notes instead, e.g. `homelab`.
+    topic: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -67,12 +70,14 @@ fn project_key(vault: &Vault, dir: Option<PathBuf>) -> Option<String> {
 #[tool_router]
 impl Server {
     #[tool(
-        description = "The memory Index: preferences and the current project's notes, one line each."
+        description = "The memory Index: preferences, the current project's notes and the topic names, one line each; with `topic`, that topic's notes."
     )]
-    fn memory_index(&self, Parameters(req): Parameters<ProjectDir>) -> Result<String, String> {
+    fn memory_index(&self, Parameters(req): Parameters<IndexRequest>) -> Result<String, String> {
         let vault = self.vault()?;
-        let project = project_key(&vault, req.project_dir);
-        let view = index::for_project(&vault, project.as_deref());
+        let view = match &req.topic {
+            Some(topic) => index::for_topic(&vault, &slug::slugify(topic)),
+            None => index::for_project(&vault, project_key(&vault, req.project_dir).as_deref()),
+        };
         Ok(match view.trim() {
             "" => "no notes yet".to_string(),
             view => view.to_string(),
@@ -155,15 +160,14 @@ impl Server {
     }
 
     #[tool(
-        description = "Word search over titles, summaries and bodies of the preferences and the current project; best matches first."
+        description = "Word search over titles, summaries and bodies of the preferences, the current project and all topics; best matches first."
     )]
     fn memory_search(&self, Parameters(req): Parameters<SearchRequest>) -> Result<String, String> {
         let vault = self.vault()?;
         let project = project_key(&vault, req.project_dir);
-        let notes = vault
-            .notes
-            .iter()
-            .filter(|n| n.project().is_none() || n.project() == project.as_deref());
+        let notes = vault.notes.iter().filter(|n| {
+            index::in_session(n.place(), project.as_deref()) || matches!(n.place(), Place::Topic(_))
+        });
         let found = search::search(notes, &req.query);
         if found.is_empty() {
             return Ok("no matches".to_string());
