@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, Vault, write_atomic};
@@ -21,7 +21,15 @@ pub fn ensure_repo(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn init(path: &Path) -> Result<String, String> {
+const DEFAULT_VAULT: &str = "agent-memory";
+
+pub fn init(path: Option<PathBuf>) -> Result<String, String> {
+    let path = match path {
+        Some(path) => path,
+        None => std::env::home_dir()
+            .ok_or("cannot find the home folder")?
+            .join(DEFAULT_VAULT),
+    };
     for dir in [PREFERENCES, PROJECTS] {
         fs::create_dir_all(path.join(dir)).map_err(|e| format!("{}: {e}", path.display()))?;
     }
@@ -54,7 +62,7 @@ pub fn init(path: &Path) -> Result<String, String> {
         git::commit(&root, &[INDEX_FILE, GITIGNORE], "init: vault")?;
     }
     Ok(format!(
-        "vault ready at {} ({} notes); config: {}",
+        "vault ready at {} ({} notes)\nto use another folder, change `vault` in {}",
         root.display(),
         vault.notes.len(),
         config_path.display()

@@ -299,3 +299,21 @@ fn stop_reminds_at_the_third_stop_then_every_tenth() {
     );
     let _ = fs::remove_file(std::env::temp_dir().join(format!("petit-poucet-stops-{session}")));
 }
+
+#[test]
+fn init_without_a_path_uses_agent_memory_in_home_and_says_how_to_change_it() {
+    let home = TempDir::new().unwrap();
+    let output = petit_poucet(home.path()).arg("init").output().unwrap();
+    assert!(output.status.success());
+    let vault = home.path().canonicalize().unwrap().join("agent-memory");
+    assert!(vault.join("Index.md").is_file());
+    let config = home.path().join(".config/petit-poucet/config.toml");
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "vault ready at {} (0 notes)\nto use another folder, change `vault` in {}\n",
+            vault.display(),
+            config.display()
+        )
+    );
+}

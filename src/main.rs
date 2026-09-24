@@ -44,8 +44,8 @@ enum Command {
     },
     /// Validate the vault
     Check,
-    /// Create a vault and the config file
-    Init { path: PathBuf },
+    /// Create a vault (default: ~/agent-memory) and the config file
+    Init { path: Option<PathBuf> },
     /// Upgrade an existing vault to the current format
     Migrate,
 }
@@ -59,7 +59,7 @@ enum HookEvent {
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
         Command::Check => run_check(),
-        Command::Init { path } => init::init(&path).map(|msg| {
+        Command::Init { path } => init::init(path).map(|msg| {
             println!("{msg}");
             true
         }),
