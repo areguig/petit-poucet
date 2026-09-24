@@ -8,9 +8,9 @@ description: "Move an agent's older file-based memory (MEMORY.md, memory folders
 1. **Find the sources.** Look for these, where they exist:
    - Claude Code: `~/.claude/projects/*/memory/` (`MEMORY.md` and the files it lists), `~/.claude/CLAUDE.md`, the repo's `CLAUDE.md` and `CLAUDE.local.md`.
    - Copilot: `~/.copilot/copilot-instructions.md`, the repo's `.github/copilot-instructions.md`.
-   - Any `AGENTS.md`, and any file the user names.
+   - The repo's `AGENTS.md`, and any file or folder the user names.
 
-   Tell the user which files you found before going further.
+   Look only there: don't search the whole home folder, and leave other folders alone, even under `~/.config`, because they hold application data, not agent memory. Tell the user which files you found before going further.
 2. **Sort what they hold.** Memory is a preference, a rule, a decision or a verified fact about the user or a project. Build and test commands, repo documentation and agent setup (tool or MCP configuration) are not memory: leave them where they are.
 3. **Prepare one note per fact.** Search first (`memory_search`): skip what memory already holds, or plan an update when the old text is more precise. For each new note choose:
    - `type`: `feedback` for rules the user stated, else `user`, `project` or `reference`;
