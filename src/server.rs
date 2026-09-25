@@ -75,7 +75,7 @@ fn project_key(vault: &Vault, dir: Option<PathBuf>) -> Option<String> {
 #[tool_router]
 impl Server {
     #[tool(
-        description = "The memory rules and Index: preferences, the current project's notes and the topic names, one line each; with `topic`, that topic's notes. Call it at the start of a task when no memory Index is in your context."
+        description = "The memory rules and Index: preferences, the current project's notes and the topic names, one line each; with `topic`, that topic's notes. Call it first in every task (it returns the memory rules and the Index) unless an \"Agent memory (petit-poucet)\" block is already in your context."
     )]
     fn memory_index(&self, Parameters(req): Parameters<IndexRequest>) -> Result<String, String> {
         let vault = self.vault()?;

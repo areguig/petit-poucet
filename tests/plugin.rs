@@ -229,6 +229,7 @@ fn skills_and_agents_have_valid_frontmatter() {
     for (path, name) in [
         ("plugin/skills/migrate-memory/SKILL.md", "migrate-memory"),
         ("plugin/skills/tidy-memory/SKILL.md", "tidy-memory"),
+        ("plugin/skills/memory/SKILL.md", "memory"),
         ("plugin/agents/memory-cleanup.md", "memory-cleanup"),
         (
             "plugin/copilot/agents/memory-cleanup.agent.md",
