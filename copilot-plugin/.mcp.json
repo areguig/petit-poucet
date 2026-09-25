@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "petit-poucet": {
+      "type": "stdio",
+      "command": "sh",
+      "args": [
+        "-c",
+        "launcher=bin/petit-poucet\nroot=\"$1\"\ncase \"$root\" in *'$'* | '') root=\"$PLUGIN_ROOT\" ;; esac\n[ -f \"$root/$launcher\" ] || root=$(find \"$HOME/.copilot/installed-plugins\" -path \"*/petit-poucet/$launcher\" 2>/dev/null | head -n 1 | sed \"s#/$launcher\\$##\")\n[ -f \"$root/$launcher\" ] || { echo 'petit-poucet: cannot locate the plugin directory' >&2; exit 1; }\nexec sh \"$root/$launcher\" serve",
+        "petit-poucet",
+        "${PLUGIN_ROOT}"
+      ],
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}
