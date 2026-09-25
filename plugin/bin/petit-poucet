@@ -6,7 +6,8 @@ set -eu
 log() { printf 'petit-poucet launcher: %s\n' "$*" >&2; }
 fail() { log "$*"; exit 1; }
 
-launcher=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
+# Physical path, so a plugin folder symlinked to a checkout finds that checkout's build.
+launcher=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")
 export PETIT_POUCET_LAUNCHER="$launcher"
 
 root=$(dirname -- "$(dirname -- "$launcher")")

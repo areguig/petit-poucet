@@ -124,6 +124,35 @@ fn launcher_runs_the_build_of_the_checkout_it_belongs_to() {
 }
 
 #[test]
+fn a_plugin_folder_symlinked_to_a_checkout_runs_its_build() {
+    let home = TempDir::new().unwrap();
+    let checkout = home.path().join("checkout");
+    copy_plugin(&checkout);
+    let build = checkout.join("target/release/petit-poucet");
+    fs::create_dir_all(build.parent().unwrap()).unwrap();
+    fake_binary(&build);
+    fs::set_permissions(&build, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let installed = home.path().join("installed-plugins/petit-poucet");
+    fs::create_dir_all(installed.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(checkout.join("plugin"), &installed).unwrap();
+
+    let output = Command::new("sh")
+        .arg(installed.join("bin/petit-poucet"))
+        .arg("serve")
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(
+        text(&output).starts_with("fake serve from "),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!home.path().join(".cache").exists(), "nothing downloaded");
+}
+
+#[test]
 fn launcher_downloads_verifies_and_caches_the_pinned_release() {
     let home = TempDir::new().unwrap();
     let mirror = home.path().join("mirror");
