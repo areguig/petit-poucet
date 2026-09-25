@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Curated, shared Markdown memory for coding agents",
-    "version": "0.2.0"
+    "version": "0.2.1"
   },
   "plugins": [
     {
       "name": "petit-poucet",
       "description": "Curated, shared Markdown memory for coding agents: MCP tools plus session hooks.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "source": "./plugin"
     }
   ]

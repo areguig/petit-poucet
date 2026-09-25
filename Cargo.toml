@@ -1,6 +1,6 @@
 [package]
 name = "petit-poucet"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Curated, shared Markdown memory for coding agents, served over MCP"
 repository = "https://github.com/areguig/petit-poucet"

@@ -1,6 +1,6 @@
 {
   "name": "petit-poucet",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Curated, shared Markdown memory for coding agents: MCP tools plus session hooks.",
   "author": {
     "name": "areguig"
