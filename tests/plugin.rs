@@ -24,8 +24,8 @@ fn every_manifest_is_valid_and_pins_the_crate_version() {
     for path in [
         "plugin/.mcp.json",
         "plugin/hooks/hooks.json",
-        "copilot-plugin/.mcp.json",
-        "copilot-plugin/hooks.json",
+        "plugin/copilot/mcp.json",
+        "plugin/copilot/hooks.json",
     ] {
         json(path);
     }
@@ -33,7 +33,7 @@ fn every_manifest_is_valid_and_pins_the_crate_version() {
         json("plugin/.claude-plugin/plugin.json")["version"],
         VERSION
     );
-    assert_eq!(json("copilot-plugin/plugin.json")["version"], VERSION);
+    assert_eq!(json("plugin/plugin.json")["version"], VERSION);
     let copilot = json(".github/plugin/marketplace.json");
     assert_eq!(copilot["metadata"]["version"], VERSION);
     assert_eq!(copilot["plugins"][0]["version"], VERSION);
@@ -232,7 +232,7 @@ fn skills_and_agents_have_valid_frontmatter() {
         ("plugin/skills/memory/SKILL.md", "memory"),
         ("plugin/agents/memory-cleanup.md", "memory-cleanup"),
         (
-            "copilot-plugin/agents/memory-cleanup.agent.md",
+            "plugin/copilot/agents/memory-cleanup.agent.md",
             "memory-cleanup",
         ),
     ] {
@@ -248,56 +248,29 @@ fn skills_and_agents_have_valid_frontmatter() {
 #[test]
 fn both_agents_get_the_same_cleanup_instructions() {
     let (_, claude) = frontmatter_and_body("plugin/agents/memory-cleanup.md");
-    let (_, copilot) = frontmatter_and_body("copilot-plugin/agents/memory-cleanup.agent.md");
+    let (_, copilot) = frontmatter_and_body("plugin/copilot/agents/memory-cleanup.agent.md");
     assert_eq!(claude, copilot);
 }
 
 #[test]
 fn copilot_manifest_points_to_existing_files() {
-    let manifest = json("copilot-plugin/plugin.json");
+    let manifest = json("plugin/plugin.json");
     for key in ["mcpServers", "hooks", "agents", "skills"] {
         let path = manifest[key].as_str().unwrap();
         assert!(
-            Path::new(ROOT).join("copilot-plugin").join(path).exists(),
+            Path::new(ROOT).join("plugin").join(path).exists(),
             "{key}: {path}"
         );
     }
+    // One folder serves both agents, like each marketplace says.
     assert_eq!(
         json(".github/plugin/marketplace.json")["plugins"][0]["source"],
-        "./copilot-plugin"
+        "./plugin"
     );
-}
-
-// Copilot hosts read a folder holding `.claude-plugin/` as a Claude plugin (Claude hooks, no skills offered).
-#[test]
-fn the_copilot_plugin_has_nothing_claude_specific() {
-    for entry in walkdir::WalkDir::new(Path::new(ROOT).join("copilot-plugin")) {
-        let entry = entry.unwrap();
-        let name = entry.file_name().to_string_lossy();
-        assert!(!name.contains("claude"), "{}", entry.path().display());
-        if entry.file_type().is_file() {
-            let text = fs::read_to_string(entry.path()).unwrap_or_default();
-            assert!(
-                !text.contains("CLAUDE_PLUGIN_ROOT"),
-                "{}",
-                entry.path().display()
-            );
-        }
-    }
-}
-
-#[test]
-fn both_plugins_ship_the_same_launcher_release_and_skills() {
-    for path in [
-        "bin/petit-poucet",
-        "release.env",
-        "skills/memory/SKILL.md",
-        "skills/migrate-memory/SKILL.md",
-        "skills/tidy-memory/SKILL.md",
-    ] {
-        let read = |dir: &str| fs::read(Path::new(ROOT).join(dir).join(path)).unwrap();
-        assert!(read("plugin") == read("copilot-plugin"), "{path} differs");
-    }
+    assert_eq!(
+        json(".claude-plugin/marketplace.json")["plugins"][0]["source"],
+        "./plugin"
+    );
 }
 
 // IntelliJ passes `${PLUGIN_ROOT}` through unexpanded, so the bootstrap finds the installed plugin itself.
@@ -310,7 +283,7 @@ fn copilot_bootstrap_finds_the_installed_plugin_without_plugin_root() {
     let bin = home.path().join("fake-build");
     fake_binary(&bin);
     fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let server = &json("copilot-plugin/.mcp.json")["mcpServers"]["petit-poucet"];
+    let server = &json("plugin/copilot/mcp.json")["mcpServers"]["petit-poucet"];
     assert_eq!(server["command"], "sh");
     let args: Vec<String> = server["args"]
         .as_array()
@@ -346,7 +319,7 @@ fn copilot_hooks_find_the_installed_plugin_with_or_without_plugin_root() {
     let bin = home.path().join("fake-build");
     fake_binary(&bin);
     fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let hooks = json("copilot-plugin/hooks.json");
+    let hooks = json("plugin/copilot/hooks.json");
     for (event, expected) in [
         ("sessionStart", "fake hook session-start"),
         ("agentStop", "fake hook stop"),

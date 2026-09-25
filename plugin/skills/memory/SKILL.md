@@ -1,6 +1,6 @@
 ---
 name: memory
-description: "The user's long-term memory (petit-poucet): the rules they stated, their decisions and verified facts, for this repo and in general. Use at the start of every task, before reading or changing anything, unless an \"Agent memory (petit-poucet)\" block is already in your context; and whenever the user states a rule, a correction or a decision worth keeping."
+description: "The user's long-term memory (petit-poucet): the rules they stated, their decisions and verified facts, for this repo and in general. Use at the start of every task, before reading or changing anything (including questions about this repo's conventions, docs or tooling, where a stored rule may apply), unless an \"Agent memory (petit-poucet)\" block is already in your context; and whenever the user states a rule, a correction or a decision worth keeping."
 ---
 
 # The user's memory

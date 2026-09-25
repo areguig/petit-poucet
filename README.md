@@ -140,14 +140,14 @@ The same binary has a few commands for you (the release binaries are on the [Rel
 
 `main` is what plugin users get: it only ever holds released versions. Work happens on `dev`.
 
-There are two plugin folders on purpose: `plugin/` for Claude Code and `copilot-plugin/` for Copilot, because Copilot hosts treat any folder containing `.claude-plugin/` as a Claude plugin. They share the launcher, `release.env` and the skills (`cargo test` checks the copies match).
+`plugin/` is the one plugin for every client: the launcher, the skills and `release.env` exist once. Claude Code reads `.claude-plugin/plugin.json`; Copilot reads `plugin.json`, which points at its own MCP config, hooks and agent in `copilot/`. Copilot's IDE hosts read the folder as a Claude plugin and use the Claude files.
 
 Try a local build before any release: build it, then start an agent with the plugin folder from your checkout. Loaded from a checkout, the plugin runs the binary built there (`target/release/petit-poucet`) instead of downloading a release. Disable the installed plugin first so they don't both load:
 
 ```sh
 cargo build --release
 claude plugin disable petit-poucet@petit-poucet          # or: copilot plugin disable petit-poucet
-claude --plugin-dir ./plugin                             # or: copilot --plugin-dir ./copilot-plugin
+claude --plugin-dir ./plugin                             # or: copilot --plugin-dir ./plugin
 ```
 
 Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot plugin enable …`).
@@ -156,7 +156,7 @@ Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot 
 
 Only after the change was tried locally:
 
-1. On `dev`, set the new version in `Cargo.toml`, both `release.env` files, `plugin/.claude-plugin/plugin.json`, `copilot-plugin/plugin.json` and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
+1. On `dev`, set the new version in `Cargo.toml`, `plugin/release.env`, `plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
 2. Merge `dev` into `main`, tag `vX.Y.Z` on `main` and push both: the release workflow builds the four binaries and publishes them with their checksums.
 
 ## Acknowledgements
