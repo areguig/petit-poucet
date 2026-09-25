@@ -12,7 +12,7 @@
       "name": "petit-poucet",
       "description": "Curated, shared Markdown memory for coding agents: MCP tools plus session hooks.",
       "version": "0.2.0",
-      "source": "./copilot-plugin"
+      "source": "./plugin"
     }
   ]
 }

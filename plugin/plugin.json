@@ -7,8 +7,8 @@
   },
   "repository": "https://github.com/areguig/petit-poucet",
   "license": "Apache-2.0",
-  "mcpServers": ".mcp.json",
-  "hooks": "hooks.json",
-  "agents": "agents/",
+  "mcpServers": "copilot/mcp.json",
+  "hooks": "copilot/hooks.json",
+  "agents": "copilot/agents/",
   "skills": "skills/"
 }
