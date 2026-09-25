@@ -334,3 +334,44 @@ fn copilot_bootstrap_finds_the_installed_plugin_without_plugin_root() {
         );
     }
 }
+
+// VS Code runs plugin hooks without PLUGIN_ROOT; the Copilot CLI sets it.
+#[test]
+fn copilot_hooks_find_the_installed_plugin_with_or_without_plugin_root() {
+    let home = TempDir::new().unwrap();
+    let installed = home.path().join(".copilot/installed-plugins/petit-poucet");
+    copy_plugin(&installed);
+    let plugin = installed.join("petit-poucet");
+    fs::rename(installed.join("plugin"), &plugin).unwrap();
+    let bin = home.path().join("fake-build");
+    fake_binary(&bin);
+    fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let hooks = json("copilot-plugin/hooks.json");
+    for (event, expected) in [
+        ("sessionStart", "fake hook session-start"),
+        ("agentStop", "fake hook stop"),
+    ] {
+        let command = hooks["hooks"][event][0]["bash"].as_str().unwrap();
+        for plugin_root in [
+            None,
+            Some("${PLUGIN_ROOT}".into()),
+            Some(plugin.display().to_string()),
+        ] {
+            let mut cmd = Command::new("sh");
+            cmd.args(["-c", command])
+                .env_clear()
+                .env("PATH", std::env::var_os("PATH").unwrap())
+                .env("HOME", home.path())
+                .env("PETIT_POUCET_BIN", &bin);
+            if let Some(root) = &plugin_root {
+                cmd.env("PLUGIN_ROOT", root);
+            }
+            let output = cmd.output().unwrap();
+            assert!(
+                text(&output).starts_with(expected),
+                "{event} with PLUGIN_ROOT={plugin_root:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+}
