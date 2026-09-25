@@ -24,8 +24,8 @@ fn every_manifest_is_valid_and_pins_the_crate_version() {
     for path in [
         "plugin/.mcp.json",
         "plugin/hooks/hooks.json",
-        "plugin/mcp.json",
-        "plugin/com.github.copilot/hooks/hooks.json",
+        "plugin/copilot/mcp.json",
+        "plugin/copilot/hooks.json",
     ] {
         json(path);
     }
@@ -231,7 +231,7 @@ fn skills_and_agents_have_valid_frontmatter() {
         ("plugin/skills/tidy-memory/SKILL.md", "tidy-memory"),
         ("plugin/agents/memory-cleanup.md", "memory-cleanup"),
         (
-            "plugin/com.github.copilot/agents/memory-cleanup.agent.md",
+            "plugin/copilot/agents/memory-cleanup.agent.md",
             "memory-cleanup",
         ),
     ] {
@@ -247,58 +247,18 @@ fn skills_and_agents_have_valid_frontmatter() {
 #[test]
 fn both_agents_get_the_same_cleanup_instructions() {
     let (_, claude) = frontmatter_and_body("plugin/agents/memory-cleanup.md");
-    let (_, copilot) =
-        frontmatter_and_body("plugin/com.github.copilot/agents/memory-cleanup.agent.md");
+    let (_, copilot) = frontmatter_and_body("plugin/copilot/agents/memory-cleanup.agent.md");
     assert_eq!(claude, copilot);
 }
 
 #[test]
-fn copilot_hosts_get_a_standard_agent_plugin() {
-    // Without the Agent Plugins schema, Copilot hosts pick the Claude adapter because of `.claude-plugin/`.
-    assert_eq!(
-        json("plugin/plugin.json")["$schema"],
-        "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-    );
-    let mcp = json("plugin/mcp.json");
-    assert_eq!(
-        mcp["$schema"],
-        "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
-    );
-    let server = mcp["mcpServers"]["petit-poucet"].as_object().unwrap();
-    for key in server.keys() {
+fn copilot_manifest_points_to_existing_files() {
+    let manifest = json("plugin/plugin.json");
+    for key in ["mcpServers", "hooks", "agents", "skills"] {
+        let path = manifest[key].as_str().unwrap();
         assert!(
-            ["type", "command", "args", "env", "cwd"].contains(&key.as_str()),
-            "{key}"
+            Path::new(ROOT).join("plugin").join(path).exists(),
+            "{key}: {path}"
         );
     }
-    for path in [
-        "skills",
-        "com.github.copilot/hooks/hooks.json",
-        "com.github.copilot/agents",
-    ] {
-        assert!(Path::new(ROOT).join("plugin").join(path).exists(), "{path}");
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct Rule {
-    #[serde(rename = "applyTo")]
-    apply_to: String,
-    description: String,
-}
-
-#[test]
-fn the_memory_rule_applies_everywhere_and_points_to_memory_index() {
-    let text = fs::read_to_string(
-        Path::new(ROOT).join("plugin/com.github.copilot/rules/petit-poucet.instructions.md"),
-    )
-    .unwrap();
-    let (yaml, body) = text
-        .strip_prefix("---\n")
-        .and_then(|rest| rest.split_once("\n---\n"))
-        .unwrap();
-    let rule: Rule = serde_saphyr::from_str(yaml).unwrap();
-    assert_eq!(rule.apply_to, "**");
-    assert!(!rule.description.is_empty());
-    assert!(body.contains("call `memory_index`") && body.contains("project_dir"));
 }

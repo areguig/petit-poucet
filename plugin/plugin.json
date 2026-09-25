@@ -1,5 +1,4 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "petit-poucet",
   "version": "0.2.0",
   "description": "Curated, shared Markdown memory for coding agents: MCP tools plus session hooks.",
@@ -7,5 +6,9 @@
     "name": "areguig"
   },
   "repository": "https://github.com/areguig/petit-poucet",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "mcpServers": "copilot/mcp.json",
+  "hooks": "copilot/hooks.json",
+  "agents": "copilot/agents/",
+  "skills": "skills/"
 }
