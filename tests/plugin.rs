@@ -24,8 +24,8 @@ fn every_manifest_is_valid_and_pins_the_crate_version() {
     for path in [
         "plugin/.mcp.json",
         "plugin/hooks/hooks.json",
-        "plugin/copilot/mcp.json",
-        "plugin/copilot/hooks.json",
+        "copilot-plugin/.mcp.json",
+        "copilot-plugin/hooks.json",
     ] {
         json(path);
     }
@@ -33,7 +33,7 @@ fn every_manifest_is_valid_and_pins_the_crate_version() {
         json("plugin/.claude-plugin/plugin.json")["version"],
         VERSION
     );
-    assert_eq!(json("plugin/plugin.json")["version"], VERSION);
+    assert_eq!(json("copilot-plugin/plugin.json")["version"], VERSION);
     let copilot = json(".github/plugin/marketplace.json");
     assert_eq!(copilot["metadata"]["version"], VERSION);
     assert_eq!(copilot["plugins"][0]["version"], VERSION);
@@ -232,7 +232,7 @@ fn skills_and_agents_have_valid_frontmatter() {
         ("plugin/skills/memory/SKILL.md", "memory"),
         ("plugin/agents/memory-cleanup.md", "memory-cleanup"),
         (
-            "plugin/copilot/agents/memory-cleanup.agent.md",
+            "copilot-plugin/agents/memory-cleanup.agent.md",
             "memory-cleanup",
         ),
     ] {
@@ -248,18 +248,89 @@ fn skills_and_agents_have_valid_frontmatter() {
 #[test]
 fn both_agents_get_the_same_cleanup_instructions() {
     let (_, claude) = frontmatter_and_body("plugin/agents/memory-cleanup.md");
-    let (_, copilot) = frontmatter_and_body("plugin/copilot/agents/memory-cleanup.agent.md");
+    let (_, copilot) = frontmatter_and_body("copilot-plugin/agents/memory-cleanup.agent.md");
     assert_eq!(claude, copilot);
 }
 
 #[test]
 fn copilot_manifest_points_to_existing_files() {
-    let manifest = json("plugin/plugin.json");
+    let manifest = json("copilot-plugin/plugin.json");
     for key in ["mcpServers", "hooks", "agents", "skills"] {
         let path = manifest[key].as_str().unwrap();
         assert!(
-            Path::new(ROOT).join("plugin").join(path).exists(),
+            Path::new(ROOT).join("copilot-plugin").join(path).exists(),
             "{key}: {path}"
+        );
+    }
+    assert_eq!(
+        json(".github/plugin/marketplace.json")["plugins"][0]["source"],
+        "./copilot-plugin"
+    );
+}
+
+// Copilot hosts read a folder holding `.claude-plugin/` as a Claude plugin (Claude hooks, no skills offered).
+#[test]
+fn the_copilot_plugin_has_nothing_claude_specific() {
+    for entry in walkdir::WalkDir::new(Path::new(ROOT).join("copilot-plugin")) {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy();
+        assert!(!name.contains("claude"), "{}", entry.path().display());
+        if entry.file_type().is_file() {
+            let text = fs::read_to_string(entry.path()).unwrap_or_default();
+            assert!(
+                !text.contains("CLAUDE_PLUGIN_ROOT"),
+                "{}",
+                entry.path().display()
+            );
+        }
+    }
+}
+
+#[test]
+fn both_plugins_ship_the_same_launcher_release_and_skills() {
+    for path in [
+        "bin/petit-poucet",
+        "release.env",
+        "skills/memory/SKILL.md",
+        "skills/migrate-memory/SKILL.md",
+        "skills/tidy-memory/SKILL.md",
+    ] {
+        let read = |dir: &str| fs::read(Path::new(ROOT).join(dir).join(path)).unwrap();
+        assert!(read("plugin") == read("copilot-plugin"), "{path} differs");
+    }
+}
+
+// IntelliJ passes `${PLUGIN_ROOT}` through unexpanded, so the bootstrap finds the installed plugin itself.
+#[test]
+fn copilot_bootstrap_finds_the_installed_plugin_without_plugin_root() {
+    let home = TempDir::new().unwrap();
+    let installed = home.path().join(".copilot/installed-plugins/petit-poucet");
+    copy_plugin(&installed);
+    fs::rename(installed.join("plugin"), installed.join("petit-poucet")).unwrap();
+    let bin = home.path().join("fake-build");
+    fake_binary(&bin);
+    fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let server = &json("copilot-plugin/.mcp.json")["mcpServers"]["petit-poucet"];
+    assert_eq!(server["command"], "sh");
+    let args: Vec<String> = server["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap().to_string())
+        .collect();
+    for unexpanded in ["${PLUGIN_ROOT}", "${env:PLUGIN_ROOT}"] {
+        let output = Command::new("sh")
+            .args([&args[0], &args[1], &args[2], unexpanded])
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", home.path())
+            .env("PETIT_POUCET_BIN", &bin)
+            .output()
+            .unwrap();
+        assert!(
+            text(&output).starts_with("fake serve from "),
+            "{unexpanded}: {}",
+            String::from_utf8_lossy(&output.stderr)
         );
     }
 }

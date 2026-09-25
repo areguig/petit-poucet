@@ -203,7 +203,7 @@ Agreed 2026-09-24. Ordered by what real use is likely to show first; each item o
 - Teammate onboarding: first installs on clean machines; fix what the first-run path gets wrong (download, `init` offer, empty vault).
 - Measure `migrate-memory` and `tidy-memory` with and without the skill; keep only what makes a measurable difference.
 - Stop reminder: skip it while a subagent is still running; configurable cadence only if someone asks.
-- Copilot in IDEs (VS Code, IntelliJ): check that `${PLUGIN_ROOT}` is expanded there.
+- Copilot in IDEs (VS Code, IntelliJ): **done on `dev`, 2026-09-25.** IntelliJ loads CLI-installed plugins but refuses every plugin hook ("untrusted workspace folder"), passes `${PLUGIN_ROOT}` unexpanded, drops MCP server instructions, and reads any folder holding `.claude-plugin/` as a Claude plugin (an Agent Plugins manifest didn't change that). Fix, tested in IntelliJ: a separate Copilot-format folder `copilot-plugin/` with a self-locating bootstrap, plus a `memory` skill and a `memory_index` description telling the agent to load memory first; it loaded memory unprompted in 2 of 2 memory-only tests. Still to check: VS Code and the Copilot app.
 
 ### 0.3: memory quality over time
 - Usage-driven cleanup: after a few weeks of read counts, `tidy-memory` proposes notes nobody opens (`feedback` notes excluded: they are applied from the Index without being read).

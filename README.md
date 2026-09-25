@@ -116,6 +116,8 @@ copilot plugin marketplace add areguig/petit-poucet
 copilot plugin install petit-poucet@petit-poucet
 ```
 
+This one install also serves Copilot in VS Code, IntelliJ and the GitHub Copilot app: they load the plugins Copilot CLI installed. The IDEs don't run plugin hooks, so there the `memory` skill loads your memory at the start of a task instead.
+
 Then start a new session: the agent says memory has no vault yet and offers to create one in `~/agent-memory` (or wherever you prefer). Both agents share it. The vault path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it). Nothing is ever pushed from the vault.
 
 Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
@@ -138,12 +140,14 @@ The same binary has a few commands for you (the release binaries are on the [Rel
 
 `main` is what plugin users get: it only ever holds released versions. Work happens on `dev`.
 
+There are two plugin folders on purpose: `plugin/` for Claude Code and `copilot-plugin/` for Copilot, because Copilot hosts treat any folder containing `.claude-plugin/` as a Claude plugin. They share the launcher, `release.env` and the skills (`cargo test` checks the copies match).
+
 Try a local build before any release: build it, then start an agent with the plugin folder from your checkout. Loaded from a checkout, the plugin runs the binary built there (`target/release/petit-poucet`) instead of downloading a release. Disable the installed plugin first so they don't both load:
 
 ```sh
 cargo build --release
 claude plugin disable petit-poucet@petit-poucet          # or: copilot plugin disable petit-poucet
-claude --plugin-dir ./plugin                             # or: copilot --plugin-dir ./plugin
+claude --plugin-dir ./plugin                             # or: copilot --plugin-dir ./copilot-plugin
 ```
 
 Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot plugin enable …`).
@@ -152,7 +156,7 @@ Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot 
 
 Only after the change was tried locally:
 
-1. On `dev`, set the new version in `Cargo.toml`, `plugin/release.env`, both `plugin.json` files and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
+1. On `dev`, set the new version in `Cargo.toml`, both `release.env` files, `plugin/.claude-plugin/plugin.json`, `copilot-plugin/plugin.json` and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
 2. Merge `dev` into `main`, tag `vX.Y.Z` on `main` and push both: the release workflow builds the four binaries and publishes them with their checksums.
 
 ## Acknowledgements
