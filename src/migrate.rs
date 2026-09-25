@@ -77,7 +77,10 @@ pub fn migrate(config: &Config) -> Result<String, String> {
             ));
             continue;
         }
-        write_atomic(&file, &project::render_identity(&[], &project.key)?)?;
+        write_atomic(
+            &file,
+            &project::render_identity(&[], std::slice::from_ref(&project.key))?,
+        )?;
         projects_added += 1;
     }
 

@@ -36,13 +36,24 @@ struct NewIdentity<'a> {
     folders: Vec<&'a str>,
 }
 
-pub fn render_identity(remotes: &[String], folder: &str) -> Result<String, String> {
+pub fn render_identity(remotes: &[String], folders: &[String]) -> Result<String, String> {
     let identity = NewIdentity {
         kind: IDENTITY_TYPE,
         remotes: remotes.iter().map(|u| normalise_remote(u)).collect(),
-        folders: vec![folder],
+        folders: folders.iter().map(String::as_str).collect(),
     };
     crate::note::render(&identity, "")
+}
+
+// A project created without a checkout at hand (e.g. by `migrate`) has no remote yet: learn it from one.
+// Projects that already list remotes are left alone, so a same-named folder of another repo is never merged in.
+pub fn missing_remotes(project: &Project, dir: &Path) -> Option<Vec<String>> {
+    let identity = project.identity.as_ref().ok()?;
+    if !identity.remotes.is_empty() {
+        return None;
+    }
+    let remotes = git::remote_urls(dir);
+    (!remotes.is_empty()).then_some(remotes)
 }
 
 pub struct Project {

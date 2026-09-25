@@ -16,7 +16,7 @@ use crate::move_note::{self, MoveRequest};
 use crate::note::Place;
 use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
-use crate::{change, hook, index, project, review, search, usage};
+use crate::{change, hook, index, review, search, usage};
 
 // Clients that don't run plugin hooks (Copilot in JetBrains IDEs) never get the session-start context.
 const INSTRUCTIONS: &str = "petit-poucet holds the user's memory: rules, decisions and verified facts. \
@@ -35,7 +35,7 @@ pub struct Server {
 #[derive(Deserialize, JsonSchema)]
 pub struct IndexRequest {
     /// The agent's working directory, used to find the project.
-    project_dir: Option<PathBuf>,
+    project_dir: PathBuf,
     /// List this topic's notes instead, e.g. `homelab`.
     topic: Option<String>,
 }
@@ -50,7 +50,7 @@ pub struct ReadRequest {
 pub struct SearchRequest {
     query: String,
     /// The agent's working directory, used to find the project.
-    project_dir: Option<PathBuf>,
+    project_dir: PathBuf,
 }
 
 impl Server {
@@ -66,10 +66,17 @@ fn agent_name(client: &Peer<RoleServer>) -> String {
         .unwrap_or_else(|| "unknown agent".to_string())
 }
 
-// Copilot CLI starts servers in the plugin folder, so the working directory is only a fallback.
-fn project_key(vault: &Vault, dir: Option<PathBuf>) -> Option<String> {
-    let dir = dir.or_else(|| std::env::current_dir().ok())?;
-    project::resolve(&vault.projects, &dir).map(str::to_string)
+impl Server {
+    // Clients start servers anywhere (Copilot CLI in the plugin folder), so the agent always names its directory.
+    fn project_key(
+        &self,
+        vault: &Vault,
+        dir: &std::path::Path,
+        client: &Peer<RoleServer>,
+    ) -> Option<String> {
+        let _guard = self.write_lock.lock().ok()?;
+        change::identify(&self.config, vault, dir, &agent_name(client))
+    }
 }
 
 #[tool_router]
@@ -77,7 +84,11 @@ impl Server {
     #[tool(
         description = "The memory rules and Index: preferences, the current project's notes and the topic names, one line each; with `topic`, that topic's notes. Call it first in every task (it returns the memory rules and the Index) unless an \"Agent memory (petit-poucet)\" block is already in your context."
     )]
-    fn memory_index(&self, Parameters(req): Parameters<IndexRequest>) -> Result<String, String> {
+    fn memory_index(
+        &self,
+        Parameters(req): Parameters<IndexRequest>,
+        client: Peer<RoleServer>,
+    ) -> Result<String, String> {
         let vault = self.vault()?;
         if let Some(topic) = &req.topic {
             let view = index::for_topic(&vault, &slug::slugify(topic));
@@ -86,7 +97,8 @@ impl Server {
                 view => view.to_string(),
             });
         }
-        let view = index::for_project(&vault, project_key(&vault, req.project_dir).as_deref());
+        let project = self.project_key(&vault, &req.project_dir, &client);
+        let view = index::for_project(&vault, project.as_deref());
         let view = match view.trim() {
             "" => "no notes yet",
             view => view,
@@ -170,13 +182,20 @@ impl Server {
     }
 
     #[tool(
-        description = "Word search over titles, summaries and bodies of the preferences, the current project and all topics; best matches first."
+        description = "Word search over titles, summaries and bodies of the preferences, the current project and all topics (all notes when the project is unknown); best matches first."
     )]
-    fn memory_search(&self, Parameters(req): Parameters<SearchRequest>) -> Result<String, String> {
+    fn memory_search(
+        &self,
+        Parameters(req): Parameters<SearchRequest>,
+        client: Peer<RoleServer>,
+    ) -> Result<String, String> {
         let vault = self.vault()?;
-        let project = project_key(&vault, req.project_dir);
+        let project = self.project_key(&vault, &req.project_dir, &client);
+        // An unknown project would hide every project note: search them all rather than miss the right one.
         let notes = vault.notes.iter().filter(|n| {
-            index::in_session(n.place(), project.as_deref()) || matches!(n.place(), Place::Topic(_))
+            project.is_none()
+                || index::in_session(n.place(), project.as_deref())
+                || matches!(n.place(), Place::Topic(_))
         });
         let found = search::search(notes, &req.query);
         if found.is_empty() {

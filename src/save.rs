@@ -190,7 +190,7 @@ fn target_folder(
     if vault.root.join(&identity_file).exists() {
         return Err(format!("{identity_file} is invalid: fix it first"));
     }
-    let text = project::render_identity(&git::remote_urls(dir), &key)?;
+    let text = project::render_identity(&git::remote_urls(dir), std::slice::from_ref(&key))?;
     Ok((format!("{PROJECTS}/{key}"), Some((identity_file, text))))
 }
 

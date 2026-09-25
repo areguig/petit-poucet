@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use clap::ValueEnum;
 use serde_json::{Value, json};
 
+use crate::change;
 use crate::config::Config;
 use crate::index;
-use crate::project;
 use crate::vault::Vault;
 
 const FIRST_REMINDER: u32 = 3;
@@ -47,7 +47,7 @@ fn field<'a>(event: &'a Value, snake: &str, camel: &str) -> Option<&'a Value> {
 }
 
 pub fn session_start(agent: Agent, event: &Value) -> Value {
-    let (context, message) = match memory_context(event) {
+    let (context, message) = match memory_context(agent, event) {
         _ if !Config::is_set() => (
             setup_context(),
             format!("{PEBBLE} no vault yet: the agent will offer to create one"),
@@ -81,14 +81,20 @@ fn setup_context() -> String {
 }
 
 // Returns the context for the agent and the line shown to the user.
-fn memory_context(event: &Value) -> Result<(String, String), String> {
-    let vault = Vault::load(&Config::load()?.vault)?;
+fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), String> {
+    let config = Config::load()?;
+    let vault = Vault::load(&config.vault)?;
     let dir = event
         .get("cwd")
         .and_then(Value::as_str)
         .map(PathBuf::from)
         .or_else(|| std::env::current_dir().ok());
-    let project = dir.and_then(|d| project::resolve(&vault.projects, &d));
+    let label = match agent {
+        Agent::Claude => "claude-code hook",
+        Agent::Copilot => "copilot hook",
+    };
+    let project = dir.and_then(|d| change::identify(&config, &vault, &d, label));
+    let project = project.as_deref();
     let loaded = vault
         .notes
         .iter()

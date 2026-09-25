@@ -96,7 +96,12 @@ fn an_agent_saves_finds_and_reads_a_note() {
         ]
     );
 
-    let (_, empty) = client.call("memory_index", json!({}));
+    let (is_error, missing) = client.call("memory_index", json!({}));
+    assert!(
+        is_error && missing.contains("missing field `project_dir`"),
+        "{missing}"
+    );
+    let (_, empty) = client.call("memory_index", json!({"project_dir": home.path()}));
     assert!(
         empty.starts_with("Agent memory (petit-poucet)") && empty.ends_with("\n\nno notes yet"),
         "rules come with the Index for clients without hooks: {empty}"
@@ -114,15 +119,25 @@ fn an_agent_saves_finds_and_reads_a_note() {
     let (is_error, text) = client.call("memory_save", save);
     assert!(is_error && text.contains("already exists"), "{text}");
 
-    assert!(client.call("memory_index", json!({})).1.ends_with(
+    assert!(client.call("memory_index", json!({"project_dir": home.path()})).1.ends_with(
         "\n\n## Preferences (all repos)\n- [[Preferences/commit-rules]] — commit locally per step, never push"
     ));
     assert_eq!(
-        client.call("memory_search", json!({"query": "push"})).1,
+        client
+            .call(
+                "memory_search",
+                json!({"query": "push", "project_dir": home.path()})
+            )
+            .1,
         "- [[Preferences/commit-rules]] — commit locally per step, never push"
     );
     assert_eq!(
-        client.call("memory_search", json!({"query": "database"})).1,
+        client
+            .call(
+                "memory_search",
+                json!({"query": "database", "project_dir": home.path()})
+            )
+            .1,
         "no matches"
     );
     let (_, note) = client.call("memory_read", json!({"path": "Preferences/commit-rules"}));
@@ -156,8 +171,12 @@ fn an_agent_saves_finds_and_reads_a_note() {
             && here.contains("[[Projects/my-repo/deploy-steps]]"),
         "{here}"
     );
+    // From a folder that is no known project, every project's notes are searched.
     let elsewhere = json!({"query": "deploy", "project_dir": home.path()});
-    assert_eq!(client.call("memory_search", elsewhere).1, "no matches");
+    assert_eq!(
+        client.call("memory_search", elsewhere).1,
+        "- [[Projects/my-repo/deploy-steps]] — deploy with make release"
+    );
     let (_, found) = client.call(
         "memory_search",
         json!({"query": "deploy", "project_dir": repo}),
@@ -208,7 +227,10 @@ fn an_agent_saves_finds_and_reads_a_note() {
         index.ends_with("homelab (1)") && !index.contains("[[Topics/"),
         "{index}"
     );
-    let (_, topic) = client.call("memory_index", json!({"topic": "homelab"}));
+    let (_, topic) = client.call(
+        "memory_index",
+        json!({"topic": "homelab", "project_dir": repo}),
+    );
     assert_eq!(
         topic,
         "## Topics / homelab\n- [[Topics/homelab/nas-backups]] — nightly NAS backups go to the offsite disk"

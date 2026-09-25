@@ -80,7 +80,7 @@ Commit each finished step locally; never push.
 |---|---|
 | `memory_index` | Preferences, the current project and the topic names; with `topic`, that topic's notes |
 | `memory_read` | One note |
-| `memory_search` | Word search over preferences, the current project and all topics |
+| `memory_search` | Word search over preferences, the current project and all topics (every note when the folder is no known project) |
 | `memory_save` | Create or update a note; the Index and a git commit follow |
 | `memory_move` | Rename or re-scope a note, rewriting every link to it |
 | `memory_delete` | Delete a note (with a reason) and unlink it everywhere |
