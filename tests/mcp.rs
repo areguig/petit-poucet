@@ -42,7 +42,7 @@ impl Client {
 }
 
 // One agent session: a `serve` process after the MCP handshake.
-fn start(home: &Path) -> (Child, Client) {
+fn start(home: &Path) -> (Child, Client, Value) {
     let mut child = command(home)
         .arg("serve")
         .stdin(Stdio::piped())
@@ -54,12 +54,12 @@ fn start(home: &Path) -> (Child, Client) {
         stdout: BufReader::new(child.stdout.take().unwrap()),
         next_id: 0,
     };
-    client.request(
+    let init = client.request(
         "initialize",
         json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test-agent", "version": "1"}}),
     );
     client.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
-    (child, client)
+    (child, client, init)
 }
 
 #[test]
@@ -71,7 +71,9 @@ fn an_agent_saves_finds_and_reads_a_note() {
         .assert()
         .success();
 
-    let (mut child, mut client) = start(home.path());
+    let (mut child, mut client, init) = start(home.path());
+    let instructions = init["instructions"].as_str().unwrap();
+    assert!(instructions.contains("call memory_index"), "{instructions}");
 
     let tools = client.request("tools/list", json!({}));
     let mut names: Vec<&str> = tools["tools"]
@@ -94,9 +96,10 @@ fn an_agent_saves_finds_and_reads_a_note() {
         ]
     );
 
-    assert_eq!(
-        client.call("memory_index", json!({})),
-        (false, "no notes yet".into())
+    let (_, empty) = client.call("memory_index", json!({}));
+    assert!(
+        empty.starts_with("Agent memory (petit-poucet)") && empty.ends_with("\n\nno notes yet"),
+        "rules come with the Index for clients without hooks: {empty}"
     );
 
     let save = json!({
@@ -111,10 +114,9 @@ fn an_agent_saves_finds_and_reads_a_note() {
     let (is_error, text) = client.call("memory_save", save);
     assert!(is_error && text.contains("already exists"), "{text}");
 
-    assert_eq!(
-        client.call("memory_index", json!({})).1,
-        "## Preferences (all repos)\n- [[Preferences/commit-rules]] — commit locally per step, never push"
-    );
+    assert!(client.call("memory_index", json!({})).1.ends_with(
+        "\n\n## Preferences (all repos)\n- [[Preferences/commit-rules]] — commit locally per step, never push"
+    ));
     assert_eq!(
         client.call("memory_search", json!({"query": "push"})).1,
         "- [[Preferences/commit-rules]] — commit locally per step, never push"
@@ -234,7 +236,7 @@ fn a_write_never_replaces_text_the_agent_has_not_seen() {
         .args(["init", vault.to_str().unwrap()])
         .assert()
         .success();
-    let (mut child, mut client) = start(home.path());
+    let (mut child, mut client, _) = start(home.path());
     let note = |fact: &str| {
         json!({
             "path": "Preferences/editor", "type": "user", "title": "Editor",
@@ -280,7 +282,7 @@ fn a_write_never_replaces_text_the_agent_has_not_seen() {
             .0
     );
 
-    let (mut other_child, mut other) = start(home.path());
+    let (mut other_child, mut other, _) = start(home.path());
     let (is_error, text) = other.call("memory_save", note("Other agent."));
     assert!(
         is_error && text.contains("read Preferences/editor first"),
@@ -300,7 +302,7 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
         .args(["init", vault.to_str().unwrap()])
         .assert()
         .success();
-    let (mut child, mut client) = start(home.path());
+    let (mut child, mut client, _) = start(home.path());
     let note = |title: &str, fact: &str| {
         json!({
             "type": "reference", "scope": "all repos", "title": title,
@@ -314,7 +316,7 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
     // A new session: the only notes it has seen are the ones it reads.
     drop(client);
     child.wait().unwrap();
-    let (mut child, mut client) = start(home.path());
+    let (mut child, mut client, _) = start(home.path());
     client.call("memory_read", json!({"path": "Preferences/linker"}));
 
     let (_, moved) = client.call(

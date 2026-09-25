@@ -16,7 +16,12 @@ use crate::move_note::{self, MoveRequest};
 use crate::note::Place;
 use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
-use crate::{change, index, project, review, search, usage};
+use crate::{change, hook, index, project, review, search, usage};
+
+// Clients that don't run plugin hooks (Copilot in JetBrains IDEs) never get the session-start context.
+const INSTRUCTIONS: &str = "petit-poucet holds the user's memory: rules, decisions and verified facts. \
+If your context has no \"Agent memory (petit-poucet)\" block, call memory_index with your working directory \
+as project_dir before starting a task, and follow the rules it returns.";
 
 pub struct Server {
     config: Config,
@@ -70,18 +75,23 @@ fn project_key(vault: &Vault, dir: Option<PathBuf>) -> Option<String> {
 #[tool_router]
 impl Server {
     #[tool(
-        description = "The memory Index: preferences, the current project's notes and the topic names, one line each; with `topic`, that topic's notes."
+        description = "The memory rules and Index: preferences, the current project's notes and the topic names, one line each; with `topic`, that topic's notes. Call it at the start of a task when no memory Index is in your context."
     )]
     fn memory_index(&self, Parameters(req): Parameters<IndexRequest>) -> Result<String, String> {
         let vault = self.vault()?;
-        let view = match &req.topic {
-            Some(topic) => index::for_topic(&vault, &slug::slugify(topic)),
-            None => index::for_project(&vault, project_key(&vault, req.project_dir).as_deref()),
+        if let Some(topic) = &req.topic {
+            let view = index::for_topic(&vault, &slug::slugify(topic));
+            return Ok(match view.trim() {
+                "" => format!("no notes in topic {topic}"),
+                view => view.to_string(),
+            });
+        }
+        let view = index::for_project(&vault, project_key(&vault, req.project_dir).as_deref());
+        let view = match view.trim() {
+            "" => "no notes yet",
+            view => view,
         };
-        Ok(match view.trim() {
-            "" => "no notes yet".to_string(),
-            view => view.to_string(),
-        })
+        Ok(format!("{}\n\n{view}", hook::RULES))
     }
 
     #[tool(description = "Read one note.")]
@@ -189,9 +199,12 @@ impl Server {
 #[tool_handler]
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_server_info(
-            Implementation::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
-        )
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new(
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+            ))
+            .with_instructions(INSTRUCTIONS)
     }
 }
 

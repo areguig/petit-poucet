@@ -12,7 +12,7 @@ use crate::vault::Vault;
 const FIRST_REMINDER: u32 = 3;
 const EVERY: u32 = 10;
 
-const RULES: &str = "Agent memory (petit-poucet): the Index below is already loaded, don't fetch it again. \
+pub const RULES: &str = "Agent memory (petit-poucet): the Index below is already loaded, don't fetch it again. \
 Open only the notes a task needs with memory_read. Pass your working directory as project_dir.
 - One short fact per note. Search first (memory_search) and update a note rather than adding a near-duplicate; read a note (memory_read) before updating or deleting it.
 - `source` says where the fact came from (the user's words, or the file/command that verified it) and when.
