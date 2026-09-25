@@ -21,7 +21,7 @@ Open only the notes a task needs with memory_read. Pass your working directory a
 - Update or delete (memory_delete) contradicted or obsolete notes, and mention the change in your reply.
 - Knowledge tied to no repo (a homelab, a server, the work machine) goes in a topic: memory_save with `topic`. \
 Topics are only named at the end of the Index: search them (memory_search) when a task touches one.
-- Never store secrets. Never write memory anywhere else.
+- Never store secrets. Never write memory anywhere else, including an agent's built-in memory (e.g. Copilot's store_memory): use memory_save.
 - Older file-based memory (e.g. a MEMORY.md or a memory folder) is being replaced by this one: when such a file \
 holds something relevant to your current task, save it here with memory_save (keeping its original source), \
 leave the old file as it is, and tell the user what you migrated.
