@@ -116,8 +116,12 @@ fn an_agent_saves_finds_and_reads_a_note() {
         client.call("memory_save", save.clone()),
         (false, "saved Preferences/commit-rules".into())
     );
-    let (is_error, text) = client.call("memory_save", save);
+    let (is_error, text) = client.call("memory_save", save.clone());
     assert!(is_error && text.contains("already exists"), "{text}");
+    let mut symbols_only = save;
+    symbols_only["title"] = json!("???");
+    let (is_error, text) = client.call("memory_save", symbols_only);
+    assert!(is_error && text.contains("title needs"), "{text}");
 
     assert!(client.call("memory_index", json!({"project_dir": home.path()})).1.ends_with(
         "\n\n## Preferences (all repos)\n- [[Preferences/commit-rules]] — commit locally per step, never push"
@@ -361,6 +365,118 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
 
     drop(client);
     assert!(child.wait().unwrap().success());
+}
+
+fn checkout(dir: &Path, remote: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    for args in [
+        &["init", "--quiet"][..],
+        &["remote", "add", "origin", remote],
+    ] {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+}
+
+#[test]
+fn repos_sharing_a_folder_name_keep_separate_projects() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let mine = home.path().join("mine/api");
+    let theirs = home.path().join("theirs/api");
+    checkout(&mine, "git@github.com:me/api.git");
+    checkout(&theirs, "git@gitlab.com:someone-else/api.git");
+    let (mut child, mut client, _) = start(home.path());
+    let note = |dir: &Path, title: &str| {
+        json!({
+            "type": "project", "project_dir": dir, "title": title,
+            "summary": format!("{title} summary"), "fact": "A fact.",
+            "source": "test on 2026-09-30", "how_to_apply": "Test.",
+        })
+    };
+
+    assert_eq!(
+        client.call("memory_save", note(&mine, "Mine")).1,
+        "saved Projects/api/mine"
+    );
+    assert_eq!(
+        client.call("memory_save", note(&theirs, "Theirs")).1,
+        "saved Projects/someone-else-api/theirs"
+    );
+    let (_, index) = client.call("memory_index", json!({"project_dir": theirs}));
+    assert!(
+        index.contains("[[Projects/someone-else-api/theirs]]") && !index.contains("Projects/api/"),
+        "{index}"
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn two_agents_writing_at_once_lose_nothing() {
+    const EACH: usize = 15;
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = |title: String| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("about {title}"), "fact": "A fact.",
+            "source": "test on 2026-09-30", "how_to_apply": "Test.",
+        })
+    };
+    let (mut child, mut client, _) = start(home.path());
+    client.call("memory_save", note("shared".into()));
+    drop(client);
+    child.wait().unwrap();
+
+    let agents: Vec<_> = ["a", "b"]
+        .into_iter()
+        .map(|agent| {
+            let home = home.path().to_path_buf();
+            std::thread::spawn(move || {
+                let (mut child, mut client, _) = start(&home);
+                for i in 0..EACH {
+                    // One word each, so saves never report each other as similar.
+                    let title = format!("{agent}{i}");
+                    let (_, reply) = client.call("memory_save", note(title));
+                    assert_eq!(reply, format!("saved Preferences/{agent}{i}"));
+                    client.call("memory_read", json!({"path": "Preferences/shared"}));
+                }
+                drop(client);
+                assert!(child.wait().unwrap().success());
+            })
+        })
+        .collect();
+    for agent in agents {
+        agent.join().unwrap();
+    }
+
+    let vault = vault.canonicalize().unwrap();
+    assert_eq!(git_log(&vault).lines().count(), 2 + 2 * EACH);
+    let index = std::fs::read_to_string(vault.join("Index.md")).unwrap();
+    assert_eq!(index.matches("- [[Preferences/").count(), 1 + 2 * EACH);
+    let usage = std::fs::read_to_string(vault.join(".petit-poucet/usage.json")).unwrap();
+    let usage: Value = serde_json::from_str(&usage).unwrap();
+    assert_eq!(usage["Preferences/shared"]["reads"], 2 * EACH);
+    let status = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&vault)
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&status.stdout), "", "all committed");
 }
 
 #[test]

@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -16,7 +15,7 @@ use crate::move_note::{self, MoveRequest};
 use crate::note::Place;
 use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
-use crate::{change, hook, index, review, search, usage};
+use crate::{change, hook, index, lock, review, search, usage};
 
 // Clients that don't run plugin hooks (Copilot in JetBrains IDEs) never get the session-start context.
 const INSTRUCTIONS: &str = "petit-poucet holds the user's memory: rules, decisions and verified facts. \
@@ -25,8 +24,6 @@ as project_dir before starting a task, and follow the rules it returns.";
 
 pub struct Server {
     config: Config,
-    // Saves rewrite the Index and commit: one at a time.
-    write_lock: Mutex<()>,
     reads: ReadLog,
     #[expect(dead_code, reason = "read by the code #[tool_handler] generates")]
     tool_router: ToolRouter<Self>,
@@ -57,6 +54,10 @@ impl Server {
     fn vault(&self) -> Result<Vault, String> {
         Vault::load(&self.config.vault)
     }
+
+    fn lock(&self) -> Result<fs::File, String> {
+        lock::vault(&self.config.vault)
+    }
 }
 
 fn agent_name(client: &Peer<RoleServer>) -> String {
@@ -74,7 +75,6 @@ impl Server {
         dir: &std::path::Path,
         client: &Peer<RoleServer>,
     ) -> Option<String> {
-        let _guard = self.write_lock.lock().ok()?;
         change::identify(&self.config, vault, dir, &agent_name(client))
     }
 }
@@ -113,7 +113,10 @@ impl Server {
         let text = fs::read_to_string(vault.root.join(format!("{}.md", note.path)))
             .map_err(|e| e.to_string())?;
         self.reads.record(&note.path, &text);
-        if let Err(e) = usage::record_read(&vault.root, &note.path, jiff::Zoned::now().date()) {
+        let counted = self.lock().and_then(|_lock| {
+            usage::record_read(&vault.root, &note.path, jiff::Zoned::now().date())
+        });
+        if let Err(e) = counted {
             eprintln!("petit-poucet: usage not recorded: {e}");
         }
         Ok(text)
@@ -134,7 +137,7 @@ impl Server {
         Parameters(req): Parameters<SaveRequest>,
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
-        let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
+        let _lock = self.lock()?;
         if let Some(path) = &req.path {
             self.reads.check(&self.config.vault, path)?;
         }
@@ -151,7 +154,7 @@ impl Server {
         Parameters(req): Parameters<DeleteRequest>,
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
-        let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
+        let _lock = self.lock()?;
         self.reads.check(&self.config.vault, &req.path)?;
         let path = req.path.trim_end_matches(".md").to_string();
         let (reply, rewritten) = delete::delete(&self.config, req, &agent_name(&client))?;
@@ -169,7 +172,7 @@ impl Server {
         Parameters(req): Parameters<MoveRequest>,
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
-        let _guard = self.write_lock.lock().map_err(|e| e.to_string())?;
+        let _lock = self.lock()?;
         let path = req.path.trim_end_matches(".md").to_string();
         let new_path = req.new_path.trim_end_matches(".md").to_string();
         let (reply, rewritten) = move_note::move_note(&self.config, req, &agent_name(&client))?;
@@ -231,7 +234,6 @@ pub fn serve(config: Config) -> Result<(), String> {
     Vault::load(&config.vault)?;
     let server = Server {
         config,
-        write_lock: Mutex::new(()),
         reads: ReadLog::default(),
         tool_router: Server::tool_router(),
     };
