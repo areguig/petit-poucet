@@ -348,3 +348,60 @@ fn copilot_hooks_find_the_installed_plugin_with_or_without_plugin_root() {
         }
     }
 }
+
+// A leftover install from another marketplace sorts first; the newest install must win.
+#[test]
+fn copilot_commands_pick_the_newest_install() {
+    let home = TempDir::new().unwrap();
+    let plugins = home.path().join(".copilot/installed-plugins");
+    for marketplace in ["a-old-marketplace", "petit-poucet"] {
+        let installed = plugins.join(marketplace);
+        copy_plugin(&installed);
+        fs::rename(installed.join("plugin"), installed.join("petit-poucet")).unwrap();
+    }
+    let status = Command::new("touch")
+        .args(["-t", "202001010000"])
+        .arg(plugins.join("a-old-marketplace/petit-poucet"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let bin = home.path().join("fake-build");
+    fake_binary(&bin);
+    fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+
+    let hooks = json("plugin/copilot/hooks.json");
+    let server = &json("plugin/copilot/mcp.json")["mcpServers"]["petit-poucet"];
+    let mut commands: Vec<Vec<String>> = ["sessionStart", "agentStop"]
+        .iter()
+        .map(|event| {
+            let command = hooks["hooks"][event][0]["bash"].as_str().unwrap();
+            vec!["-c".to_string(), command.to_string()]
+        })
+        .collect();
+    let args = server["args"].as_array().unwrap();
+    commands.push(vec![
+        args[0].as_str().unwrap().into(),
+        args[1].as_str().unwrap().into(),
+        args[2].as_str().unwrap().into(),
+        "${PLUGIN_ROOT}".into(),
+    ]);
+    for command in commands {
+        let output = Command::new("sh")
+            .args(&command)
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", home.path())
+            .env("PETIT_POUCET_BIN", &bin)
+            .output()
+            .unwrap();
+        let expected = plugins.join("petit-poucet/petit-poucet/bin/petit-poucet");
+        assert!(
+            text(&output)
+                .trim_end()
+                .ends_with(&expected.display().to_string()),
+            "{}: {}",
+            command[1],
+            text(&output)
+        );
+    }
+}
