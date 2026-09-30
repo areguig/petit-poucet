@@ -144,6 +144,10 @@ fn validate(req: &SaveRequest) -> Result<(), String> {
             return Err(format!("{name} must be one line"));
         }
     }
+    // The title becomes the file name.
+    if slug::slugify(&req.title).is_empty() {
+        return Err("title needs at least one letter or digit".to_string());
+    }
     Ok(())
 }
 
@@ -258,7 +262,7 @@ mod tests {
     fn rejects_incomplete_or_unsafe_notes() {
         let (_tmp, config) = vault();
         type Change = fn(&mut SaveRequest);
-        let cases: [(Change, &str); 5] = [
+        let cases: [(Change, &str); 6] = [
             (|r| r.source = " ".into(), "source is required"),
             (
                 |r| r.fact = "key AKIAIOSFODNN7EXAMPLE".into(),
@@ -270,6 +274,10 @@ mod tests {
             ),
             (|r| r.scope = Some("nope".into()), "unknown project `nope`"),
             (|r| r.scope = None, "give scope"),
+            (
+                |r| r.title = "???".into(),
+                "title needs at least one letter or digit",
+            ),
         ];
         for (change, expected) in cases {
             let mut req = request("Commit rules");
