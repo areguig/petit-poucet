@@ -522,3 +522,36 @@ fn an_update_keeps_tags_and_is_committed_as_an_update() {
         "{log}"
     );
 }
+
+#[test]
+fn search_finds_two_letter_names_as_whole_words() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    client.call(
+        "memory_save",
+        json!({
+            "type": "reference", "scope": "all repos", "title": "CI runners",
+            "summary": "CI runs on self-hosted runners, see the feedback channel", "fact": "Self-hosted.",
+            "source": "test on 2026-09-30", "how_to_apply": "When CI is slow.",
+        }),
+    );
+    let search = |client: &mut Client, query: &str| {
+        client
+            .call(
+                "memory_search",
+                json!({"query": query, "project_dir": home.path()}),
+            )
+            .1
+    };
+    assert!(search(&mut client, "CI").starts_with("- [[Preferences/ci-runners]]"));
+    assert_eq!(search(&mut client, "db"), "no matches");
+    assert_eq!(search(&mut client, "is it on"), "no matches");
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
