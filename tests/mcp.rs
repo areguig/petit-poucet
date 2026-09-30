@@ -362,3 +362,57 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
     drop(client);
     assert!(child.wait().unwrap().success());
 }
+
+fn checkout(dir: &Path, remote: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    for args in [
+        &["init", "--quiet"][..],
+        &["remote", "add", "origin", remote],
+    ] {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+}
+
+#[test]
+fn repos_sharing_a_folder_name_keep_separate_projects() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let mine = home.path().join("mine/api");
+    let theirs = home.path().join("theirs/api");
+    checkout(&mine, "git@github.com:me/api.git");
+    checkout(&theirs, "git@gitlab.com:someone-else/api.git");
+    let (mut child, mut client, _) = start(home.path());
+    let note = |dir: &Path, title: &str| {
+        json!({
+            "type": "project", "project_dir": dir, "title": title,
+            "summary": format!("{title} summary"), "fact": "A fact.",
+            "source": "test on 2026-09-30", "how_to_apply": "Test.",
+        })
+    };
+
+    assert_eq!(
+        client.call("memory_save", note(&mine, "Mine")).1,
+        "saved Projects/api/mine"
+    );
+    assert_eq!(
+        client.call("memory_save", note(&theirs, "Theirs")).1,
+        "saved Projects/someone-else-api/theirs"
+    );
+    let (_, index) = client.call("memory_index", json!({"project_dir": theirs}));
+    assert!(
+        index.contains("[[Projects/someone-else-api/theirs]]") && !index.contains("Projects/api/"),
+        "{index}"
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
