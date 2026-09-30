@@ -4,14 +4,14 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "r=\"${PLUGIN_ROOT:-}\"; case \"$r\" in *'$'*) r= ;; esac; [ -f \"$r/bin/petit-poucet\" ] || r=$(ls -d \"$HOME\"/.copilot/installed-plugins/*/petit-poucet 2>/dev/null | head -n 1); if [ -f \"$r/bin/petit-poucet\" ]; then sh \"$r/bin/petit-poucet\" hook session-start --agent copilot; else echo \"petit-poucet: cannot locate the plugin directory\" >&2; echo \"{}\"; fi",
+        "bash": "r=\"${PLUGIN_ROOT:-}\"; case \"$r\" in *'$'*) r= ;; esac; [ -f \"$r/bin/petit-poucet\" ] || r=$(ls -dt \"$HOME\"/.copilot/installed-plugins/*/petit-poucet 2>/dev/null | head -n 1); if [ -f \"$r/bin/petit-poucet\" ]; then sh \"$r/bin/petit-poucet\" hook session-start --agent copilot; else echo \"petit-poucet: cannot locate the plugin directory\" >&2; echo \"{}\"; fi",
         "timeoutSec": 30
       }
     ],
     "agentStop": [
       {
         "type": "command",
-        "bash": "r=\"${PLUGIN_ROOT:-}\"; case \"$r\" in *'$'*) r= ;; esac; [ -f \"$r/bin/petit-poucet\" ] || r=$(ls -d \"$HOME\"/.copilot/installed-plugins/*/petit-poucet 2>/dev/null | head -n 1); if [ -f \"$r/bin/petit-poucet\" ]; then sh \"$r/bin/petit-poucet\" hook stop --agent copilot; else echo \"petit-poucet: cannot locate the plugin directory\" >&2; echo \"{}\"; fi",
+        "bash": "r=\"${PLUGIN_ROOT:-}\"; case \"$r\" in *'$'*) r= ;; esac; [ -f \"$r/bin/petit-poucet\" ] || r=$(ls -dt \"$HOME\"/.copilot/installed-plugins/*/petit-poucet 2>/dev/null | head -n 1); if [ -f \"$r/bin/petit-poucet\" ]; then sh \"$r/bin/petit-poucet\" hook stop --agent copilot; else echo \"petit-poucet: cannot locate the plugin directory\" >&2; echo \"{}\"; fi",
         "timeoutSec": 10
       }
     ]
