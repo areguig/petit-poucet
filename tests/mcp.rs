@@ -478,3 +478,47 @@ fn two_agents_writing_at_once_lose_nothing() {
         .unwrap();
     assert_eq!(String::from_utf8_lossy(&status.stdout), "", "all committed");
 }
+
+#[test]
+fn an_update_keeps_tags_and_is_committed_as_an_update() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(
+        vault.join("Preferences/editor.md"),
+        "---\ntype: user\nscope: all repos\nsummary: s\ncreated: 2026-09-14\ntags: [agent-memory, from-obsidian]\n---\n\n# Editor\n",
+    )
+    .unwrap();
+    std::fs::write(vault.join("Preferences/broken.md"), "no frontmatter\n").unwrap();
+    let (mut child, mut client, _) = start(home.path());
+    for (path, title) in [
+        ("Preferences/editor", "Editor"),
+        ("Preferences/broken", "Broken"),
+    ] {
+        client.call("memory_read", json!({"path": path}));
+        let (is_error, text) = client.call(
+            "memory_save",
+            json!({
+                "path": path, "type": "user", "title": title,
+                "summary": "the user edits notes in Obsidian", "fact": "A fact.",
+                "source": "test on 2026-09-30", "how_to_apply": "Test.",
+            }),
+        );
+        assert!(!is_error, "{text}");
+    }
+    let (_, editor) = client.call("memory_read", json!({"path": "Preferences/editor"}));
+    assert!(editor.contains("- from-obsidian\n"), "{editor}");
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+    let log = git_log(&vault.canonicalize().unwrap());
+    assert!(
+        log.starts_with(
+            "update: Preferences/broken (test-agent)\nupdate: Preferences/editor (test-agent)\n"
+        ),
+        "{log}"
+    );
+}

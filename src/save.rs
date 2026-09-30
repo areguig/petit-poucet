@@ -45,12 +45,15 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     let vault = Vault::load(root)?;
     let today = jiff::Zoned::now().date();
 
-    let (path, created, identity) = match &req.path {
+    let (path, previous, identity) = match &req.path {
         Some(path) => {
             let existing = change::find_note(&vault, path)?;
             change::require_confirmation(existing, req.user_confirmed)?;
-            let created = existing.frontmatter.as_ref().ok().map(|fm| fm.created);
-            (existing.path.clone(), created, None)
+            (
+                existing.path.clone(),
+                existing.frontmatter.as_ref().ok(),
+                None,
+            )
         }
         None => {
             let (folder, identity) = target_folder(&vault, &req)?;
@@ -62,8 +65,10 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         }
     };
 
+    let updating = req.path.is_some();
+    // An update keeps the note's tags (some may come from the user, in Obsidian) and adds the requested ones.
     let mut tags = vec![REQUIRED_TAG.to_string()];
-    for tag in &req.tags {
+    for tag in previous.iter().flat_map(|fm| &fm.tags).chain(&req.tags) {
         if !tags.contains(tag) {
             tags.push(tag.clone());
         }
@@ -72,8 +77,8 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         note_type: req.note_type,
         scope: note::Place::of(&path).scope().to_string(),
         summary: Some(req.summary.trim().to_string()),
-        created: created.unwrap_or(today),
-        updated: created.map(|_| today),
+        created: previous.map_or(today, |fm| fm.created),
+        updated: updating.then_some(today),
         tags,
     };
     let body = format!(
@@ -95,11 +100,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     fs::create_dir_all(root.join(&file).parent().unwrap()).map_err(|e| e.to_string())?;
     write_atomic(&root.join(&file), &note::render(&frontmatter, &body)?)?;
 
-    let action = if created.is_some() {
-        "update"
-    } else {
-        "create"
-    };
+    let action = if updating { "update" } else { "create" };
     let (vault, commit_warning) =
         change::finish(config, changed, &format!("{action}: {path} ({agent})"))?;
     let mut reply = vec![format!("saved {path}")];
@@ -323,6 +324,44 @@ mod tests {
             .unwrap();
         assert_eq!(fm.created, jiff::civil::date(2026, 1, 1));
         assert_eq!(fm.updated.unwrap().to_string(), today);
+    }
+
+    #[test]
+    fn an_update_keeps_the_notes_tags_and_adds_the_requested_ones() {
+        let (_tmp, config) = vault();
+        fs::write(
+            config.vault.join("Preferences/commit-rules.md"),
+            "---\ntype: feedback\nscope: all repos\nsummary: s\ncreated: 2026-09-14\ntags: [agent-memory, from-obsidian, git]\n---\n\n# Commit rules\n",
+        )
+        .unwrap();
+
+        let mut update = request("Commit rules");
+        update.path = Some("Preferences/commit-rules".into());
+        update.user_confirmed = true;
+        update.tags = vec!["new".into(), "git".into()];
+        save(&config, update, "test").unwrap();
+        let fm = read(&config, "Preferences/commit-rules")
+            .frontmatter
+            .unwrap();
+        assert_eq!(fm.tags, [REQUIRED_TAG, "from-obsidian", "git", "new"]);
+    }
+
+    #[test]
+    fn updating_a_note_with_broken_frontmatter_repairs_it_as_an_update() {
+        let (_tmp, config) = vault();
+        fs::write(
+            config.vault.join("Preferences/broken.md"),
+            "no frontmatter\n",
+        )
+        .unwrap();
+        let mut update = request("Broken");
+        update.note_type = NoteType::User;
+        update.path = Some("Preferences/broken".into());
+        save(&config, update, "test").unwrap();
+        let fm = read(&config, "Preferences/broken").frontmatter.unwrap();
+        let today = jiff::Zoned::now().date();
+        assert_eq!((fm.created, fm.updated), (today, Some(today)));
+        assert_eq!(fm.tags, [REQUIRED_TAG, "git"]);
     }
 
     #[test]
