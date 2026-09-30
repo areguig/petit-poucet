@@ -362,3 +362,61 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
     drop(client);
     assert!(child.wait().unwrap().success());
 }
+
+#[test]
+fn two_agents_writing_at_once_lose_nothing() {
+    const EACH: usize = 15;
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = |title: String| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("about {title}"), "fact": "A fact.",
+            "source": "test on 2026-09-30", "how_to_apply": "Test.",
+        })
+    };
+    let (mut child, mut client, _) = start(home.path());
+    client.call("memory_save", note("shared".into()));
+    drop(client);
+    child.wait().unwrap();
+
+    let agents: Vec<_> = ["a", "b"]
+        .into_iter()
+        .map(|agent| {
+            let home = home.path().to_path_buf();
+            std::thread::spawn(move || {
+                let (mut child, mut client, _) = start(&home);
+                for i in 0..EACH {
+                    // One word each, so saves never report each other as similar.
+                    let title = format!("{agent}{i}");
+                    let (_, reply) = client.call("memory_save", note(title));
+                    assert_eq!(reply, format!("saved Preferences/{agent}{i}"));
+                    client.call("memory_read", json!({"path": "Preferences/shared"}));
+                }
+                drop(client);
+                assert!(child.wait().unwrap().success());
+            })
+        })
+        .collect();
+    for agent in agents {
+        agent.join().unwrap();
+    }
+
+    let vault = vault.canonicalize().unwrap();
+    assert_eq!(git_log(&vault).lines().count(), 2 + 2 * EACH);
+    let index = std::fs::read_to_string(vault.join("Index.md")).unwrap();
+    assert_eq!(index.matches("- [[Preferences/").count(), 1 + 2 * EACH);
+    let usage = std::fs::read_to_string(vault.join(".petit-poucet/usage.json")).unwrap();
+    let usage: Value = serde_json::from_str(&usage).unwrap();
+    assert_eq!(usage["Preferences/shared"]["reads"], 2 * EACH);
+    let status = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&vault)
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&status.stdout), "", "all committed");
+}
