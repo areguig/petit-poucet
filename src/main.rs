@@ -16,6 +16,7 @@ mod save;
 mod search;
 mod secrets;
 mod server;
+mod stops;
 mod usage;
 mod vault;
 
