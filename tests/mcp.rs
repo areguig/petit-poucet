@@ -116,8 +116,12 @@ fn an_agent_saves_finds_and_reads_a_note() {
         client.call("memory_save", save.clone()),
         (false, "saved Preferences/commit-rules".into())
     );
-    let (is_error, text) = client.call("memory_save", save);
+    let (is_error, text) = client.call("memory_save", save.clone());
     assert!(is_error && text.contains("already exists"), "{text}");
+    let mut symbols_only = save;
+    symbols_only["title"] = json!("???");
+    let (is_error, text) = client.call("memory_save", symbols_only);
+    assert!(is_error && text.contains("title needs"), "{text}");
 
     assert!(client.call("memory_index", json!({"project_dir": home.path()})).1.ends_with(
         "\n\n## Preferences (all repos)\n- [[Preferences/commit-rules]] — commit locally per step, never push"
