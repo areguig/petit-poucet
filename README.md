@@ -138,7 +138,7 @@ The same binary has a few commands for you (the release binaries are on the [Rel
 
 ## Developing
 
-`main` is what plugin users get: it only ever holds released versions. Work happens on `dev`.
+`main` is what plugin users get: it only ever holds released versions. Each version is built on its own branch cut from `main` after the previous release (e.g. `v0.3`): pull requests for that version target it.
 
 `plugin/` is the one plugin for every client: the launcher, the skills and `release.env` exist once. Claude Code reads `.claude-plugin/plugin.json`; Copilot reads `plugin.json`, which points at its own MCP config, hooks and agent in `copilot/`. Copilot's IDE hosts read the folder as a Claude plugin and use the Claude files.
 
@@ -156,8 +156,9 @@ Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot 
 
 Only after the change was tried locally:
 
-1. On `dev`, set the new version in `Cargo.toml`, `plugin/release.env`, `plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
-2. Merge `dev` into `main`, tag `vX.Y.Z` on `main` and push both: the release workflow builds the four binaries and publishes them with their checksums.
+1. On the version branch, set the new version in `Cargo.toml`, `plugin/release.env`, `plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
+2. Merge the version branch into `main` with a pull request that lists `Closes #…` for its issues, tag `vX.Y.Z` on `main` and push the tag: the release workflow builds the four binaries and publishes them with their checksums.
+3. Delete the version branch, after moving its still-open pull requests to the next version's branch. A fix needed before the next version is ready gets its own patch branch (e.g. `v0.3.1`) from `main`; once released, merge `main` into the branch in progress.
 
 ## Acknowledgements
 

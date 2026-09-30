@@ -5,10 +5,8 @@ use std::path::{Path, PathBuf};
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
+use crate::state;
 use crate::vault::write_atomic;
-
-// Next to the notes but hidden: the vault loader and Obsidian skip dot-folders, git ignores it.
-pub const DIR: &str = ".petit-poucet";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
@@ -17,7 +15,7 @@ pub struct Usage {
 }
 
 fn file(root: &Path) -> PathBuf {
-    root.join(DIR).join("usage.json")
+    root.join(state::DIR).join("usage.json")
 }
 
 pub fn load(root: &Path) -> BTreeMap<String, Usage> {
@@ -28,12 +26,7 @@ pub fn load(root: &Path) -> BTreeMap<String, Usage> {
 }
 
 fn save(root: &Path, usage: &BTreeMap<String, Usage>) -> Result<(), String> {
-    fs::create_dir_all(root.join(DIR)).map_err(|e| e.to_string())?;
-    // Ignores itself, so vaults created before this folder existed keep a clean git status.
-    let ignore = root.join(DIR).join(".gitignore");
-    if !ignore.exists() {
-        write_atomic(&ignore, "*\n")?;
-    }
+    state::dir(root)?;
     let text = serde_json::to_string_pretty(usage).map_err(|e| e.to_string())?;
     write_atomic(&file(root), &text)
 }
@@ -88,10 +81,6 @@ mod tests {
         relocate(tmp.path(), "Preferences/never-read", None).unwrap();
         let usage = load(tmp.path());
         assert_eq!(usage.keys().collect::<Vec<_>>(), ["Projects/p/a"]);
-        assert_eq!(
-            fs::read_to_string(tmp.path().join(DIR).join(".gitignore")).unwrap(),
-            "*\n"
-        );
         assert_eq!(usage["Projects/p/a"].reads, 2);
     }
 
@@ -99,7 +88,7 @@ mod tests {
     fn a_missing_or_broken_file_means_no_usage_yet() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(load(tmp.path()).is_empty());
-        fs::create_dir(tmp.path().join(DIR)).unwrap();
+        state::dir(tmp.path()).unwrap();
         fs::write(file(tmp.path()), "not json").unwrap();
         assert!(load(tmp.path()).is_empty());
     }

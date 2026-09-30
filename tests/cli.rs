@@ -209,8 +209,10 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
     assert_eq!(git_log(&vault), "migrate: vault\n");
 }
 
+// Stop counters go to the temp folder: one per test.
 fn hook(home: &Path, args: &[&str], input: &str) -> String {
     let output = petit_poucet(home)
+        .env("TMPDIR", home)
         .arg("hook")
         .args(args)
         .write_stdin(input)
@@ -274,6 +276,53 @@ fn session_start_injects_rules_and_the_project_index() {
     assert!(
         copilot.get("systemMessage").is_none(),
         "Copilot has no user message"
+    );
+}
+
+#[test]
+fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // The fixture's `alpha` is github.com/example/alpha.
+    let other_alpha = home.path().join("alpha");
+    fs::create_dir(&other_alpha).unwrap();
+    for args in [
+        &["init", "--quiet"][..],
+        &[
+            "remote",
+            "add",
+            "origin",
+            "git@gitlab.com:someone-else/alpha.git",
+        ],
+    ] {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(&other_alpha)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let event = serde_json::json!({"cwd": other_alpha}).to_string();
+    let claude: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        &event,
+    ))
+    .unwrap();
+    let context = claude["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(!context.contains("Projects/alpha"), "{context}");
+    assert!(
+        claude["systemMessage"]
+            .as_str()
+            .unwrap()
+            .ends_with("(preferences)")
     );
 }
 
@@ -343,7 +392,24 @@ fn stop_reminds_at_the_third_stop_then_every_tenth() {
         hook(home.path(), &["stop", "--agent", "claude"], &active),
         ""
     );
-    let _ = fs::remove_file(std::env::temp_dir().join(format!("petit-poucet-stops-{session}")));
+}
+
+#[test]
+fn stop_never_reminds_without_a_session_id_and_keeps_counters_in_their_folder() {
+    let home = TempDir::new().unwrap();
+    for event in ["{}", r#"{"session_id": "../"}"#, "not json"] {
+        let stops: Vec<String> = (1..=5)
+            .map(|_| hook(home.path(), &["stop", "--agent", "claude"], event))
+            .collect();
+        assert!(stops.iter().all(String::is_empty), "{event}");
+    }
+    let event = serde_json::json!({"session_id": "../escape"}).to_string();
+    hook(home.path(), &["stop", "--agent", "claude"], &event);
+    assert_eq!(
+        fs::read_to_string(home.path().join("petit-poucet-stops/escape")).unwrap(),
+        "1"
+    );
+    assert!(!home.path().parent().unwrap().join("escape").exists());
 }
 
 #[test]
@@ -363,7 +429,6 @@ fn stop_reminder_shows_a_line_to_claude_code_users_only() {
         let expected = (agent == "claude")
             .then_some("🪨 petit-poucet · checking whether this session is worth remembering");
         assert_eq!(reminder["systemMessage"].as_str(), expected, "{agent}");
-        let _ = fs::remove_file(std::env::temp_dir().join(format!("petit-poucet-stops-{session}")));
     }
 }
 
