@@ -278,6 +278,53 @@ fn session_start_injects_rules_and_the_project_index() {
 }
 
 #[test]
+fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // The fixture's `alpha` is github.com/example/alpha.
+    let other_alpha = home.path().join("alpha");
+    fs::create_dir(&other_alpha).unwrap();
+    for args in [
+        &["init", "--quiet"][..],
+        &[
+            "remote",
+            "add",
+            "origin",
+            "git@gitlab.com:someone-else/alpha.git",
+        ],
+    ] {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(&other_alpha)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let event = serde_json::json!({"cwd": other_alpha}).to_string();
+    let claude: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        &event,
+    ))
+    .unwrap();
+    let context = claude["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(!context.contains("Projects/alpha"), "{context}");
+    assert!(
+        claude["systemMessage"]
+            .as_str()
+            .unwrap()
+            .ends_with("(preferences)")
+    );
+}
+
+#[test]
 fn session_start_says_when_memory_is_unavailable() {
     let home = TempDir::new().unwrap();
     let broken = home.path().join("gone");

@@ -181,16 +181,27 @@ fn target_folder(
     let top = git::toplevel(dir)
         .map(PathBuf::from)
         .unwrap_or(dir.to_path_buf());
-    let key = top
+    let folder = top
         .file_name()
         .ok_or(format!("no folder name in {}", dir.display()))?
         .to_string_lossy()
         .into_owned();
+    let remotes = git::remote_urls(dir);
+    let key = match vault.projects.iter().find(|p| p.key == folder) {
+        // Another repo already owns this folder name (resolve didn't match it): name the project after the remote.
+        Some(taken) if taken.identity.is_ok() => remotes
+            .first()
+            .and_then(|r| project::key_from_remote(r))
+            .ok_or(format!(
+                "project `{folder}` belongs to another repo: pass scope to save there"
+            ))?,
+        _ => folder.clone(),
+    };
     let identity_file = format!("{PROJECTS}/{key}/{IDENTITY_FILE}");
     if vault.root.join(&identity_file).exists() {
         return Err(format!("{identity_file} is invalid: fix it first"));
     }
-    let text = project::render_identity(&git::remote_urls(dir), std::slice::from_ref(&key))?;
+    let text = project::render_identity(&remotes, std::slice::from_ref(&folder))?;
     Ok((format!("{PROJECTS}/{key}"), Some((identity_file, text))))
 }
 
@@ -363,6 +374,48 @@ mod tests {
             "my-repo"
         );
         assert!(crate::check::check(&vault).is_empty());
+    }
+
+    #[test]
+    fn a_repo_whose_folder_name_is_taken_gets_a_project_named_after_its_remote() {
+        let (tmp, config) = vault();
+        let checkout = |parent: &str, remote: &str| {
+            let repo = tmp.path().join(parent).join("api");
+            fs::create_dir_all(&repo).unwrap();
+            git::init(&repo).unwrap();
+            std::process::Command::new("git")
+                .args([
+                    "-C",
+                    repo.to_str().unwrap(),
+                    "remote",
+                    "add",
+                    "origin",
+                    remote,
+                ])
+                .status()
+                .unwrap();
+            repo
+        };
+        let save_in = |repo: std::path::PathBuf, title: &str| {
+            let mut req = request(title);
+            req.note_type = NoteType::Project;
+            req.scope = None;
+            req.project_dir = Some(repo);
+            save(&config, req, "test").unwrap().1
+        };
+        let mine = checkout("mine", "git@github.com:me/api.git");
+        let theirs = checkout("theirs", "git@gitlab.com:someone-else/api.git");
+        assert_eq!(save_in(mine, "Mine"), "saved Projects/api/mine");
+        assert_eq!(
+            save_in(theirs.clone(), "Theirs"),
+            "saved Projects/someone-else-api/theirs"
+        );
+        assert_eq!(
+            save_in(theirs, "Deploy"),
+            "saved Projects/someone-else-api/deploy",
+            "the new project is then found by its remote"
+        );
+        assert!(crate::check::check(&Vault::load(&config.vault).unwrap()).is_empty());
     }
 
     #[test]
