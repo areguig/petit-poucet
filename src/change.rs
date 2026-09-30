@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::note::{self, Note, NoteType};
 use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{INDEX_FILE, PROJECTS, Vault, write_atomic};
-use crate::{git, index};
+use crate::{git, index, lock};
 
 pub fn find_note<'a>(vault: &'a Vault, path: &str) -> Result<&'a Note, String> {
     let path = path.strip_suffix(".md").unwrap_or(path);
@@ -84,16 +84,18 @@ pub fn identify(config: &Config, vault: &Vault, dir: &Path, agent: &str) -> Opti
     let found = vault.projects.iter().find(|p| p.key == key)?;
     if let (Some(remotes), Ok(identity)) = (project::missing_remotes(found, dir), &found.identity) {
         let file = format!("{PROJECTS}/{key}/{IDENTITY_FILE}");
-        let saved = project::render_identity(&remotes, &identity.folders)
-            .and_then(|text| write_atomic(&vault.root.join(&file), &text))
-            .and_then(|()| match config.git_autocommit {
-                true => git::commit(
-                    &vault.root,
-                    &[&file],
-                    &format!("identify: {file} ({agent})"),
-                ),
-                false => Ok(()),
-            });
+        let saved = lock::vault(&vault.root).and_then(|_lock| {
+            project::render_identity(&remotes, &identity.folders)
+                .and_then(|text| write_atomic(&vault.root.join(&file), &text))
+                .and_then(|()| match config.git_autocommit {
+                    true => git::commit(
+                        &vault.root,
+                        &[&file],
+                        &format!("identify: {file} ({agent})"),
+                    ),
+                    false => Ok(()),
+                })
+        });
         if let Err(e) = saved {
             eprintln!("petit-poucet: remote of {key} not recorded: {e}");
         }
