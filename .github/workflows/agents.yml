@@ -14,11 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        agent: [codex, claude, copilot, cursor]
+        agent: [codex, claude, copilot, cursor, gemini]
         include:
           - { agent: codex, install: "npm install -g @openai/codex" }
           - { agent: claude, install: "npm install -g @anthropic-ai/claude-code" }
           - { agent: copilot, install: "npm install -g @github/copilot" }
+          - { agent: gemini, install: "npm install -g @google/gemini-cli" }
           - agent: cursor
             install: curl https://cursor.com/install -fsS | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
     name: ${{ matrix.agent }} (${{ matrix.os }})

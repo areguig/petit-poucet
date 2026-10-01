@@ -2,23 +2,17 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::edit;
+use crate::{edit, hooks_json};
 
 const SERVER: &str = "petit-poucet";
+const AGENT: &str = "cursor";
 // Cursor event names, with the `petit-poucet hook` event each one runs.
 const EVENTS: [(&str, &str); 2] = [("sessionStart", "session-start"), ("stop", "stop")];
 
-fn hook_command(exe: &Path, event: &str) -> String {
-    format!("\"{}\" hook {event} --agent cursor", exe.display())
-}
-
-// Ours whatever the binary is called or where it lives: matched by the arguments `hook_command` writes.
 fn is_ours(entry: &Value) -> bool {
-    entry["command"].as_str().is_some_and(|c| {
-        EVENTS
-            .iter()
-            .any(|(_, ours)| c.ends_with(&format!(" hook {ours} --agent cursor")))
-    })
+    entry["command"]
+        .as_str()
+        .is_some_and(|c| hooks_json::is_ours(c, AGENT))
 }
 
 fn without_ours(hooks: &mut Value) {
@@ -48,7 +42,7 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
         hooks["hooks"] = json!({});
     }
     for (event, ours) in EVENTS {
-        let entry = json!({"command": hook_command(exe, ours)});
+        let entry = json!({"command": hooks_json::command(exe, ours, AGENT)});
         match hooks["hooks"][event].as_array_mut() {
             Some(entries) => entries.push(entry),
             None => hooks["hooks"][event] = json!([entry]),
@@ -99,6 +93,7 @@ pub fn uninstall(dir: &Path) -> Result<String, String> {
     let had_server = mcp["mcpServers"]
         .as_object_mut()
         .is_some_and(|servers| servers.remove(SERVER).is_some());
+    hooks_json::drop_if_empty(&mut mcp, "mcpServers");
     let hooks_file = dir.join("hooks.json");
     let mut hooks = edit::read_json(&hooks_file)?;
     without_ours(&mut hooks);
@@ -178,6 +173,12 @@ mod tests {
                 "sessionStart": [{"command": "\"/bin/pp\" hook session-start --agent cursor"}],
                 "stop": [{"command": "\"/bin/pp\" hook stop --agent cursor"}],
             }})
+        );
+        uninstall(tmp.path()).unwrap();
+        assert_eq!(
+            read(tmp.path(), "mcp.json"),
+            json!({}),
+            "no empty mcpServers left behind"
         );
     }
 

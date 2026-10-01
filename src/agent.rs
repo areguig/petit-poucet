@@ -13,6 +13,7 @@ pub enum Agent {
     Copilot,
     Codex,
     Cursor,
+    Gemini,
 }
 
 // Agents with a petit-poucet plugin are set up by it; the others by `petit-poucet setup`.
@@ -22,7 +23,13 @@ pub struct Plugin {
 }
 
 impl Agent {
-    pub const ALL: [Agent; 4] = [Agent::Claude, Agent::Copilot, Agent::Codex, Agent::Cursor];
+    pub const ALL: [Agent; 5] = [
+        Agent::Claude,
+        Agent::Copilot,
+        Agent::Codex,
+        Agent::Cursor,
+        Agent::Gemini,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -30,6 +37,7 @@ impl Agent {
             Agent::Copilot => "GitHub Copilot",
             Agent::Codex => "Codex",
             Agent::Cursor => "Cursor",
+            Agent::Gemini => "Gemini CLI",
         }
     }
 
@@ -40,6 +48,7 @@ impl Agent {
             Agent::Copilot => "copilot hook",
             Agent::Codex => "codex hook",
             Agent::Cursor => "cursor hook",
+            Agent::Gemini => "gemini hook",
         }
     }
 
@@ -70,10 +79,10 @@ impl Agent {
         }
     }
 
-    // Copilot CLI and Cursor hooks have no line for the user, so `message` goes to Claude Code and Codex only.
+    // Copilot CLI and Cursor hooks have no line for the user, so `message` goes to Claude Code, Codex and Gemini CLI only.
     pub fn session_start_reply(self, context: &str, message: &str) -> Value {
         match self {
-            Agent::Claude | Agent::Codex => json!({
+            Agent::Claude | Agent::Codex | Agent::Gemini => json!({
                 "systemMessage": message,
                 "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context},
             }),
@@ -84,7 +93,7 @@ impl Agent {
 
     pub fn stop_reply(self, reason: &str, message: &str) -> Value {
         match self {
-            Agent::Claude | Agent::Codex => {
+            Agent::Claude | Agent::Codex | Agent::Gemini => {
                 json!({"decision": "block", "reason": reason, "systemMessage": message})
             }
             Agent::Copilot => json!({"decision": "block", "reason": reason}),
@@ -99,6 +108,7 @@ impl Agent {
             Agent::Copilot => home.join(".copilot").is_dir(),
             Agent::Codex => codex::dir(home).is_dir(),
             Agent::Cursor => home.join(".cursor").is_dir(),
+            Agent::Gemini => home.join(".gemini").is_dir(),
         }
     }
 
@@ -112,7 +122,7 @@ impl Agent {
                 install: "copilot plugin marketplace add areguig/petit-poucet && copilot plugin install petit-poucet@petit-poucet",
                 uninstall: "copilot plugin uninstall petit-poucet",
             }),
-            Agent::Codex | Agent::Cursor => None,
+            Agent::Codex | Agent::Cursor | Agent::Gemini => None,
         }
     }
 
@@ -128,7 +138,7 @@ impl Agent {
                         .flatten()
                         .any(|marketplace| marketplace.path().join("petit-poucet").is_dir())
             }
-            Agent::Codex | Agent::Cursor => false,
+            Agent::Codex | Agent::Cursor | Agent::Gemini => false,
         }
     }
 }

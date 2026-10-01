@@ -4,7 +4,7 @@ use crate::agent::{Agent, Plugin};
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
-use crate::{codex, cursor};
+use crate::{codex, cursor, gemini};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -111,6 +111,12 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
             cursor::check,
             cursor::uninstall,
             home.join(".cursor"),
+        ),
+        Agent::Gemini => (
+            gemini::setup,
+            gemini::check,
+            gemini::uninstall,
+            home.join(".gemini"),
         ),
         Agent::Claude | Agent::Copilot => return Err("set up by its plugin".to_string()),
     };

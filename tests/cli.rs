@@ -481,7 +481,7 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Gemini CLI)\n"
         ),
         "{out}"
     );
@@ -703,7 +703,7 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("vault: set your git identity"), "{out}");
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Gemini CLI)\n"
         ),
         "{out}"
     );
@@ -824,4 +824,94 @@ fn cursor_hooks_reply_in_cursor_format() {
             .starts_with("Memory check")
     );
     assert_eq!(stop(1), "", "never reminds again inside its own follow-up");
+}
+
+#[test]
+fn setup_wires_gemini_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let gemini = home.path().join(".gemini");
+    let mine = r#"{"theme": "Dracula", "mcpServers": {"other": {"url": "http://localhost:1"}}}"#;
+    write(home.path(), ".gemini/settings.json", mine);
+    let exe = Path::new(env!("CARGO_BIN_EXE_petit-poucet"))
+        .canonicalize()
+        .unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.ends_with("Gemini CLI: set up (MCP server and hooks in settings.json): Gemini CLI starts it only in folders you trust\n"),
+        "{out}"
+    );
+    let settings: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(gemini.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(settings["theme"], "Dracula");
+    assert_eq!(
+        settings["mcpServers"]["petit-poucet"]["command"],
+        exe.display().to_string()
+    );
+
+    assert!(setup(home.path(), &["--check"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.ends_with("Gemini CLI: removed (MCP server and hooks)\n"),
+        "{out}"
+    );
+    let after: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(gemini.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(
+        after,
+        serde_json::from_str::<serde_json::Value>(mine).unwrap()
+    );
+}
+
+#[test]
+fn gemini_hooks_reply_in_gemini_format() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let event = serde_json::json!({"session_id": "g-1", "cwd": home.path(), "source": "startup", "hook_event_name": "SessionStart"});
+    let start: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "gemini"],
+        &event.to_string(),
+    ))
+    .unwrap();
+    assert_eq!(start["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert!(
+        start["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .starts_with("Agent memory (petit-poucet)")
+    );
+    assert!(
+        start["systemMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("🪨 petit-poucet ·")
+    );
+
+    let after_agent = |active: bool| {
+        let event = serde_json::json!({"session_id": "g-1", "hook_event_name": "AfterAgent", "stop_hook_active": active});
+        hook(
+            home.path(),
+            &["stop", "--agent", "gemini"],
+            &event.to_string(),
+        )
+    };
+    let replies: Vec<String> = (0..3).map(|_| after_agent(false)).collect();
+    let third: serde_json::Value = serde_json::from_str(&replies[2]).unwrap();
+    assert_eq!(
+        third["decision"], "block",
+        "Gemini CLI reads block as deny: retry"
+    );
+    assert!(
+        third["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Memory check")
+    );
+    assert_eq!(after_agent(true), "");
 }
