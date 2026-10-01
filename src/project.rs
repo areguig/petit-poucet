@@ -93,9 +93,21 @@ pub fn resolve<'a>(projects: &'a [Project], dir: &Path) -> Option<&'a str> {
     });
     let top = git::toplevel(dir).unwrap_or_else(|| dir.to_string_lossy().into_owned());
     let folder = Path::new(&top).file_name()?.to_string_lossy().into_owned();
-    by_remote
-        .or_else(|| known.iter().find(|(_, id)| id.folders.contains(&folder)))
-        .map(|(key, _)| *key)
+    // Two repos with remotes that differ are different projects, whatever their folders are called.
+    let by_folder = || {
+        known.iter().find(|(_, id)| {
+            id.folders.contains(&folder) && (remotes.is_empty() || id.remotes.is_empty())
+        })
+    };
+    by_remote.or_else(by_folder).map(|(key, _)| *key)
+}
+
+// `github.com/someone/api` gives `someone-api`: the key for a repo whose folder name another project already uses.
+pub fn key_from_remote(remote: &str) -> Option<String> {
+    let remote = normalise_remote(remote);
+    let (_, path) = remote.split_once('/')?;
+    let key = slug::slugify(path);
+    (!key.is_empty()).then_some(key)
 }
 
 #[cfg(test)]
@@ -166,5 +178,40 @@ mod tests {
             .unwrap();
         assert_eq!(resolve(&projects, &repo), Some("by-remote"));
         assert_eq!(resolve(&projects, tmp.path()), None);
+    }
+
+    #[test]
+    fn a_folder_name_never_matches_a_repo_with_another_remote() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("api");
+        std::fs::create_dir(&repo).unwrap();
+        git::init(&repo).unwrap();
+        std::process::Command::new("git")
+            .args(["-C", repo.to_str().unwrap(), "remote", "add", "origin"])
+            .arg("git@gitlab.com:someone-else/api.git")
+            .status()
+            .unwrap();
+        let project = |remotes: &[&str]| Project {
+            key: "api".into(),
+            identity: Ok(Identity {
+                remotes: remotes.iter().map(|r| r.to_string()).collect(),
+                folders: vec!["api".into()],
+                ..Default::default()
+            }),
+        };
+        assert_eq!(resolve(&[project(&["github.com/me/api"])], &repo), None);
+        assert_eq!(
+            resolve(&[project(&[])], &repo),
+            Some("api"),
+            "a project without a remote yet (from migrate) still matches by folder"
+        );
+    }
+
+    #[test]
+    fn a_key_from_a_remote_keeps_owner_and_repo() {
+        assert_eq!(
+            key_from_remote("git@gitlab.com:someone-else/api.git").as_deref(),
+            Some("someone-else-api")
+        );
     }
 }

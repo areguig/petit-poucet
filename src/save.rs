@@ -45,12 +45,15 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     let vault = Vault::load(root)?;
     let today = jiff::Zoned::now().date();
 
-    let (path, created, identity) = match &req.path {
+    let (path, previous, identity) = match &req.path {
         Some(path) => {
             let existing = change::find_note(&vault, path)?;
             change::require_confirmation(existing, req.user_confirmed)?;
-            let created = existing.frontmatter.as_ref().ok().map(|fm| fm.created);
-            (existing.path.clone(), created, None)
+            (
+                existing.path.clone(),
+                existing.frontmatter.as_ref().ok(),
+                None,
+            )
         }
         None => {
             let (folder, identity) = target_folder(&vault, &req)?;
@@ -62,8 +65,10 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         }
     };
 
+    let updating = req.path.is_some();
+    // An update keeps the note's tags (some may come from the user, in Obsidian) and adds the requested ones.
     let mut tags = vec![REQUIRED_TAG.to_string()];
-    for tag in &req.tags {
+    for tag in previous.iter().flat_map(|fm| &fm.tags).chain(&req.tags) {
         if !tags.contains(tag) {
             tags.push(tag.clone());
         }
@@ -72,8 +77,8 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         note_type: req.note_type,
         scope: note::Place::of(&path).scope().to_string(),
         summary: Some(req.summary.trim().to_string()),
-        created: created.unwrap_or(today),
-        updated: created.map(|_| today),
+        created: previous.map_or(today, |fm| fm.created),
+        updated: updating.then_some(today),
         tags,
     };
     let body = format!(
@@ -95,11 +100,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     fs::create_dir_all(root.join(&file).parent().unwrap()).map_err(|e| e.to_string())?;
     write_atomic(&root.join(&file), &note::render(&frontmatter, &body)?)?;
 
-    let action = if created.is_some() {
-        "update"
-    } else {
-        "create"
-    };
+    let action = if updating { "update" } else { "create" };
     let (vault, commit_warning) =
         change::finish(config, changed, &format!("{action}: {path} ({agent})"))?;
     let mut reply = vec![format!("saved {path}")];
@@ -144,6 +145,10 @@ fn validate(req: &SaveRequest) -> Result<(), String> {
             return Err(format!("{name} must be one line"));
         }
     }
+    // The title becomes the file name.
+    if slug::slugify(&req.title).is_empty() {
+        return Err("title needs at least one letter or digit".to_string());
+    }
     Ok(())
 }
 
@@ -181,16 +186,27 @@ fn target_folder(
     let top = git::toplevel(dir)
         .map(PathBuf::from)
         .unwrap_or(dir.to_path_buf());
-    let key = top
+    let folder = top
         .file_name()
         .ok_or(format!("no folder name in {}", dir.display()))?
         .to_string_lossy()
         .into_owned();
+    let remotes = git::remote_urls(dir);
+    let key = match vault.projects.iter().find(|p| p.key == folder) {
+        // Another repo already owns this folder name (resolve didn't match it): name the project after the remote.
+        Some(taken) if taken.identity.is_ok() => remotes
+            .first()
+            .and_then(|r| project::key_from_remote(r))
+            .ok_or(format!(
+                "project `{folder}` belongs to another repo: pass scope to save there"
+            ))?,
+        _ => folder.clone(),
+    };
     let identity_file = format!("{PROJECTS}/{key}/{IDENTITY_FILE}");
     if vault.root.join(&identity_file).exists() {
         return Err(format!("{identity_file} is invalid: fix it first"));
     }
-    let text = project::render_identity(&git::remote_urls(dir), std::slice::from_ref(&key))?;
+    let text = project::render_identity(&remotes, std::slice::from_ref(&folder))?;
     Ok((format!("{PROJECTS}/{key}"), Some((identity_file, text))))
 }
 
@@ -258,7 +274,7 @@ mod tests {
     fn rejects_incomplete_or_unsafe_notes() {
         let (_tmp, config) = vault();
         type Change = fn(&mut SaveRequest);
-        let cases: [(Change, &str); 5] = [
+        let cases: [(Change, &str); 6] = [
             (|r| r.source = " ".into(), "source is required"),
             (
                 |r| r.fact = "key AKIAIOSFODNN7EXAMPLE".into(),
@@ -270,6 +286,10 @@ mod tests {
             ),
             (|r| r.scope = Some("nope".into()), "unknown project `nope`"),
             (|r| r.scope = None, "give scope"),
+            (
+                |r| r.title = "???".into(),
+                "title needs at least one letter or digit",
+            ),
         ];
         for (change, expected) in cases {
             let mut req = request("Commit rules");
@@ -304,6 +324,44 @@ mod tests {
             .unwrap();
         assert_eq!(fm.created, jiff::civil::date(2026, 1, 1));
         assert_eq!(fm.updated.unwrap().to_string(), today);
+    }
+
+    #[test]
+    fn an_update_keeps_the_notes_tags_and_adds_the_requested_ones() {
+        let (_tmp, config) = vault();
+        fs::write(
+            config.vault.join("Preferences/commit-rules.md"),
+            "---\ntype: feedback\nscope: all repos\nsummary: s\ncreated: 2026-09-14\ntags: [agent-memory, from-obsidian, git]\n---\n\n# Commit rules\n",
+        )
+        .unwrap();
+
+        let mut update = request("Commit rules");
+        update.path = Some("Preferences/commit-rules".into());
+        update.user_confirmed = true;
+        update.tags = vec!["new".into(), "git".into()];
+        save(&config, update, "test").unwrap();
+        let fm = read(&config, "Preferences/commit-rules")
+            .frontmatter
+            .unwrap();
+        assert_eq!(fm.tags, [REQUIRED_TAG, "from-obsidian", "git", "new"]);
+    }
+
+    #[test]
+    fn updating_a_note_with_broken_frontmatter_repairs_it_as_an_update() {
+        let (_tmp, config) = vault();
+        fs::write(
+            config.vault.join("Preferences/broken.md"),
+            "no frontmatter\n",
+        )
+        .unwrap();
+        let mut update = request("Broken");
+        update.note_type = NoteType::User;
+        update.path = Some("Preferences/broken".into());
+        save(&config, update, "test").unwrap();
+        let fm = read(&config, "Preferences/broken").frontmatter.unwrap();
+        let today = jiff::Zoned::now().date();
+        assert_eq!((fm.created, fm.updated), (today, Some(today)));
+        assert_eq!(fm.tags, [REQUIRED_TAG, "git"]);
     }
 
     #[test]
@@ -363,6 +421,48 @@ mod tests {
             "my-repo"
         );
         assert!(crate::check::check(&vault).is_empty());
+    }
+
+    #[test]
+    fn a_repo_whose_folder_name_is_taken_gets_a_project_named_after_its_remote() {
+        let (tmp, config) = vault();
+        let checkout = |parent: &str, remote: &str| {
+            let repo = tmp.path().join(parent).join("api");
+            fs::create_dir_all(&repo).unwrap();
+            git::init(&repo).unwrap();
+            std::process::Command::new("git")
+                .args([
+                    "-C",
+                    repo.to_str().unwrap(),
+                    "remote",
+                    "add",
+                    "origin",
+                    remote,
+                ])
+                .status()
+                .unwrap();
+            repo
+        };
+        let save_in = |repo: std::path::PathBuf, title: &str| {
+            let mut req = request(title);
+            req.note_type = NoteType::Project;
+            req.scope = None;
+            req.project_dir = Some(repo);
+            save(&config, req, "test").unwrap().1
+        };
+        let mine = checkout("mine", "git@github.com:me/api.git");
+        let theirs = checkout("theirs", "git@gitlab.com:someone-else/api.git");
+        assert_eq!(save_in(mine, "Mine"), "saved Projects/api/mine");
+        assert_eq!(
+            save_in(theirs.clone(), "Theirs"),
+            "saved Projects/someone-else-api/theirs"
+        );
+        assert_eq!(
+            save_in(theirs, "Deploy"),
+            "saved Projects/someone-else-api/deploy",
+            "the new project is then found by its remote"
+        );
+        assert!(crate::check::check(&Vault::load(&config.vault).unwrap()).is_empty());
     }
 
     #[test]

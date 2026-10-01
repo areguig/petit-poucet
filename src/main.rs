@@ -7,6 +7,7 @@ mod guard;
 mod hook;
 mod index;
 mod init;
+mod lock;
 mod migrate;
 mod move_note;
 mod note;
@@ -16,6 +17,8 @@ mod save;
 mod search;
 mod secrets;
 mod server;
+mod state;
+mod stops;
 mod usage;
 mod vault;
 

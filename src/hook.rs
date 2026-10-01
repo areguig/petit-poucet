@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::PathBuf;
 
 use clap::ValueEnum;
@@ -7,6 +6,7 @@ use serde_json::{Value, json};
 use crate::change;
 use crate::config::Config;
 use crate::index;
+use crate::stops;
 use crate::vault::Vault;
 
 const FIRST_REMINDER: u32 = 3;
@@ -107,21 +107,13 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), Strin
     ))
 }
 
-// Counts stops per session in a temp file; reminds at the 3rd stop, then every 10th.
+// Reminds at the 3rd stop of a session, then every 10th; never without a session id to count by.
 pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
     if field(event, "stop_hook_active", "stopHookActive").and_then(Value::as_bool) == Some(true) {
         return None;
     }
-    let session = field(event, "session_id", "sessionId")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-    let counter = std::env::temp_dir().join(format!("petit-poucet-stops-{session}"));
-    let count = fs::read_to_string(&counter)
-        .ok()
-        .and_then(|n| n.trim().parse::<u32>().ok())
-        .unwrap_or(0)
-        + 1;
-    fs::write(&counter, count.to_string()).ok()?;
+    let session = field(event, "session_id", "sessionId").and_then(Value::as_str)?;
+    let count = stops::record(session)?;
     let due = count >= FIRST_REMINDER && (count - FIRST_REMINDER).is_multiple_of(EVERY);
     due.then(|| match agent {
         Agent::Claude => json!({

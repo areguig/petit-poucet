@@ -7,4 +7,4 @@
 - Comments only for a non-obvious "why", one line; no doc comments that restate names.
 - Before each commit: `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test`.
 - Commit each finished step locally, conventional style (`feat: …`), one or two lines, no Co-Authored-By trailer.
-- Work on `dev`; `main` holds released versions only, because plugin users install from it. Pushing `dev` for CI is fine; merging to `main`, tagging and releasing happen only after the owner tried the local build and asked for the release (see README, "Developing").
+- Work on the branch of the version in progress (e.g. `v0.3`, cut from `main`), one pull request per issue targeting it; `main` holds released versions only, because plugin users install from it. Merging to `main`, tagging and releasing happen only after the owner tried the local build and asked for the release (see README, "Developing").
