@@ -1,0 +1,29 @@
+name: Agents
+
+# Installs petit-poucet into each supported agent's real CLI (latest release) and checks the agent accepts it.
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        agent: [codex, claude, copilot]
+        include:
+          - { agent: codex, package: "@openai/codex" }
+          - { agent: claude, package: "@anthropic-ai/claude-code" }
+          - { agent: copilot, package: "@github/copilot" }
+    name: ${{ matrix.agent }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - run: npm install -g ${{ matrix.package }}
+      - run: sh tests/agents/${{ matrix.agent }}.sh
