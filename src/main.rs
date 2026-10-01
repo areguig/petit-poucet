@@ -30,6 +30,7 @@ mod setup;
 mod skills;
 mod state;
 mod stops;
+mod update;
 mod usage;
 mod vault;
 
@@ -76,6 +77,9 @@ enum Command {
         #[arg(long)]
         uninstall: bool,
     },
+    /// Record the latest release's version: session start runs it in the background
+    #[command(hide = true)]
+    UpdateCheck,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -105,6 +109,10 @@ fn main() -> ExitCode {
         } => run_setup(agent, check, uninstall),
         Command::Hook { event, agent } => {
             run_hook(event, agent);
+            Ok(true)
+        }
+        Command::UpdateCheck => {
+            update::fetch();
             Ok(true)
         }
     };
@@ -158,6 +166,9 @@ fn run_check() -> Result<bool, String> {
         vault.notes.len(),
         issues.len() - errors
     );
+    if let Some(line) = update::report() {
+        println!("{line}");
+    }
     Ok(errors == 0)
 }
 

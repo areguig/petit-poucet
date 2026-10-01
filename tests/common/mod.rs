@@ -11,6 +11,7 @@ pub const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/v
 const SYSTEM: [&str; 6] = ["PATH", "SystemRoot", "ComSpec", "PATHEXT", "TEMP", "TMP"];
 
 // A fake home (HOME, USERPROFILE on Windows) keeps the real config untouched, git's global config included.
+// Tests stay offline: no update check unless a test turns it back on.
 pub fn command(home: &Path) -> std::process::Command {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_petit-poucet"));
     cmd.env_clear();
@@ -21,6 +22,7 @@ pub fn command(home: &Path) -> std::process::Command {
     }
     cmd.env("HOME", home)
         .env("USERPROFILE", home)
+        .env("PETIT_POUCET_NO_UPDATE_CHECK", "1")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
