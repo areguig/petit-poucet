@@ -1,8 +1,11 @@
 name: Release
 
+# Tags publish a release; pull requests that touch the packaging only build it.
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    paths: [.github/workflows/release.yml, install.sh, install.ps1, Cargo.toml, Cargo.lock]
 
 permissions:
   contents: write
@@ -16,23 +19,46 @@ jobs:
       matrix:
         include:
           - { target: aarch64-apple-darwin, os: macos-latest }
-          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest, cross: true }
           - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest, ext: .exe }
+          - { target: aarch64-pc-windows-msvc, os: windows-11-arm, ext: .exe }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - name: Tag matches the crate version
+        if: github.event_name == 'push'
+        shell: bash
         run: test "$GITHUB_REF_NAME" = "v$(cargo pkgid | sed 's/.*[#@]//')"
       - if: runner.os == 'Linux'
         run: sudo apt-get install -y musl-tools
       - run: rustup target add ${{ matrix.target }}
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package
+        shell: bash
         run: |
-          name=petit-poucet-${{ matrix.target }}
-          cp target/${{ matrix.target }}/release/petit-poucet "$name"
-          shasum -a 256 "$name" > "$name.sha256"
+          name=petit-poucet-${{ matrix.target }}${{ matrix.ext }}
+          cp target/${{ matrix.target }}/release/petit-poucet${{ matrix.ext }} "$name"
+          sha256sum "$name" > "$name.sha256" 2>/dev/null || shasum -a 256 "$name" > "$name.sha256"
+      # The installers fetch exactly these files: each one installs this build from a local mirror (a cross build can't run here).
+      - name: install.sh installs this build
+        if: runner.os != 'Windows' && !matrix.cross
+        run: |
+          mkdir -p mirror/latest/download && cp petit-poucet-${{ matrix.target }}* mirror/latest/download/
+          PETIT_POUCET_RELEASES="file://$PWD/mirror" PETIT_POUCET_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          "$RUNNER_TEMP/bin/petit-poucet" --version
+      - name: install.ps1 installs this build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force mirror/latest/download | Out-Null
+          Copy-Item petit-poucet-${{ matrix.target }}* mirror/latest/download/
+          $env:PETIT_POUCET_RELEASES = "file:///$($PWD.Path -replace '\\', '/')/mirror"
+          $env:PETIT_POUCET_INSTALL_DIR = "$env:RUNNER_TEMP\bin"
+          $env:PETIT_POUCET_NO_MODIFY_PATH = '1'
+          ./install.ps1
+          & "$env:RUNNER_TEMP\bin\petit-poucet.exe" --version
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
@@ -40,6 +66,7 @@ jobs:
 
   release:
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
