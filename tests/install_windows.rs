@@ -38,7 +38,7 @@ fn mirror(dir: &Path, release: &str, checksum: Option<&str>) {
         powershell(
             "powershell",
             &format!(
-                "(Get-FileHash -Algorithm SHA256 '{}').Hash.ToLower()",
+                "-join ([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes('{}')) | ForEach-Object {{ $_.ToString('x2') }})",
                 asset.display()
             ),
         )
