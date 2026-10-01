@@ -6,7 +6,8 @@
 mkdir -p "$HOME/.gemini/config"
 has "$("$pp" setup)" '^Antigravity CLI: set up'
 has "$(agy mcp list 2>&1)" '^petit-poucet .*enabled'
-has "$(agy agents 2>&1)" 'memory-cleanup'
+# A subagent only: not one of the agents a session runs as.
+if agy agents 2>&1 | grep -q memory-cleanup; then fail "memory-cleanup is offered as a main agent"; fi
 
 # agy needs a Google sign-in, except through an LLM gateway: the fake model stands in for one.
 requests="$HOME/requests.jsonl"
