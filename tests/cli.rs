@@ -60,12 +60,10 @@ fn init_creates_a_valid_vault_a_config_and_a_commit() {
 
     assert!(vault.join("Preferences").is_dir() && vault.join("Projects").is_dir());
     let config = fs::read_to_string(home.path().join(".config/petit-poucet/config.toml")).unwrap();
-    let vault = vault.canonicalize().unwrap();
-    assert!(
-        config.contains(&format!("vault = \"{}\"", vault.display())),
-        "{config}"
-    );
-    assert!(config.contains("git_autocommit = true"), "{config}");
+    let vault = dunce::canonicalize(vault).unwrap();
+    let config: toml::Table = toml::from_str(&config).unwrap();
+    assert_eq!(config["vault"].as_str(), vault.to_str());
+    assert_eq!(config["git_autocommit"].as_bool(), Some(true));
     assert_eq!(git_log(&vault), "init: vault\n");
 
     let output = petit_poucet(home.path()).arg("check").output().unwrap();
@@ -136,10 +134,13 @@ fn init_does_not_commit_when_autocommit_is_off() {
     fs::create_dir(&vault).unwrap();
     let config_dir = home.path().join(".config/petit-poucet");
     fs::create_dir_all(&config_dir).unwrap();
-    let vault = vault.canonicalize().unwrap();
+    let vault = dunce::canonicalize(vault).unwrap();
     fs::write(
         config_dir.join("config.toml"),
-        format!("vault = \"{}\"\ngit_autocommit = false\n", vault.display()),
+        format!(
+            "vault = {}\ngit_autocommit = false\n",
+            toml::Value::from(vault.to_str().unwrap())
+        ),
     )
     .unwrap();
 
@@ -439,7 +440,9 @@ fn init_without_a_path_uses_agent_memory_in_home_and_says_how_to_change_it() {
     let home = TempDir::new().unwrap();
     let output = petit_poucet(home.path()).arg("init").output().unwrap();
     assert!(output.status.success());
-    let vault = home.path().canonicalize().unwrap().join("agent-memory");
+    let vault = dunce::canonicalize(home.path())
+        .unwrap()
+        .join("agent-memory");
     assert!(vault.join("Index.md").is_file());
     let config = home.path().join(".config/petit-poucet/config.toml");
     assert_eq!(
@@ -468,7 +471,7 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     let home = TempDir::new().unwrap();
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
-    let vault = home.path().join("agent-memory").canonicalize().unwrap();
+    let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
     assert!(
         out.starts_with(&format!(
             "vault: created, vault ready at {}",
@@ -557,7 +560,7 @@ fn setup_for_one_agent_and_uninstall_keep_the_vault() {
         r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
     );
     let (ok, out) = setup(home.path(), &["--uninstall"]);
-    let vault = home.path().join("agent-memory").canonicalize().unwrap();
+    let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
     assert!(ok);
     assert_eq!(
         out,
@@ -580,9 +583,7 @@ fn setup_wires_codex_in_and_out() {
     let home = TempDir::new().unwrap();
     let codex = home.path().join(".codex");
     write(home.path(), ".codex/config.toml", "model = \"gpt-6\"\n");
-    let exe = Path::new(env!("CARGO_BIN_EXE_petit-poucet"))
-        .canonicalize()
-        .unwrap();
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
 
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
@@ -592,9 +593,10 @@ fn setup_wires_codex_in_and_out() {
     );
     let config = fs::read_to_string(codex.join("config.toml")).unwrap();
     assert!(config.starts_with("model = \"gpt-6\"\n"), "{config}");
-    assert!(
-        config.contains(&format!("command = \"{}\"", exe.display())),
-        "{config}"
+    let parsed: toml::Table = toml::from_str(&config).unwrap();
+    assert_eq!(
+        parsed["mcp_servers"]["petit-poucet"]["command"].as_str(),
+        exe.to_str()
     );
     let hooks: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(codex.join("hooks.json")).unwrap()).unwrap();
@@ -747,9 +749,7 @@ fn setup_wires_cursor_in_and_out() {
         ".cursor/mcp.json",
         r#"{"mcpServers": {"other": {"url": "http://localhost:1"}}}"#,
     );
-    let exe = Path::new(env!("CARGO_BIN_EXE_petit-poucet"))
-        .canonicalize()
-        .unwrap();
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
 
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
