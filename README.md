@@ -12,7 +12,7 @@
 
 In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, and every agent you switch between starts each session with it.
 
-One binary, one command to wire it into **Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor and Antigravity CLI**, on macOS, Linux and Windows. Any other MCP client can use its tools. Next: [OpenCode](https://github.com/areguig/petit-poucet/issues/10); a 👍 on the issue for your agent helps decide what comes after.
+One binary (an MCP memory server and its hooks), one command to wire it into **Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor and Antigravity CLI**, on macOS, Linux and Windows. Any other MCP client can use its tools. Next: [OpenCode](https://github.com/areguig/petit-poucet/issues/10); a 👍 on the issue for your agent helps decide what comes after.
 
 ## Why
 
