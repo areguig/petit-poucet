@@ -38,8 +38,11 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         return match mode {
             Mode::Setup => {
                 let created = init::init(None)?;
-                let first = created.lines().next().unwrap_or_default();
-                Ok((vec![format!("vault: created, {first}")], true))
+                let lines = created.lines().enumerate().map(|(i, line)| match i {
+                    0 => format!("vault: created, {line}"),
+                    _ => format!("vault: {line}"),
+                });
+                Ok((lines.collect(), true))
             }
             Mode::Check => Ok((
                 vec!["vault: none yet: run `petit-poucet setup`".into()],

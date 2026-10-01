@@ -668,3 +668,48 @@ fn codex_hooks_reply_in_codex_format() {
             .starts_with("Memory check")
     );
 }
+
+// A fresh machine or a container often has no git identity, and git must not guess one.
+fn without_git_identity(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
+    for var in [
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ] {
+        cmd.env_remove(var);
+    }
+    cmd.env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "user.useConfigOnly")
+        .env("GIT_CONFIG_VALUE_0", "true")
+}
+
+#[test]
+fn init_and_setup_work_without_a_git_identity() {
+    let home = TempDir::new().unwrap();
+    let output = without_git_identity(&mut petit_poucet(home.path()))
+        .arg("setup")
+        .output()
+        .unwrap();
+    let (out, err) = (stdout(&output), String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "{out}{err}");
+    assert!(out.contains("\nvault: not committed: "), "{out}");
+    assert!(out.contains("vault: set your git identity"), "{out}");
+    assert!(
+        out.ends_with("agents: none found (supported: Claude Code, GitHub Copilot, Codex)\n"),
+        "{out}"
+    );
+    assert!(home.path().join("agent-memory/Index.md").is_file());
+
+    // A home of its own: no config left by the setup above.
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    let output = without_git_identity(&mut petit_poucet(home.path()))
+        .args(["init", vault.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let (out, err) = (stdout(&output), String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "{out}{err}");
+    assert!(out.contains("\nnot committed: "), "{out}");
+    assert!(vault.join("Index.md").is_file());
+}
