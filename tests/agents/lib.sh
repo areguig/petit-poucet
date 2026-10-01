@@ -2,11 +2,26 @@
 set -eu
 
 pp="$PWD/target/release/petit-poucet"
-[ -x "$pp" ] || { echo "build first: cargo build --release" >&2; exit 1; }
+[ -x "$pp" ] || [ -x "$pp.exe" ] || { echo "build first: cargo build --release" >&2; exit 1; }
 repo="$PWD"
 # A throwaway HOME, so a local run never touches the real agents' config or vault.
 HOME=$(mktemp -d)
 export HOME
+# On Windows (Git Bash), programs find the home folder through USERPROFILE.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    windows=1
+    USERPROFILE=$(cygpath -w "$HOME")
+    # Codex finds the profile folder through Windows itself, not USERPROFILE.
+    CODEX_HOME="$USERPROFILE\.codex"
+    export USERPROFILE CODEX_HOME
+    # A folder with a space, like many Windows profiles: the hooks must still find the binary.
+    mkdir -p "$HOME/petit poucet"
+    cp "$pp.exe" "$HOME/petit poucet/petit-poucet.exe"
+    pp="$HOME/petit poucet/petit-poucet"
+    ;;
+  *) windows= ;;
+esac
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # has <text> <pattern>: one line of text matches the grep pattern.
@@ -30,8 +45,11 @@ check_calls() {
   node "$repo/tests/agents/calls.mjs" "$calls" "$1" || fail "petit-poucet didn't reach the model as expected"
 }
 
-# old_plugin: a checkout of petit-poucet 0.2.2, the last version shipped as a Claude Code and Copilot plugin.
-old_plugin() {
+# install_old_plugin <claude|copilot>: installs the petit-poucet 0.2.2 plugin, the version `setup` replaces.
+# It only ever ran on macOS and Linux (its launcher was a shell script), so on Windows there is nothing to install.
+install_old_plugin() {
+  [ -z "$windows" ] || return 0
   git clone -q --depth 1 --branch v0.2.2 https://github.com/areguig/petit-poucet "$HOME/old-plugin"
-  echo "$HOME/old-plugin"
+  "$1" plugin marketplace add "$HOME/old-plugin" >/dev/null
+  "$1" plugin install petit-poucet@petit-poucet >/dev/null
 }

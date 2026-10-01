@@ -3,14 +3,17 @@
 # against the mock model: its hooks, MCP server and skills all reach the model.
 . "$(dirname "$0")/lib.sh"
 
-# petit-poucet 0.2 came as this plugin: setup removes it first.
-claude plugin marketplace add "$(old_plugin)" >/dev/null
-claude plugin install petit-poucet@petit-poucet >/dev/null
+mkdir -p "$HOME/.claude"
+
+install_old_plugin claude
 out=$("$pp" setup)
-has "$out" '^Claude Code: removed its old petit-poucet plugin'
 has "$out" '^Claude Code: set up'
-if claude plugin list 2>&1 | grep -q 'petit-poucet@'; then fail "the old plugin is still installed"; fi
-has "$(claude mcp list 2>&1)" "^petit-poucet: $pp serve .*Connected"
+# setup replaces the old plugin where there is one.
+if [ -z "$windows" ]; then
+  has "$out" '^Claude Code: removed its old petit-poucet plugin'
+  if claude plugin list 2>&1 | grep -q 'petit-poucet@'; then fail "the old plugin is still installed"; fi
+fi
+has "$(claude mcp list 2>&1)" '^petit-poucet: .*petit-poucet.* serve .*Connected'
 has "$("$pp" setup --check)" '^Claude Code skills: installed'
 
 start_model
