@@ -42,6 +42,8 @@ impl Vault {
                 .components()
                 .map(|c| c.as_os_str().to_string_lossy().into_owned())
                 .collect();
+            // Note paths use '/' on every OS: they are keys in links, the index and MCP calls.
+            let rel = parts.join("/");
             let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
             if entry.file_type().is_dir() {
                 if let [PROJECTS, key] = parts[..] {
@@ -55,11 +57,7 @@ impl Vault {
                 }
                 continue;
             }
-            let Some(stem) = rel
-                .to_string_lossy()
-                .strip_suffix(".md")
-                .map(str::to_string)
-            else {
+            let Some(stem) = rel.strip_suffix(".md").map(str::to_string) else {
                 continue;
             };
             match parts[..] {
@@ -75,7 +73,7 @@ impl Vault {
                     };
                     vault.notes.push(note);
                 }
-                _ => vault.stray.push(rel.to_string_lossy().into_owned()),
+                _ => vault.stray.push(rel),
             }
         }
         Ok(vault)
