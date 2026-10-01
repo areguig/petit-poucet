@@ -156,8 +156,8 @@ Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot 
 
 Only after the change was tried locally:
 
-1. On the version branch, set the new version in `Cargo.toml`, `plugin/release.env`, `plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` and `.github/plugin/marketplace.json` (`cargo test` fails until they all match).
-2. Merge the version branch into `main` with a pull request that lists `Closes #…` for its issues, tag `vX.Y.Z` on `main` and push the tag: the release workflow builds the four binaries and publishes them with their checksums.
+1. On the version branch, set the new version in `Cargo.toml`, `plugin/release.env`, `plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` and `.github/plugin/marketplace.json`, and write the release notes in `docs/releases/vX.Y.Z.md` (`cargo test` fails until they all match and the notes exist).
+2. Tag `vX.Y.Z` on the version branch and push the tag: the release workflow builds the four binaries and publishes them with their checksums and the notes. Once the release is out, merge the version branch into `main` with a pull request that lists `Closes #…` for its issues. In that order, plugin users never get a `release.env` whose binaries aren't published yet.
 3. Delete the version branch, after moving its still-open pull requests to the next version's branch. A fix needed before the next version is ready gets its own patch branch (e.g. `v0.3.1`) from `main`; once released, merge `main` into the branch in progress.
 
 ## Acknowledgements

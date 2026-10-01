@@ -48,6 +48,14 @@ fn every_manifest_is_valid_and_pins_the_crate_version() {
     );
 }
 
+// The release workflow publishes this file as the release notes.
+#[test]
+fn the_crate_version_has_release_notes() {
+    let notes = Path::new(ROOT).join(format!("docs/releases/v{VERSION}.md"));
+    let text = fs::read_to_string(&notes).unwrap_or_default();
+    assert!(!text.trim().is_empty(), "write {}", notes.display());
+}
+
 // A copy of the plugin folder under `dir`: run from this checkout, the launcher would use its own build.
 fn copy_plugin(dir: &Path) -> std::path::PathBuf {
     fs::create_dir_all(dir.join("plugin/bin")).unwrap();
