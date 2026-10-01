@@ -4,8 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 
 # petit-poucet 0.2 came as this plugin: setup removes it first.
-PATH="$repo/target/release:$PATH"
-claude plugin marketplace add "$repo" >/dev/null
+claude plugin marketplace add "$(old_plugin)" >/dev/null
 claude plugin install petit-poucet@petit-poucet >/dev/null
 out=$("$pp" setup)
 has "$out" '^Claude Code: removed its old petit-poucet plugin'

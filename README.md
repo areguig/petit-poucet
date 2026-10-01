@@ -158,28 +158,20 @@ The same binary has a few commands for you (install it with the [install script]
 
 ## Developing
 
-`main` is what plugin users get: it only ever holds released versions. Each version is built on its own branch cut from `main` after the previous release (e.g. `v0.3`): pull requests for that version target it. Documentation-only changes (README, `site/`, `docs/`) go to `main` directly, as long as they describe the released version.
+`main` is what users get (the install script and the site come from it): it only ever holds released versions. Each version is built on its own branch cut from `main` after the previous release (e.g. `v0.3`): pull requests for that version target it. Documentation-only changes (README, `site/`, `docs/`) go to `main` directly, as long as they describe the released version.
 
-`plugin/` is the one plugin for every client: the launcher, the skills and `release.env` exist once. Claude Code reads `.claude-plugin/plugin.json`; Copilot reads `plugin.json`, which points at its own MCP config, hooks and agent in `copilot/`. Copilot's IDE hosts read the folder as a Claude plugin and use the Claude files.
+The skills (`skills/`) and the `memory-cleanup` prompt (`agents/`) are embedded in the binary: `setup` writes them for each agent in its own format.
 
 Each supported agent has a script in `tests/agents/` that installs petit-poucet into that agent's real CLI, in a throwaway HOME so your own config is never touched: `cargo build --release && npm ci --prefix tests/agents && sh tests/agents/codex.sh` (or `claude.sh`, `copilot.sh`, `cursor.sh`, `antigravity.sh`). The Agents workflow runs them on Linux and macOS with each agent's latest release. Except Cursor's, which can't use another model, each script then runs a three-turn session against a mock model ([aimock](https://github.com/CopilotKit/llmock), in `tests/agents/model.mjs`) and checks every request the agent sent: the memory is there once, petit-poucet's tools and skills are offered, and the save reminder comes once, after the third turn.
 
-Try a local build before any release: build it, then start an agent with the plugin folder from your checkout. Loaded from a checkout, the plugin runs the binary built there (`target/release/petit-poucet`) instead of downloading a release. Disable the installed plugin first so they don't both load:
-
-```sh
-cargo build --release
-claude plugin disable petit-poucet@petit-poucet          # or: copilot plugin disable petit-poucet
-claude --plugin-dir ./plugin                             # or: copilot --plugin-dir ./plugin
-```
-
-Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot plugin enable …`).
+Try a local build before any release: `cargo build --release && ./target/release/petit-poucet setup` points every agent at that build. Run `setup` from the installed binary afterwards to point them back.
 
 ### Releasing
 
 Only after the change was tried locally:
 
-1. On the version branch, set the new version in `Cargo.toml`, `plugin/release.env`, `plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` and `.github/plugin/marketplace.json`, and write the release notes in `docs/releases/vX.Y.Z.md` (`cargo test` fails until they all match and the notes exist).
-2. Tag `vX.Y.Z` on the version branch and push the tag: the release workflow builds the four binaries and publishes them with their checksums and the notes. Once the release is out, merge the version branch into `main` with a pull request that lists `Closes #…` for its issues. In that order, plugin users never get a `release.env` whose binaries aren't published yet.
+1. On the version branch, set the new version in `Cargo.toml` and finish the release notes in `docs/releases/vX.Y.Z.md` (`cargo test` fails until the notes for the crate's version exist).
+2. Tag `vX.Y.Z` on the version branch and push the tag: the release workflow builds the four binaries and publishes them with their checksums and the notes. Once the release is out, merge the version branch into `main` with a pull request that lists `Closes #…` for its issues. In that order, `main` never describes a version whose binaries aren't published yet.
 3. Delete the version branch, after moving its still-open pull requests to the next version's branch. A fix needed before the next version is ready gets its own patch branch from `main`, named `vX.Y.Z-fixes` (e.g. `v0.3.1-fixes`: the tag `v0.3.1` must not share its name); once released, merge `main` into the branch in progress.
 
 ## Acknowledgements
