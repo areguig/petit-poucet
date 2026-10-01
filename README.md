@@ -142,13 +142,21 @@ Then start a new session: the agent says memory has no vault yet and offers to c
 
 Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
 
+**The binary on its own**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
+```
+
+This installs the latest release in `~/.local/bin` (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version) after checking its SHA-256; run it again to upgrade. With it on your PATH you get the [command line](#command-line), and the plugins use it instead of downloading their own copy whenever it is the version they expect.
+
 ## Browse your memory in Obsidian
 
 The vault is a plain folder of Markdown notes, so any editor works. For [Obsidian](https://obsidian.md): *Open folder as vault* and pick the vault folder. Obsidian is only a viewer: petit-poucet doesn't need it running, and your edits there are picked up on the next tool call. Don't edit `Index.md` by hand: it is regenerated from each note's `summary`.
 
 ## Command line
 
-The same binary has a few commands for you (the release binaries are on the [Releases](https://github.com/areguig/petit-poucet/releases) page):
+The same binary has a few commands for you (install it with the [install script](#install), or take a binary from the [Releases](https://github.com/areguig/petit-poucet/releases) page):
 
 | Command | What it does |
 |---|---|
