@@ -714,12 +714,14 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "shlex",
  "slug",
  "tempfile",
  "tokio",
  "toml",
  "toml_edit",
  "walkdir",
+ "windows-sys",
 ]
 
 [[package]]

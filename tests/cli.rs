@@ -598,10 +598,13 @@ fn setup_wires_codex_in_and_out() {
     let start = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         .as_str()
         .unwrap();
-    assert_eq!(
-        start,
-        format!("\"{}\" hook session-start --agent codex", exe.display())
-    );
+    // The command line names this binary, whatever quoting the OS's shell needs.
+    let (path, args) = start.split_once(" hook ").unwrap();
+    assert_eq!(args, "session-start --agent codex");
+    #[cfg(unix)]
+    assert_eq!(shlex::split(path).unwrap(), [exe.display().to_string()]);
+    #[cfg(windows)]
+    assert!(Path::new(path).is_file(), "{path}");
 
     assert!(setup(home.path(), &["--check"]).0);
     assert!(
