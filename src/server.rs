@@ -17,7 +17,7 @@ use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
 use crate::{change, hook, index, lock, review, search, usage};
 
-// Clients that don't run plugin hooks (Copilot in JetBrains IDEs) never get the session-start context.
+// Clients that don't run hooks (Copilot in JetBrains IDEs) never get the session-start context.
 const INSTRUCTIONS: &str = "petit-poucet holds the user's memory: rules, decisions and verified facts. \
 If your context has no \"Agent memory (petit-poucet)\" block, call memory_index with your working directory \
 as project_dir before starting a task, and follow the rules it returns.";
@@ -68,7 +68,7 @@ fn agent_name(client: &Peer<RoleServer>) -> String {
 }
 
 impl Server {
-    // Clients start servers anywhere (Copilot CLI in the plugin folder), so the agent always names its directory.
+    // Clients start servers anywhere (not always in the project), so the agent always names its directory.
     fn project_key(
         &self,
         vault: &Vault,
