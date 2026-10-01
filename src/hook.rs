@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use clap::ValueEnum;
-use serde_json::{Value, json};
+use serde_json::Value;
 
+use crate::agent::Agent;
 use crate::change;
 use crate::config::Config;
 use crate::index;
@@ -32,14 +32,8 @@ const REMINDER: &str = "Memory check: did this session produce a user decision, 
 or a verified fact, that memory doesn't hold yet or holds wrongly? If yes, save or fix it with memory_save. \
 If not, reply only: \"Nothing new to remember.\"";
 
-// Shown to the user by Claude Code; Copilot CLI hooks have no user-facing message.
+// Starts every line shown to the user.
 const PEBBLE: &str = "🪨 petit-poucet ·";
-
-#[derive(Clone, Copy, ValueEnum)]
-pub enum Agent {
-    Claude,
-    Copilot,
-}
 
 // Claude Code sends snake_case event fields, Copilot CLI camelCase.
 fn field<'a>(event: &'a Value, snake: &str, camel: &str) -> Option<&'a Value> {
@@ -61,13 +55,7 @@ pub fn session_start(agent: Agent, event: &Value) -> Value {
             format!("{PEBBLE} memory unavailable: {e}"),
         ),
     };
-    match agent {
-        Agent::Claude => json!({
-            "systemMessage": message,
-            "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context},
-        }),
-        Agent::Copilot => json!({"additionalContext": context}),
-    }
+    agent.session_start_reply(&context, &message)
 }
 
 // Plugin installs have no `petit-poucet` on PATH: the launcher says where it is.
@@ -89,11 +77,7 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), Strin
         .and_then(Value::as_str)
         .map(PathBuf::from)
         .or_else(|| std::env::current_dir().ok());
-    let label = match agent {
-        Agent::Claude => "claude-code hook",
-        Agent::Copilot => "copilot hook",
-    };
-    let project = dir.and_then(|d| change::identify(&config, &vault, &d, label));
+    let project = dir.and_then(|d| change::identify(&config, &vault, &d, agent.hook_label()));
     let project = project.as_deref();
     let loaded = vault
         .notes
@@ -115,12 +99,10 @@ pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
     let session = field(event, "session_id", "sessionId").and_then(Value::as_str)?;
     let count = stops::record(session)?;
     let due = count >= FIRST_REMINDER && (count - FIRST_REMINDER).is_multiple_of(EVERY);
-    due.then(|| match agent {
-        Agent::Claude => json!({
-            "decision": "block",
-            "reason": REMINDER,
-            "systemMessage": format!("{PEBBLE} checking whether this session is worth remembering"),
-        }),
-        Agent::Copilot => json!({"decision": "block", "reason": REMINDER}),
+    due.then(|| {
+        agent.stop_reply(
+            REMINDER,
+            &format!("{PEBBLE} checking whether this session is worth remembering"),
+        )
     })
 }

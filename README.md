@@ -152,6 +152,7 @@ The same binary has a few commands for you (the release binaries are on the [Rel
 
 | Command | What it does |
 |---|---|
+| `petit-poucet setup` | Set up memory for every agent on this machine and create the vault if there's none; `--check` reports what's missing, `--uninstall` removes petit-poucet from the agents (never the vault), `--agent <name>` limits it to one |
 | `petit-poucet check` | Validate the vault: frontmatter, summaries, scopes, links, secrets, Index |
 | `petit-poucet init [path]` | Create a vault (default `~/agent-memory`) and the config file |
 | `petit-poucet migrate` | Upgrade a hand-maintained vault: summaries from its old Index, full-path links, project identities, git |
