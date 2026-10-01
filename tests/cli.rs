@@ -832,9 +832,7 @@ fn setup_wires_gemini_in_and_out() {
     let gemini = home.path().join(".gemini");
     let mine = r#"{"theme": "Dracula", "mcpServers": {"other": {"url": "http://localhost:1"}}}"#;
     write(home.path(), ".gemini/settings.json", mine);
-    let exe = Path::new(env!("CARGO_BIN_EXE_petit-poucet"))
-        .canonicalize()
-        .unwrap();
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
 
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
