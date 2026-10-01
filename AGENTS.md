@@ -8,3 +8,4 @@
 - Before each commit: `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test`.
 - Commit each finished step locally, conventional style (`feat: …`), one or two lines, no Co-Authored-By trailer.
 - Work on the branch of the version in progress (e.g. `v0.3`, cut from `main`), one pull request per issue targeting it; `main` holds released versions only, because plugin users install from it. Merging to `main`, tagging and releasing happen only after the owner tried the local build and asked for the release (see README, "Developing").
+- Documentation-only changes (README, `site/`, `docs/`, this file) go to `main` directly, each in its own pull request, as long as they describe the released version: they change nothing plugin users run, and the site deploys from `main`.
