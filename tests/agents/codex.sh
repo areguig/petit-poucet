@@ -30,6 +30,7 @@ done
 cd "$repo"
 # Codex offers MCP tools through its tool search, which lists each server with its instructions.
 check_calls "petit-poucet holds the user's memory"
+check_update
 has "$("$pp" setup --check)" '^Codex: set up'
 
 has "$("$pp" setup --uninstall)" '^Codex: removed'
