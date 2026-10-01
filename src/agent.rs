@@ -41,6 +41,17 @@ impl Agent {
         }
     }
 
+    // The value of `--agent`.
+    pub fn flag(self) -> &'static str {
+        match self {
+            Agent::Claude => "claude",
+            Agent::Copilot => "copilot",
+            Agent::Codex => "codex",
+            Agent::Cursor => "cursor",
+            Agent::Antigravity => "antigravity",
+        }
+    }
+
     // Names the agent in commit messages.
     pub fn hook_label(self) -> &'static str {
         match self {
