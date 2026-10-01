@@ -120,49 +120,26 @@ Commit each finished step locally; never push.
 
 ## Install
 
-Needs `git` and `curl` (macOS or Linux). The plugin downloads the petit-poucet binary for your platform on first use, checks its SHA-256 and caches it in `~/.cache/petit-poucet`.
-
-**Claude Code**
-
-```sh
-claude plugin marketplace add https://github.com/areguig/petit-poucet
-claude plugin install petit-poucet@petit-poucet
-```
-
-**GitHub Copilot CLI**
-
-```sh
-copilot plugin marketplace add areguig/petit-poucet
-copilot plugin install petit-poucet@petit-poucet
-```
-
-This one install also serves Copilot in VS Code, IntelliJ and the GitHub Copilot app: they load the plugins Copilot CLI installed. The IDEs don't run plugin hooks, so there the `memory` skill loads your memory at the start of a task instead.
-
-Then start a new session: the agent says memory has no vault yet and offers to create one in `~/agent-memory` (or wherever you prefer). Both agents share it. The vault path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it). Nothing is ever pushed from the vault.
-
-Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
-
-**Codex**
-
-Install the binary (below), then run `petit-poucet setup`: it adds the MCP server to `~/.codex/config.toml` and the session-start and stop hooks to `~/.codex/hooks.json`, keeping everything else in those files (and a `.petit-poucet.bak` copy of what it changed). Open Codex once and trust the new hooks with `/hooks`. `petit-poucet setup --uninstall` takes them out again.
-
-**Cursor**
-
-Install the binary (below), then run `petit-poucet setup`: it adds the MCP server to `~/.cursor/mcp.json` and the session-start and stop hooks to `~/.cursor/hooks.json`, keeping everything else in those files (and a `.petit-poucet.bak` copy of what it changed). Restart Cursor. Cloud agents don't read user-level hooks, so there memory loads through the MCP server's instructions instead. `petit-poucet setup --uninstall` takes it out again.
-
-**Antigravity CLI**
-
-Install the binary (below), then run `petit-poucet setup`: it adds the MCP server to `~/.gemini/config/mcp_config.json` and its hooks to `~/.gemini/config/hooks.json`, keeping everything else in those files (and a `.petit-poucet.bak` copy of what it changed). Memory reaches the model before each of its calls, and the end-of-turn hook reminds the agent to save what it learned. `petit-poucet setup --uninstall` takes it out again. Gemini CLI isn't supported: it no longer serves personal Google accounts, and Antigravity CLI replaces it.
-
-For these three, `setup` also installs the `memory`, `migrate-memory` and `tidy-memory` skills (in `~/.agents/skills`, the folder Codex and Cursor share, and in `~/.gemini/config/skills` for Antigravity) and the `memory-cleanup` subagent that `tidy-memory` hands the review to, in each agent's own format.
-
-**The binary on its own**
+Needs `git` and `curl` (macOS or Linux).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
+petit-poucet setup
 ```
 
-This installs the latest release in `~/.local/bin` (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version) after checking its SHA-256; run it again to upgrade. Then run `petit-poucet setup`: it creates your vault if you have none and tells you, agent by agent, what's set up. With the binary on your PATH you also get the [command line](#command-line), and the plugins use it instead of downloading their own copy whenever it is the version they expect.
+The script installs the latest release in `~/.local/bin` after checking its SHA-256 (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version); run it again to upgrade. `petit-poucet setup` creates your vault in `~/agent-memory` if you have none, then wires every agent it finds: the MCP server, the session-start and end-of-turn hooks, the `memory`, `migrate-memory` and `tidy-memory` skills, and the `memory-cleanup` subagent that `tidy-memory` hands the review to. It writes each agent's user-level config, keeps everything else in those files and leaves a `.petit-poucet.bak` copy of what it changed. `setup --check` says what's missing, `setup --uninstall` takes it all out again (your vault stays), and `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`) limits either to one agent.
+
+| Agent | What `setup` writes | Then |
+|---|---|---|
+| Claude Code | `~/.claude.json`, `~/.claude/settings.json`, `~/.claude/skills`, `~/.claude/agents` | Restart Claude Code. |
+| GitHub Copilot: CLI, VS Code, IntelliJ, the Copilot app | `~/.copilot/mcp-config.json`, `~/.copilot/hooks/petit-poucet.json`, `~/.agents/skills`, `~/.copilot/agents` | All of them read `~/.copilot`. Where hooks don't run (IntelliJ), the `memory` skill loads your memory at the start of a task. |
+| Codex | `~/.codex/config.toml`, `~/.codex/hooks.json`, `~/.agents/skills`, `~/.codex/agents` | Open Codex once and trust the new hooks with `/hooks`. |
+| Cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json`, `~/.agents/skills`, `~/.cursor/agents` | Restart Cursor. Cloud agents don't read user-level hooks: there memory loads through the MCP server's instructions. |
+| Antigravity CLI | `~/.gemini/config/`: `mcp_config.json`, `hooks.json`, `skills`, `agents` | Memory reaches the model before each of its calls. Gemini CLI isn't supported: it no longer serves personal Google accounts, and Antigravity CLI replaces it. |
+
+Coming from the 0.2 plugin for Claude Code or Copilot? `petit-poucet setup` removes it with the agent's own command, so its hooks don't run twice.
+
+Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it). Nothing is ever pushed from the vault. Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
 
 ## Browse your memory in Obsidian
 

@@ -1,15 +1,18 @@
 #!/bin/sh
-# Installs the plugin from this checkout into the real Claude Code, then runs a session against the mock model:
-# the plugin's hooks, MCP server and skills all reach the model.
+# Installs petit-poucet into the real Claude Code with `setup`, replacing the old plugin, then runs a session
+# against the mock model: its hooks, MCP server and skills all reach the model.
 . "$(dirname "$0")/lib.sh"
 
-# The plugin's launcher prefers a petit-poucet of its pinned version on PATH: this build.
+# petit-poucet 0.2 came as this plugin: setup removes it first.
 PATH="$repo/target/release:$PATH"
-"$pp" setup >/dev/null
 claude plugin marketplace add "$repo" >/dev/null
 claude plugin install petit-poucet@petit-poucet >/dev/null
-has "$(claude mcp list 2>&1)" 'petit-poucet.*Connected'
-has "$("$pp" setup --check)" '^Claude Code: set up by its plugin'
+out=$("$pp" setup)
+has "$out" '^Claude Code: removed its old petit-poucet plugin'
+has "$out" '^Claude Code: set up'
+if claude plugin list 2>&1 | grep -q 'petit-poucet@'; then fail "the old plugin is still installed"; fi
+has "$(claude mcp list 2>&1)" "^petit-poucet: $pp serve .*Connected"
+has "$("$pp" setup --check)" '^Claude Code skills: installed'
 
 start_model
 cd "$(mktemp -d)"
@@ -19,10 +22,8 @@ for turn in one two three; do
   resume=--continue
 done
 cd "$repo"
-check_calls mcp__plugin_petit-poucet_petit-poucet__memory_search
+check_calls mcp__petit-poucet__memory_search
 
-uninstall=$("$pp" setup --uninstall | sed -n 's/^Claude Code: remove the plugin with `\(.*\)`$/\1/p')
-[ -n "$uninstall" ] || fail "setup --uninstall gave no command for Claude Code"
-sh -c "$uninstall" >/dev/null
-if "$pp" setup --check >/dev/null; then fail "check still passes after the plugin was removed"; fi
+has "$("$pp" setup --uninstall)" '^Claude Code: removed'
+if claude mcp list 2>&1 | grep -q petit-poucet; then fail "Claude Code still lists petit-poucet"; fi
 echo "claude: ok"

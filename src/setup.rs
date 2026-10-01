@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use crate::agent::{Agent, Plugin};
+use crate::agent::Agent;
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
-use crate::{antigravity, codex, cursor, skills};
+use crate::{antigravity, claude, codex, copilot, cursor, skills};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -76,33 +76,53 @@ fn report(agent: Agent, mode: Mode, home: &Path, named: bool) -> (Vec<String>, b
         let line = named.then(|| format!("{name}: not found on this machine"));
         return (line.into_iter().collect(), true);
     }
-    let Some(plugin) = agent.plugin() else {
-        let (line, ok) = by_config(agent, mode, home).unwrap_or_else(|e| (e, false));
-        let (skills, skills_ok) = by_skills(agent, mode, home).unwrap_or_else(|e| (e, false));
-        return (
-            vec![
-                format!("{name}: {line}"),
-                format!("{name} skills: {skills}"),
-            ],
-            ok && skills_ok,
-        );
-    };
-    let (line, ok) = by_plugin(agent, &plugin, mode, home);
-    (vec![format!("{name}: {line}")], ok)
+    let mut lines = Vec::new();
+    if let Some((line, ok)) = old_plugin(agent, mode, home) {
+        lines.push(format!("{name}: {line}"));
+        // Its hooks would run next to the new ones.
+        if !ok {
+            return (lines, false);
+        }
+    }
+    let (line, ok) = by_config(agent, mode, home).unwrap_or_else(|e| (e, false));
+    let (skills, skills_ok) = by_skills(agent, mode, home).unwrap_or_else(|e| (e, false));
+    lines.push(format!("{name}: {line}"));
+    lines.push(format!("{name} skills: {skills}"));
+    (lines, ok && skills_ok)
 }
 
-fn by_plugin(agent: Agent, plugin: &Plugin, mode: Mode, home: &Path) -> (String, bool) {
-    let installed = agent.plugin_installed(home);
-    let line = match (mode, installed) {
-        (Mode::Uninstall, true) => format!("remove the plugin with `{}`", plugin.uninstall),
-        (Mode::Uninstall, false) => "nothing to remove".to_string(),
-        (_, true) => "set up by its plugin".to_string(),
-        (_, false) => format!("install its plugin: `{}`", plugin.install),
-    };
-    (line, installed || mode == Mode::Uninstall)
+fn old_plugin(agent: Agent, mode: Mode, home: &Path) -> Option<(String, bool)> {
+    let command = agent.old_plugin()?;
+    if !agent.plugin_installed(home) {
+        return None;
+    }
+    if mode == Mode::Check {
+        let fix = format!("run `petit-poucet setup --agent {}`", agent.flag());
+        return Some((
+            format!("its old petit-poucet plugin is still installed: {fix}"),
+            false,
+        ));
+    }
+    let removed = std::process::Command::new(command[0])
+        .args(&command[1..])
+        .output()
+        .map_err(|e| e.to_string())
+        .and_then(|out| match out.status.success() {
+            true => Ok(()),
+            false => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+        });
+    Some(match removed {
+        Ok(()) => ("removed its old petit-poucet plugin".to_string(), true),
+        Err(e) => (
+            format!(
+                "couldn't remove its old petit-poucet plugin ({e}): run `{}`, then `petit-poucet setup` again",
+                command.join(" ")
+            ),
+            false,
+        ),
+    })
 }
 
-// Agents without a plugin: petit-poucet writes their config itself.
 fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), String> {
     let exe = || std::env::current_exe().map_err(|e| e.to_string());
     let (setup, check, uninstall, dir): (Setup, Check, Uninstall, _) = match agent {
@@ -124,7 +144,18 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
             antigravity::uninstall,
             antigravity::dir(home),
         ),
-        Agent::Claude | Agent::Copilot => return Err("set up by its plugin".to_string()),
+        Agent::Claude => (
+            claude::setup,
+            claude::check,
+            claude::uninstall,
+            home.to_path_buf(),
+        ),
+        Agent::Copilot => (
+            copilot::setup,
+            copilot::check,
+            copilot::uninstall,
+            copilot::dir(home),
+        ),
     };
     match mode {
         Mode::Setup => Ok((setup(&dir, &exe()?)?, true)),
