@@ -45,4 +45,4 @@ case ":$PATH:" in
   *":$dir:"*) ;;
   *) log "$dir is not on your PATH: add it to your shell profile" ;;
 esac
-log "next: run \`petit-poucet init\` to create your memory vault"
+log "next: run \`petit-poucet setup\` to create your memory vault and set up your agents"
