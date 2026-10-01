@@ -24,6 +24,7 @@ mod search;
 mod secrets;
 mod server;
 mod setup;
+mod skills;
 mod state;
 mod stops;
 mod usage;

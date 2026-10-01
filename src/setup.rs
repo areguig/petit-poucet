@@ -4,7 +4,7 @@ use crate::agent::{Agent, Plugin};
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
-use crate::{antigravity, codex, cursor};
+use crate::{antigravity, codex, cursor, skills};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -19,9 +19,9 @@ pub fn run(mode: Mode, only: Option<Agent>) -> Result<(Vec<String>, bool), Strin
     let (mut lines, mut ok) = vault(mode)?;
     let before = lines.len();
     for agent in only.map_or(Agent::ALL.to_vec(), |a| vec![a]) {
-        let (line, agent_ok) = report(agent, mode, &home, only.is_some());
+        let (agent_lines, agent_ok) = report(agent, mode, &home, only.is_some());
         ok &= agent_ok;
-        lines.extend(line);
+        lines.extend(agent_lines);
     }
     if lines.len() == before {
         let names: Vec<&str> = Agent::ALL.iter().map(|a| a.name()).collect();
@@ -70,19 +70,25 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
 }
 
 // An agent not on this machine is only mentioned when the user named it.
-fn report(agent: Agent, mode: Mode, home: &Path, named: bool) -> (Option<String>, bool) {
+fn report(agent: Agent, mode: Mode, home: &Path, named: bool) -> (Vec<String>, bool) {
     let name = agent.name();
     if !agent.installed(home) {
-        return (
-            named.then(|| format!("{name}: not found on this machine")),
-            true,
-        );
+        let line = named.then(|| format!("{name}: not found on this machine"));
+        return (line.into_iter().collect(), true);
     }
-    let (line, ok) = match agent.plugin() {
-        Some(plugin) => by_plugin(agent, &plugin, mode, home),
-        None => by_config(agent, mode, home).unwrap_or_else(|e| (e, false)),
+    let Some(plugin) = agent.plugin() else {
+        let (line, ok) = by_config(agent, mode, home).unwrap_or_else(|e| (e, false));
+        let (skills, skills_ok) = by_skills(agent, mode, home).unwrap_or_else(|e| (e, false));
+        return (
+            vec![
+                format!("{name}: {line}"),
+                format!("{name} skills: {skills}"),
+            ],
+            ok && skills_ok,
+        );
     };
-    (Some(format!("{name}: {line}")), ok)
+    let (line, ok) = by_plugin(agent, &plugin, mode, home);
+    (vec![format!("{name}: {line}")], ok)
 }
 
 fn by_plugin(agent: Agent, plugin: &Plugin, mode: Mode, home: &Path) -> (String, bool) {
@@ -124,6 +130,14 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
         Mode::Setup => Ok((setup(&dir, &exe()?)?, true)),
         Mode::Check => check(&dir),
         Mode::Uninstall => Ok((uninstall(&dir)?, true)),
+    }
+}
+
+fn by_skills(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), String> {
+    match mode {
+        Mode::Setup => Ok((skills::setup(agent, home)?, true)),
+        Mode::Check => Ok(skills::check(agent, home)),
+        Mode::Uninstall => Ok((skills::uninstall(agent, home)?, true)),
     }
 }
 
