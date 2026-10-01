@@ -120,14 +120,21 @@ Commit each finished step locally; never push.
 
 ## Install
 
-Needs `git` and `curl` (macOS or Linux).
+Needs `git`. On macOS or Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
 petit-poucet setup
 ```
 
-The script installs the latest release in `~/.local/bin` after checking its SHA-256 (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version); run it again to upgrade. `petit-poucet setup` creates your vault in `~/agent-memory` if you have none, then wires every agent it finds: the MCP server, the session-start and end-of-turn hooks, the `memory`, `migrate-memory` and `tidy-memory` skills, and the `memory-cleanup` subagent that `tidy-memory` hands the review to. It writes each agent's user-level config, keeps everything else in those files and leaves a `.petit-poucet.bak` copy of what it changed. `setup --check` says what's missing, `setup --uninstall` takes it all out again (your vault stays), and `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`) limits either to one agent.
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex
+petit-poucet setup
+```
+
+The script installs the latest release in `~/.local/bin` after checking its SHA-256 (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version); run it again to upgrade. On Windows it also adds that folder to your user `Path` (`PETIT_POUCET_NO_MODIFY_PATH=1` leaves it alone): open a new terminal before `petit-poucet setup`. `petit-poucet setup` creates your vault in `~/agent-memory` if you have none, then wires every agent it finds: the MCP server, the session-start and end-of-turn hooks, the `memory`, `migrate-memory` and `tidy-memory` skills, and the `memory-cleanup` subagent that `tidy-memory` hands the review to. It writes each agent's user-level config, keeps everything else in those files and leaves a `.petit-poucet.bak` copy of what it changed. `setup --check` says what's missing, `setup --uninstall` takes it all out again (your vault stays), and `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`) limits either to one agent.
 
 | Agent | What `setup` writes | Then |
 |---|---|---|
