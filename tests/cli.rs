@@ -487,21 +487,22 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
     assert!(vault.join("Index.md").is_file());
 
-    write(
-        home.path(),
-        ".claude/settings.json",
-        r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
-    );
+    fs::create_dir(home.path().join(".claude")).unwrap();
     fs::create_dir(home.path().join(".copilot")).unwrap();
     let (ok, again) = setup(home.path(), &[]);
-    assert!(ok, "setup reports a missing plugin, it doesn't fail on it");
+    assert!(ok, "{again}");
+    let skills = |dir: &str| home.path().join(dir).display().to_string();
     assert_eq!(
         again,
         format!(
             "vault: {} (0 notes)\n\
-             Claude Code: set up by its plugin\n\
-             GitHub Copilot: install its plugin: `copilot plugin marketplace add areguig/petit-poucet && copilot plugin install petit-poucet@petit-poucet`\n",
-            vault.display()
+             Claude Code: set up (MCP server in ~/.claude.json, hooks in settings.json): restart Claude Code\n\
+             Claude Code skills: installed in {} (with the memory-cleanup subagent)\n\
+             GitHub Copilot: set up (MCP server in mcp-config.json, hooks in hooks/petit-poucet.json)\n\
+             GitHub Copilot skills: installed in {} (with the memory-cleanup subagent)\n",
+            vault.display(),
+            skills(".claude/skills"),
+            skills(".agents/skills"),
         )
     );
     assert_eq!(
@@ -527,21 +528,15 @@ fn setup_check_fails_until_every_agent_found_is_set_up() {
 
     setup(home.path(), &[]);
     fs::create_dir(home.path().join(".copilot")).unwrap();
-    assert!(
-        !setup(home.path(), &["--check"]).0,
-        "Copilot plugin missing"
-    );
-    write(
-        home.path(),
-        ".copilot/installed-plugins/petit-poucet/petit-poucet/plugin.json",
-        "{}",
-    );
     let (ok, out) = setup(home.path(), &["--check"]);
-    assert!(ok, "{out}");
     assert!(
-        out.ends_with("GitHub Copilot: set up by its plugin\n"),
+        !ok && out.contains("GitHub Copilot: missing the MCP server"),
         "{out}"
     );
+    setup(home.path(), &[]);
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(ok, "{out}");
+    assert!(out.ends_with("GitHub Copilot skills: installed\n"), "{out}");
 }
 
 #[test]
@@ -554,18 +549,15 @@ fn setup_for_one_agent_and_uninstall_keep_the_vault() {
         "{one}"
     );
 
-    write(
-        home.path(),
-        ".claude/settings.json",
-        r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
-    );
+    fs::create_dir(home.path().join(".claude")).unwrap();
+    assert!(setup(home.path(), &["--agent", "claude"]).0);
     let (ok, out) = setup(home.path(), &["--uninstall"]);
     let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
     assert!(ok);
     assert_eq!(
         out,
         format!(
-            "vault: kept at {}\nClaude Code: remove the plugin with `claude plugin uninstall petit-poucet@petit-poucet`\n",
+            "vault: kept at {}\nClaude Code: removed (MCP server and hooks)\nClaude Code skills: removed\n",
             vault.display()
         )
     );
@@ -745,21 +737,85 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(vault.join("Index.md").is_file());
 }
 
-// Copilot CLI 1.0.90 installs from a local folder without copying it: only its settings say so (#54).
-#[test]
-fn setup_sees_a_copilot_plugin_installed_from_a_local_folder() {
-    let home = TempDir::new().unwrap();
-    setup(home.path(), &[]);
+// petit-poucet 0.2 came as a plugin; Copilot CLI 1.0.90 installs one from a local folder without copying it (#54).
+fn with_old_copilot_plugin(home: &Path) {
+    setup(home, &[]);
     write(
-        home.path(),
+        home,
         ".copilot/settings.json",
         r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
     );
+}
+
+#[test]
+fn setup_leaves_the_agent_alone_while_its_old_plugin_stays() {
+    let home = TempDir::new().unwrap();
+    with_old_copilot_plugin(home.path());
     let (ok, out) = setup(home.path(), &["--check"]);
-    assert!(ok, "{out}");
+    assert!(!ok);
     assert!(
-        out.ends_with("GitHub Copilot: set up by its plugin\n"),
+        out.ends_with("GitHub Copilot: its old petit-poucet plugin is still installed: run `petit-poucet setup --agent copilot`\n"),
         "{out}"
+    );
+
+    // No `copilot` to remove it with: the plugin's hooks would run next to new ones, so nothing is written.
+    let empty = TempDir::new().unwrap();
+    let output = petit_poucet(home.path())
+        .env("PATH", empty.path())
+        .args(["setup", "--agent", "copilot"])
+        .output()
+        .unwrap();
+    let out = stdout(&output);
+    assert!(
+        out.contains("GitHub Copilot: couldn't remove its old petit-poucet plugin (")
+            && out.ends_with(
+                "run `copilot plugin uninstall petit-poucet`, then `petit-poucet setup` again\n"
+            ),
+        "{out}"
+    );
+    assert!(!home.path().join(".copilot/mcp-config.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_removes_the_old_plugin_then_wires_the_agent() {
+    let home = TempDir::new().unwrap();
+    with_old_copilot_plugin(home.path());
+    let bin = TempDir::new().unwrap();
+    let copilot = bin.path().join("copilot");
+    fs::write(
+        &copilot,
+        format!(
+            "#!/bin/sh\necho \"$*\" > '{}'\n",
+            bin.path().join("args").display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(
+        &copilot,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+
+    let output = petit_poucet(home.path())
+        .env("PATH", bin.path())
+        .args(["setup", "--agent", "copilot"])
+        .output()
+        .unwrap();
+    let out = stdout(&output);
+    assert!(output.status.success(), "{out}");
+    assert!(
+        out.contains("GitHub Copilot: removed its old petit-poucet plugin\nGitHub Copilot: set up"),
+        "{out}"
+    );
+    assert_eq!(
+        fs::read_to_string(bin.path().join("args")).unwrap(),
+        "plugin uninstall petit-poucet\n"
+    );
+    assert!(
+        home.path()
+            .join(".copilot/hooks/petit-poucet.json")
+            .is_file()
     );
 }
 

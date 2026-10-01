@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::agent::Agent;
-use crate::{antigravity, codex, edit, note};
+use crate::{antigravity, codex, copilot, edit, note};
 
 // The plugin's skills and the subagent tidy-memory starts, embedded for the agents `setup` configures.
 const SKILLS: [(&str, &str); 3] = [
@@ -21,12 +21,12 @@ const SKILLS: [(&str, &str); 3] = [
 const CLEANUP: &str = include_str!("../plugin/agents/memory-cleanup.md");
 const CLEANUP_NAME: &str = "memory-cleanup";
 
-// Codex and Cursor share the Agent Skills folder; Antigravity reads only its own.
-fn skills_dir(agent: Agent, home: &Path) -> Option<PathBuf> {
+// Codex, Cursor and Copilot share the Agent Skills folder; Claude Code and Antigravity read only their own.
+fn skills_dir(agent: Agent, home: &Path) -> PathBuf {
     match agent {
-        Agent::Codex | Agent::Cursor => Some(home.join(".agents/skills")),
-        Agent::Antigravity => Some(antigravity::dir(home).join("skills")),
-        Agent::Claude | Agent::Copilot => None,
+        Agent::Codex | Agent::Cursor | Agent::Copilot => home.join(".agents/skills"),
+        Agent::Claude => home.join(".claude/skills"),
+        Agent::Antigravity => antigravity::dir(home).join("skills"),
     }
 }
 
@@ -35,8 +35,8 @@ struct Frontmatter {
     description: String,
 }
 
-// Tools are left out: their names differ per agent, and the subagent inherits the main agent's.
-fn subagent(agent: Agent, home: &Path) -> Option<(PathBuf, String)> {
+// Read-only where the agent names its tools in a known way; elsewhere it inherits the main agent's.
+fn subagent(agent: Agent, home: &Path) -> (PathBuf, String) {
     let (yaml, prompt) =
         note::split_frontmatter(CLEANUP).expect("memory-cleanup.md has frontmatter");
     let description = note::parse_yaml::<Frontmatter>(yaml)
@@ -47,7 +47,22 @@ fn subagent(agent: Agent, home: &Path) -> Option<(PathBuf, String)> {
     let markdown = |extra: &str, heading: &str| {
         format!("---\nname: {CLEANUP_NAME}\ndescription: {quoted}\n{extra}---\n\n{heading}{prompt}")
     };
-    Some(match agent {
+    match agent {
+        Agent::Claude => (
+            home.join(format!(".claude/agents/{CLEANUP_NAME}.md")),
+            markdown(
+                "tools: Read, Grep, Glob, mcp__petit-poucet__memory_review\n",
+                "",
+            ),
+        ),
+        // user-invocable: false keeps it out of the agent picker.
+        Agent::Copilot => (
+            copilot::dir(home).join(format!("agents/{CLEANUP_NAME}.agent.md")),
+            markdown(
+                "tools: [\"petit-poucet/memory_review\", \"read\", \"search\"]\nuser-invocable: false\n",
+                "",
+            ),
+        ),
         Agent::Codex => {
             let mut table = toml::Table::new();
             table.insert("name".into(), CLEANUP_NAME.into());
@@ -70,16 +85,14 @@ fn subagent(agent: Agent, home: &Path) -> Option<(PathBuf, String)> {
                 &format!("# {CLEANUP_NAME}\n\n"),
             ),
         ),
-        Agent::Claude | Agent::Copilot => return None,
-    })
+    }
 }
 
 // Every file petit-poucet writes for this agent, with its content.
 fn files(agent: Agent, home: &Path) -> Vec<(PathBuf, String)> {
-    let skills = skills_dir(agent, home).into_iter().flat_map(|dir| {
-        SKILLS.map(|(name, text)| (dir.join(name).join("SKILL.md"), text.to_string()))
-    });
-    skills.chain(subagent(agent, home)).collect()
+    let dir = skills_dir(agent, home);
+    let skills = SKILLS.map(|(name, text)| (dir.join(name).join("SKILL.md"), text.to_string()));
+    skills.into_iter().chain([subagent(agent, home)]).collect()
 }
 
 pub fn setup(agent: Agent, home: &Path) -> Result<String, String> {
@@ -89,12 +102,12 @@ pub fn setup(agent: Agent, home: &Path) -> Result<String, String> {
         fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         changed |= edit::replace(&path, &text)?;
     }
-    Ok(match (changed, skills_dir(agent, home)) {
-        (true, Some(dir)) => format!(
+    Ok(match changed {
+        true => format!(
             "installed in {} (with the {CLEANUP_NAME} subagent)",
-            dir.display()
+            skills_dir(agent, home).display()
         ),
-        _ => "already installed".to_string(),
+        false => "already installed".to_string(),
     })
 }
 
@@ -119,23 +132,20 @@ pub fn check(agent: Agent, home: &Path) -> (String, bool) {
 
 pub fn uninstall(agent: Agent, home: &Path) -> Result<String, String> {
     let mut removed = false;
-    if let Some((path, _)) = subagent(agent, home)
-        && path.is_file()
-    {
+    let (path, _) = subagent(agent, home);
+    if path.is_file() {
         fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         removed = true;
         if agent == Agent::Antigravity {
             fs::remove_dir(path.parent().unwrap()).ok();
         }
     }
-    let Some(dir) = skills_dir(agent, home) else {
-        return Ok("nothing to remove".to_string());
-    };
+    let dir = skills_dir(agent, home);
     // Shared skills stay while another agent that reads them still has its subagent.
     let users: Vec<&str> = Agent::ALL
         .into_iter()
-        .filter(|&other| other != agent && skills_dir(other, home).as_ref() == Some(&dir))
-        .filter(|&other| subagent(other, home).is_some_and(|(path, _)| path.is_file()))
+        .filter(|&other| other != agent && skills_dir(other, home) == dir)
+        .filter(|&other| subagent(other, home).0.is_file())
         .map(Agent::name)
         .collect();
     if !users.is_empty() {
@@ -215,7 +225,6 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         setup(Agent::Codex, home.path()).unwrap();
         let skill = skills_dir(Agent::Codex, home.path())
-            .unwrap()
             .join("memory")
             .join("SKILL.md");
         fs::write(&skill, "old").unwrap();
