@@ -23,6 +23,14 @@ fi
 
 . "$root/release.env"
 
+# A petit-poucet on PATH (install script, package manager) serves the plugin when it is the pinned version;
+# PETIT_POUCET_NO_PATH stops a launcher found there, this one included, from looking again.
+if [ -z "${PETIT_POUCET_NO_PATH:-}" ] && found=$(command -v petit-poucet) \
+  && [ "$(PETIT_POUCET_NO_PATH=1 "$found" --version 2>/dev/null)" = "petit-poucet $PETIT_POUCET_VERSION" ]; then
+  export PETIT_POUCET_NO_PATH=1
+  exec "$found" "$@"
+fi
+
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) target=aarch64-apple-darwin ;;
   Darwin-x86_64) target=x86_64-apple-darwin ;;
