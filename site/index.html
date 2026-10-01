@@ -3,78 +3,135 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>petit-poucet</title>
-<meta name="description" content="Curated, shared Markdown memory for coding agents (Claude Code, GitHub Copilot CLI): one small Rust MCP server, a git-backed Obsidian-compatible vault, rules enforced in code.">
-<meta property="og:title" content="petit-poucet">
-<meta property="og:description" content="Leaves pebbles so your coding agents find their way back.">
+<title>petit-poucet: one memory for all your coding agents</title>
+<meta name="description" content="One curated memory for Claude Code, GitHub Copilot and any MCP client: your rules, decisions and verified facts in a Markdown folder you own, with every change in git.">
+<meta property="og:title" content="petit-poucet: one memory for all your coding agents">
+<meta property="og:description" content="Your rules, decisions and verified facts in a Markdown folder you own, loaded by every coding agent at the start of every session.">
 <meta property="og:image" content="https://areguig.github.io/petit-poucet/social-preview.png">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <style>
   :root {
     --bg: #f7f4ec;
+    --bg-deep: #efe9da;
     --surface: #fffdf8;
     --ink: #2b2822;
     --muted: #6b6558;
     --line: #e2dccd;
     --accent: #2f6b4f;
+    --accent-soft: #e3eee6;
     --accent-ink: #ffffff;
     --code-bg: #1f1d19;
     --code-ink: #efe9dc;
     --code-dim: #a39c8c;
+    --code-green: #9fd5b6;
     --pebble: #f4f1ea;
+    --pebble-edge: #8a8578;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #15140f;
+      --bg-deep: #1b1914;
       --surface: #1d1b16;
       --ink: #ece6d8;
       --muted: #a39c8c;
       --line: #34302a;
       --accent: #7cc4a0;
+      --accent-soft: #1f2e26;
       --accent-ink: #10231a;
       --code-bg: #0f0e0b;
+      --pebble: #d9d3c4;
+      --pebble-edge: #6b6558;
     }
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--ink);
     font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   }
-  main { max-width: 880px; margin: 0 auto; padding: 0 16px 64px; }
-  h1, h2 { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-weight: 600; line-height: 1.2; }
-  h2 { font-size: 1.7rem; margin: 64px 0 16px; }
+  main { max-width: 960px; margin: 0 auto; padding: 0 16px 64px; }
+  h1, h2, h3 { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-weight: 600; line-height: 1.2; }
+  h2 { font-size: clamp(1.6rem, 4vw, 2rem); margin: 0 0 12px; }
+  h3 { font-size: 1.15rem; margin: 0 0 6px; }
   p { margin: 0 0 16px; }
   a { color: var(--accent); }
   code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86em; }
   :not(pre) > code { background: var(--line); padding: 1px 6px; border-radius: 5px; }
 
-  .hero { text-align: center; padding: 72px 0 24px; }
-  .hero img { width: 112px; height: 112px; }
-  .hero h1 { font-size: clamp(2.4rem, 7vw, 3.6rem); margin: 16px 0 8px; }
-  .tagline { font-size: 1.25rem; color: var(--muted); font-style: italic; margin-bottom: 28px; }
-  .tale { max-width: 620px; margin: 0 auto 32px; }
-  .buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .button { display: inline-block; padding: 11px 22px; border-radius: 999px; text-decoration: none; font-weight: 600; border: 1px solid var(--accent); }
-  .button.primary { background: var(--accent); color: var(--accent-ink); }
+  section { padding: 56px 0 8px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.78rem; font-weight: 700; color: var(--accent); margin: 0 0 8px; }
+  .lead { font-size: 1.1rem; color: var(--muted); max-width: 680px; }
 
-  pre {
-    background: var(--code-bg); color: var(--code-ink);
-    padding: 18px 20px; border-radius: 12px; overflow-x: auto; margin: 0 0 16px; line-height: 1.55;
-  }
+  /* A trail of pebbles between sections, like the tale. */
+  .trail { display: flex; justify-content: center; gap: 22px; padding-top: 48px; }
+  .trail span { width: 14px; height: 10px; border-radius: 50%; background: var(--pebble); border: 2px solid var(--pebble-edge); }
+  .trail span:nth-child(2) { transform: translateY(-5px) rotate(14deg); width: 16px; }
+  .trail span:nth-child(3) { transform: rotate(-10deg); width: 12px; }
+
+  .hero { text-align: center; padding: 72px 0 8px; }
+  .hero img { width: 104px; height: 104px; }
+  .hero .name { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em; margin: 12px 0 20px; color: var(--muted); }
+  .hero h1 { font-size: clamp(2.3rem, 7vw, 3.8rem); margin: 0 auto 16px; max-width: 760px; }
+  .hero .lead { margin: 0 auto 28px; }
+  .buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .button { display: inline-block; padding: 11px 24px; border-radius: 999px; text-decoration: none; font-weight: 600; border: 1px solid var(--accent); }
+  .button.primary { background: var(--accent); color: var(--accent-ink); }
+  .clients { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 28px 0 0; padding: 0; list-style: none; }
+  .clients li { font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+  .clients.planned { margin-top: 10px; }
+  .clients.planned li { background: transparent; border-style: dashed; }
+  .clients.planned li:first-child { border: 0; padding-right: 0; font-weight: 600; }
+  .clients.planned a { color: inherit; }
+
+  .problems { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 16px; margin-top: 24px; }
+  .problem { padding: 20px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 12px 12px 0; }
+  .problem p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px; margin: 24px 0; counter-reset: step; }
+  .step { position: relative; padding: 20px 20px 20px 64px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: step; content: counter(step); position: absolute; left: 18px; top: 18px; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 700; display: grid; place-items: center; }
+  .step p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+  .terminal { background: var(--code-bg); border-radius: 12px; overflow: hidden; margin: 0 0 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
+  .terminal .bar { display: flex; gap: 7px; padding: 12px 16px; }
+  .terminal .bar span { width: 11px; height: 11px; border-radius: 50%; background: #4a463e; }
+  pre { background: var(--code-bg); color: var(--code-ink); padding: 18px 20px; border-radius: 12px; overflow-x: auto; margin: 0 0 16px; line-height: 1.55; }
+  .terminal pre { border-radius: 0; padding-top: 4px; margin: 0; }
   pre .dim { color: var(--code-dim); }
   pre .pebble { color: var(--pebble); font-weight: 600; }
+  pre .ok { color: var(--code-green); }
 
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px; }
+  .table-wrap { overflow-x: auto; margin: 24px 0 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 0.92rem; table-layout: fixed; }
+  col.label { width: 130px; }
+  th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  tr:last-child th, tr:last-child td { border-bottom: 0; }
+  thead th { font-family: inherit; font-size: 0.85rem; color: var(--muted); background: var(--bg-deep); }
+  tbody th { font-weight: 600; color: var(--ink); }
+  td code { overflow-wrap: anywhere; }
+  td.us, th.us { background: var(--accent-soft); }
+  thead th.us { color: var(--accent); }
+  .sources { font-size: 0.82rem; color: var(--muted); }
+  .verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; margin-top: 24px; }
+  .verdict > div { padding: 20px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+  .verdict ul { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 0.95rem; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 16px; margin-top: 24px; }
   .cards > *, .install > * { min-width: 0; }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
-  .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .card .icon { font-size: 1.4rem; line-height: 1; margin-bottom: 10px; }
   .card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
 
-  .install { display: grid; gap: 8px; }
-  .install h3 { margin: 0 0 8px; font-size: 1rem; }
+  .install { display: grid; gap: 8px; margin-top: 24px; }
+  .install h3 { font-size: 1rem; margin-bottom: 8px; }
   .note { color: var(--muted); font-size: 0.95rem; }
+
+  details { border-bottom: 1px solid var(--line); padding: 14px 0; }
+  details:first-of-type { border-top: 1px solid var(--line); margin-top: 16px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { margin: 10px 0 0; color: var(--muted); }
 
   footer { border-top: 1px solid var(--line); margin-top: 72px; padding-top: 24px; color: var(--muted); font-size: 0.9rem; text-align: center; }
 </style>
@@ -83,17 +140,47 @@
 <main>
   <section class="hero">
     <img src="logo.svg" alt="">
-    <h1>petit-poucet</h1>
-    <p class="tagline">Leaves pebbles so your coding agents find their way back.</p>
-    <p class="tale">In the French tale, Le Petit Poucet drops white pebbles along the path to find his way home. petit-poucet keeps a small, curated memory of your rules, decisions and verified facts, so every new session in Claude Code or GitHub Copilot CLI starts where the last one left off.</p>
+    <p class="name">petit-poucet</p>
+    <h1>One memory for all your coding agents</h1>
+    <p class="lead">Your rules, decisions and verified facts live in a Markdown folder you own. Claude Code, GitHub Copilot and any MCP client load it at the start of every session, so none of them starts from zero, and all of them remember the same things.</p>
     <div class="buttons">
       <a class="button primary" href="#install">Install</a>
-      <a class="button" href="https://github.com/areguig/petit-poucet">View on GitHub</a>
+      <a class="button" href="#compare">Why not built-in memory?</a>
+      <a class="button" href="https://github.com/areguig/petit-poucet">GitHub</a>
+    </div>
+    <ul class="clients" aria-label="Works with">
+      <li>Claude Code</li><li>Copilot CLI</li><li>Copilot in VS Code</li><li>Copilot in IntelliJ</li><li>GitHub Copilot app</li><li>any MCP client</li>
+    </ul>
+    <ul class="clients planned" aria-label="Planned">
+      <li>Planned:</li><li><a href="https://github.com/areguig/petit-poucet/issues/9">Codex</a></li><li><a href="https://github.com/areguig/petit-poucet/issues/10">OpenCode</a></li><li><a href="https://github.com/areguig/petit-poucet/issues/11">other popular agents</a></li>
+    </ul>
+  </section>
+
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section>
+    <p class="eyebrow">The problem</p>
+    <h2>Your agents forget, each in its own way</h2>
+    <div class="problems">
+      <div class="problem"><h3>Every session starts from zero</h3><p>You explain your commit rules, the database quirk and the deploy steps again, to a new session that never heard them.</p></div>
+      <div class="problem"><h3>Every tool keeps its own memory</h3><p>What Claude Code learned stays in Claude Code. Switch to Copilot and you teach it all over again, in another format, in another place.</p></div>
+      <div class="problem"><h3>Memory you can't really check</h3><p>Built-in memories are written for you, not with you: hard to review, easy to drift, and sometimes gone after a few weeks.</p></div>
     </div>
   </section>
 
-  <h2>What your agent sees</h2>
-  <p>At the start of every session, your preferences and the current repo's notes, one line each. The agent opens only the notes a task needs.</p>
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section>
+    <p class="eyebrow">How it works</p>
+    <h2>A short Index at the start, the details on demand</h2>
+    <p class="lead">In the French tale, Le Petit Poucet drops white pebbles to find his way home. petit-poucet leaves pebbles for your agents: one line per fact, the full note only when a task needs it.</p>
+    <div class="steps">
+      <div class="step"><h3>Session starts</h3><p>A hook gives the agent the memory rules and the Index of what applies here: your preferences and this repo's notes.</p></div>
+      <div class="step"><h3>Agent works</h3><p>It opens only the notes the task needs, and searches the rest, including topics tied to no repo.</p></div>
+      <div class="step"><h3>Agent learns</h3><p>A decision, a correction or a verified fact is saved on purpose, with where it came from, and committed to git.</p></div>
+    </div>
+    <div class="terminal">
+      <div class="bar" aria-hidden="true"><span></span><span></span><span></span></div>
 <pre><span class="pebble">🪨 petit-poucet · 20 notes loaded (preferences + chargepath-api)</span>
 
 <span class="dim">## Preferences (all repos)</span>
@@ -103,43 +190,116 @@
 <span class="dim">## Projects / chargepath-api</span>
 - [[Projects/chargepath-api/prod-db-no-postgis]] — spatial queries must work without PostGIS
 
-<span class="dim">Topics (searched on demand): homelab (8), work-mac (3)</span></pre>
+<span class="dim">Topics (searched on demand): homelab (8), work-mac (3)</span>
 
-  <h2>One memory, your rules</h2>
-  <div class="cards">
-    <div class="card"><h3>Plain Markdown</h3><p>A folder of short notes you can read and edit in Obsidian or any editor. No database, no cloud.</p></div>
-    <div class="card"><h3>Curated, not recorded</h3><p>Agents save a decision, a correction or a verified fact on purpose, with its source. Nothing is scraped from transcripts.</p></div>
-    <div class="card"><h3>Your rules stay yours</h3><p>Rules you stated are never changed or deleted without your confirmation, and your own edits are never overwritten.</p></div>
-    <div class="card"><h3>Every change in git</h3><p>The vault is a git repository with a local commit after each change: inspect or undo any agent edit.</p></div>
-    <div class="card"><h3>Shared across agents</h3><p>Claude Code and Copilot CLI read and write the same memory, per repo, with topics for everything else.</p></div>
-    <div class="card"><h3>One small binary</h3><p>A Rust MCP server plus session hooks, installed as a plugin. No runtime, no service to run.</p></div>
-  </div>
+<span class="dim">› memory_save</span> <span class="ok">saved Projects/chargepath-api/deploy-needs-vpn</span></pre>
+    </div>
+  </section>
 
-  <h2>How it works</h2>
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section id="compare">
+    <p class="eyebrow">Compared with built-in memory</p>
+    <h2>What petit-poucet adds to your agent's own memory</h2>
+    <p class="lead">Claude Code, Copilot and Codex now remember things on their own, and that's useful. They differ in where the memory lives, who can read it, and how much say you have in it.</p>
+    <div class="table-wrap">
+      <table>
+        <colgroup><col class="label"><col><col><col><col></colgroup>
+        <thead>
+          <tr><th></th><th>Claude Code auto memory</th><th>GitHub Copilot Memory</th><th>Codex memories</th><th class="us">petit-poucet</th></tr>
+        </thead>
+        <tbody>
+          <tr><th>Where it lives</th><td>Markdown in <code>~/.claude/projects/&lt;repo&gt;/memory/</code>, on this machine</td><td>Stored by GitHub (in VS Code: local memory files)</td><td>Generated files in <code>~/.codex/memories/</code></td><td class="us">A folder you choose, plain Markdown, Obsidian-compatible</td></tr>
+          <tr><th>Other agents</th><td>Claude Code only</td><td>Copilot only</td><td>Codex only</td><td class="us">Every agent you plug in: Claude Code, Copilot, any MCP client</td></tr>
+          <tr><th>Scope</th><td>One repo; rules for all repos go in <code>CLAUDE.md</code>, by hand</td><td>One repo</td><td>Global</td><td class="us">Preferences for every repo, notes per repo (matched by git remote), and topics tied to no repo</td></tr>
+          <tr><th>How notes are made</th><td>Claude decides what to save</td><td>The agent saves while working</td><td>Summarised in the background from past chats</td><td class="us">Saved on purpose, one fact per note, each with its source</td></tr>
+          <tr><th>Your say</th><td>Edit the files yourself</td><td>Review and delete in repository settings</td><td>Docs advise against editing them by hand</td><td class="us">Rules you stated change only with your confirmation; your edits are never overwritten</td></tr>
+          <tr><th>History</th><td>Last-modified time</td><td>No version history</td><td>No version history</td><td class="us">A git commit for every change: diff, revert, blame</td></tr>
+          <tr><th>Lifetime</th><td>Until edited; only the first 200 lines of the index load</td><td>Unused memories expire after 28 days</td><td>Off by default; managed by Codex</td><td class="us">Until you or a confirmed cleanup removes it</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sources">From each vendor's documentation, October 2026: <a href="https://code.claude.com/docs/en/memory">Claude Code memory</a>, <a href="https://github.blog/changelog/2026-03-04-copilot-memory-now-on-by-default-for-pro-and-pro-users-in-public-preview/">Copilot Memory</a>, <a href="https://code.visualstudio.com/docs/copilot/agents/memory">memory in VS Code</a>, <a href="https://developers.openai.com/codex/memories">Codex memories</a>. These features change often: check the links for the current behaviour.</p>
+    <div class="verdict">
+      <div>
+        <h3>Built-in memory is enough when</h3>
+        <ul>
+          <li>you use one agent, and are happy with what it remembers;</li>
+          <li>you don't need to review or undo what it learned.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>petit-poucet helps when</h3>
+        <ul>
+          <li>you switch between Claude Code and Copilot, or use both;</li>
+          <li>you want one place to read, edit and correct what agents know;</li>
+          <li>your rules must not drift, expire or be rewritten silently.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Already have built-in memory? The <code>migrate-memory</code> skill moves it in, one confirmed fact at a time, and leaves the old files untouched.</p>
+  </section>
+
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section>
+    <p class="eyebrow">What you get</p>
+    <h2>Small, plain, and on your side</h2>
+    <div class="cards">
+      <div class="card"><div class="icon" aria-hidden="true">📝</div><h3>Plain Markdown</h3><p>A folder of short notes you can read and edit in Obsidian or any editor. No database, no cloud, nothing pushed anywhere.</p></div>
+      <div class="card"><div class="icon" aria-hidden="true">🎯</div><h3>Curated, not recorded</h3><p>Agents save a decision, a correction or a verified fact on purpose, with its source. Nothing is scraped from transcripts.</p></div>
+      <div class="card"><div class="icon" aria-hidden="true">🔒</div><h3>Rules enforced in code</h3><p>Note format, sources and the Index are checked by the server. Secrets are refused. Your stated rules need your OK to change.</p></div>
+      <div class="card"><div class="icon" aria-hidden="true">🕰️</div><h3>Every change in git</h3><p>A local commit after each change: inspect or undo any agent edit. Several agents at once never clobber each other.</p></div>
+      <div class="card"><div class="icon" aria-hidden="true">🧹</div><h3>Keeps itself tidy</h3><p>The <code>tidy-memory</code> skill has a read-only agent propose merges, fixes and deletions. You confirm, it applies.</p></div>
+      <div class="card"><div class="icon" aria-hidden="true">🪶</div><h3>One small binary</h3><p>A Rust MCP server plus session hooks, installed as a plugin. No runtime, no service to keep running.</p></div>
+    </div>
+  </section>
+
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section>
+    <p class="eyebrow">The vault</p>
+    <h2>A folder you can read</h2>
 <pre>Claude Code ─┐
-Copilot CLI ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
-other MCP   ─┘                                       ├─ Preferences/       every repo
+Copilot     ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
+any MCP     ─┘                                       ├─ Index.md           generated
+                                                     ├─ Preferences/       every repo
                                                      ├─ Projects/&lt;repo&gt;/   that repo
                                                      └─ Topics/&lt;topic&gt;/    searched on demand</pre>
-  <p class="note">Two skills come with it: <code>migrate-memory</code> moves your older file-based agent memory in, and <code>tidy-memory</code> has a subagent propose merges and fixes for you to confirm.</p>
+  </section>
 
-  <h2 id="install">Install</h2>
-  <div class="install">
-    <div>
-      <h3>Claude Code</h3>
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section id="install">
+    <p class="eyebrow">Install</p>
+    <h2>Two commands, then start a session</h2>
+    <div class="install">
+      <div>
+        <h3>Claude Code</h3>
 <pre>claude plugin marketplace add https://github.com/areguig/petit-poucet
 claude plugin install petit-poucet@petit-poucet</pre>
-    </div>
-    <div>
-      <h3>GitHub Copilot CLI</h3>
+      </div>
+      <div>
+        <h3>GitHub Copilot CLI <span class="note">(also serves VS Code, IntelliJ and the Copilot app)</span></h3>
 <pre>copilot plugin marketplace add areguig/petit-poucet
 copilot plugin install petit-poucet@petit-poucet</pre>
+      </div>
     </div>
-  </div>
-  <p class="note">macOS or Linux, with <code>git</code> and <code>curl</code>. Start a new session: the agent offers to create your vault in <code>~/agent-memory</code>.</p>
+    <p class="note">macOS or Linux, with <code>git</code> and <code>curl</code>. In your next session, the agent offers to create your vault in <code>~/agent-memory</code>; both agents share it.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Questions</p>
+    <h2>Good to know</h2>
+    <details><summary>Does my memory leave my machine?</summary><p>petit-poucet itself sends nothing anywhere: the vault is a local folder and a local git repository, never pushed. Like any file your agent reads, the Index and the notes it opens become part of the conversation with its model.</p></details>
+    <details><summary>Do I need Obsidian?</summary><p>No. Obsidian is a nice way to browse and edit the vault, but petit-poucet doesn't need it running. Your edits are picked up on the next tool call.</p></details>
+    <details><summary>What stops an agent from saving nonsense, or a secret?</summary><p>Every note needs a type, a one-line summary and a source; tokens, keys and passwords are refused; a near-duplicate is reported so the agent updates the existing note. Rules you stated can't be changed without your confirmation.</p></details>
+    <details><summary>My agent isn't supported yet</summary><p>Codex and OpenCode are planned, and other popular agents will follow as people use them. Give a 👍 to <a href="https://github.com/areguig/petit-poucet/issues/9">Codex</a>, <a href="https://github.com/areguig/petit-poucet/issues/10">OpenCode</a> or <a href="https://github.com/areguig/petit-poucet/issues/11">other agents</a>, or comment with yours: the votes decide what comes first.</p></details>
+    <details><summary>Can my team share one memory?</summary><p>Not by design: each person keeps their own vault. Knowledge the whole team needs belongs in the repository, in <code>AGENTS.md</code> or <code>CLAUDE.md</code>.</p></details>
+  </section>
 
   <footer>
-    <p>Apache-2.0 · <a href="https://github.com/areguig/petit-poucet">github.com/areguig/petit-poucet</a> · built with <a href="https://claude.com/claude-code">Claude Code</a></p>
+    <p>Apache-2.0 · <a href="https://github.com/areguig/petit-poucet">github.com/areguig/petit-poucet</a> · <a href="https://github.com/areguig/petit-poucet/releases/latest">latest release</a> · built with <a href="https://claude.com/claude-code">Claude Code</a></p>
   </footer>
 </main>
 </body>
