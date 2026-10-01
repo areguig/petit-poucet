@@ -213,6 +213,8 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
 fn hook(home: &Path, args: &[&str], input: &str) -> String {
     let output = petit_poucet(home)
         .env("TMPDIR", home)
+        .env("TMP", home)
+        .env("TEMP", home)
         .arg("hook")
         .args(args)
         .write_stdin(input)
