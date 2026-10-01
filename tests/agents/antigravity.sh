@@ -1,11 +1,12 @@
 #!/bin/sh
 # Installs petit-poucet into the real Antigravity CLI with `setup`, then runs an agy session against a fake model:
-# every model call carries the memory once, the MCP tools are offered, and the stop reminder comes once without looping.
+# every model call carries the memory once, the MCP tools and skills are offered, and the stop reminder comes once without looping.
 . "$(dirname "$0")/lib.sh"
 
 mkdir -p "$HOME/.gemini/config"
 has "$("$pp" setup)" '^Antigravity CLI: set up'
 has "$(agy mcp list 2>&1)" '^petit-poucet .*enabled'
+has "$(agy agents 2>&1)" 'memory-cleanup'
 
 # agy needs a Google sign-in, except through an LLM gateway: the fake model stands in for one.
 requests="$HOME/requests.jsonl"
@@ -30,8 +31,10 @@ texts = lambda call: [p.get("text", "") for c in call["contents"] for p in c["pa
 for call in calls:
     memory = [t for t in texts(call) if t.startswith("Agent memory (petit-poucet)")]
     system = json.dumps(call["systemInstruction"])
-    print(len(memory), "memory message(s);", "petit-poucet tools offered:", "# petit-poucet" in system and "memory_search" in system)
-    assert len(memory) == 1 and "# petit-poucet" in system and "memory_search" in system
+    tools = "# petit-poucet" in system and "memory_search" in system
+    skills = all(name in system for name in ("migrate-memory", "tidy-memory"))
+    print(len(memory), "memory message(s); tools offered:", tools, "; skills offered:", skills)
+    assert len(memory) == 1 and tools and skills
 reminded = [any("Memory check" in t for t in texts(call)) for call in calls]
 print("reminder in calls:", reminded)
 assert reminded == [False] * 3 + [True], "one reminder, after the third turn, and no loop"
