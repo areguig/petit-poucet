@@ -588,9 +588,19 @@ fn setup_wires_codex_in_and_out() {
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
     assert!(
-        out.ends_with("Codex: set up (MCP server in config.toml, hooks in hooks.json): open Codex and trust its hooks once with /hooks\n"),
+        out.contains("Codex: set up (MCP server in config.toml, hooks in hooks.json): open Codex and trust its hooks once with /hooks\n"),
         "{out}"
     );
+    let skills = home.path().join(".agents/skills");
+    assert!(
+        out.ends_with(&format!(
+            "Codex skills: installed in {} (with the memory-cleanup subagent)\n",
+            skills.display()
+        )),
+        "{out}"
+    );
+    assert!(skills.join("tidy-memory/SKILL.md").is_file());
+    assert!(codex.join("agents/memory-cleanup.toml").is_file());
     let config = fs::read_to_string(codex.join("config.toml")).unwrap();
     assert!(config.starts_with("model = \"gpt-6\"\n"), "{config}");
     let parsed: toml::Table = toml::from_str(&config).unwrap();
@@ -612,13 +622,15 @@ fn setup_wires_codex_in_and_out() {
     assert!(
         setup(home.path(), &[])
             .1
-            .ends_with("Codex: already set up\n")
+            .contains("Codex: already set up\n")
     );
     let (ok, out) = setup(home.path(), &["--uninstall"]);
     assert!(
-        ok && out.ends_with("Codex: removed (MCP server and hooks)\n"),
+        ok && out.contains("Codex: removed (MCP server and hooks)\n"),
         "{out}"
     );
+    assert!(out.ends_with("Codex skills: removed\n"), "{out}");
+    assert!(!skills.join("tidy-memory").exists());
     assert_eq!(
         fs::read_to_string(codex.join("config.toml")).unwrap(),
         "model = \"gpt-6\"\n"
@@ -754,7 +766,7 @@ fn setup_wires_cursor_in_and_out() {
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
     assert!(
-        out.ends_with(
+        out.contains(
             "Cursor: set up (MCP server in mcp.json, hooks in hooks.json): restart Cursor\n"
         ),
         "{out}"
@@ -767,12 +779,18 @@ fn setup_wires_cursor_in_and_out() {
         exe.display().to_string()
     );
 
+    assert!(
+        home.path()
+            .join(".cursor/agents/memory-cleanup.md")
+            .is_file()
+    );
     assert!(setup(home.path(), &["--check"]).0);
     let (ok, out) = setup(home.path(), &["--uninstall"]);
     assert!(
-        ok && out.ends_with("Cursor: removed (MCP server and hooks)\n"),
+        ok && out.contains("Cursor: removed (MCP server and hooks)\n"),
         "{out}"
     );
+    assert!(out.ends_with("Cursor skills: removed\n"), "{out}");
     let (ok, out) = setup(home.path(), &["--check"]);
     assert!(
         !ok && out.contains("Cursor: missing the MCP server"),
@@ -837,7 +855,7 @@ fn setup_wires_antigravity_in_and_out() {
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
     assert!(
-        out.ends_with(
+        out.contains(
             "Antigravity CLI: set up (MCP server in mcp_config.json, hooks in hooks.json)\n"
         ),
         "{out}"
@@ -855,11 +873,19 @@ fn setup_wires_antigravity_in_and_out() {
         exe.display().to_string()
     );
     assert!(read("hooks.json")["petit-poucet"]["PreInvocation"].is_array());
+    assert!(
+        out.ends_with(&format!(
+            "Antigravity CLI skills: installed in {} (with the memory-cleanup subagent)\n",
+            config.join("skills").display()
+        )),
+        "{out}"
+    );
+    assert!(config.join("agents/memory-cleanup/agent.md").is_file());
 
     assert!(setup(home.path(), &["--check"]).0);
     let (ok, out) = setup(home.path(), &["--uninstall"]);
     assert!(
-        ok && out.ends_with("Antigravity CLI: removed (MCP server and hooks)\n"),
+        ok && out.contains("Antigravity CLI: removed (MCP server and hooks)\n"),
         "{out}"
     );
     assert_eq!(

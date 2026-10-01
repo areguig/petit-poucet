@@ -154,6 +154,8 @@ Install the binary (below), then run `petit-poucet setup`: it adds the MCP serve
 
 Install the binary (below), then run `petit-poucet setup`: it adds the MCP server to `~/.gemini/config/mcp_config.json` and its hooks to `~/.gemini/config/hooks.json`, keeping everything else in those files (and a `.petit-poucet.bak` copy of what it changed). Memory reaches the model before each of its calls, and the end-of-turn hook reminds the agent to save what it learned. `petit-poucet setup --uninstall` takes it out again. Gemini CLI isn't supported: it no longer serves personal Google accounts, and Antigravity CLI replaces it.
 
+For these three, `setup` also installs the `memory`, `migrate-memory` and `tidy-memory` skills (in `~/.agents/skills`, the folder Codex and Cursor share, and in `~/.gemini/config/skills` for Antigravity) and the `memory-cleanup` subagent that `tidy-memory` hands the review to, in each agent's own format.
+
 **The binary on its own**
 
 ```sh
