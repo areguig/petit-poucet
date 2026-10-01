@@ -38,20 +38,6 @@ fn read_config(dir: &Path) -> Result<DocumentMut, String> {
     text.parse().map_err(|e| format!("{}: {e}", path.display()))
 }
 
-// Never overwrites a hooks.json it can't read: the user's hooks would be lost.
-fn read_hooks(dir: &Path) -> Result<Value, String> {
-    let path = dir.join("hooks.json");
-    match fs::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display())),
-        Err(_) => Ok(json!({})),
-    }
-}
-
-fn write_hooks(dir: &Path, hooks: &Value) -> Result<bool, String> {
-    let text = serde_json::to_string_pretty(hooks).map_err(|e| e.to_string())? + "\n";
-    edit::replace(&dir.join("hooks.json"), &text)
-}
-
 fn without_ours(hooks: &mut Value) {
     if let Some(events) = hooks["hooks"].as_object_mut() {
         for groups in events.values_mut().filter_map(Value::as_array_mut) {
@@ -73,7 +59,7 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
     }
     config["mcp_servers"][SERVER] = Item::Table(server);
 
-    let mut hooks = read_hooks(dir)?;
+    let mut hooks = edit::read_json(&dir.join("hooks.json"))?;
     without_ours(&mut hooks);
     if !hooks["hooks"].is_object() {
         hooks["hooks"] = json!({});
@@ -86,8 +72,8 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
         }
     }
 
-    let changed =
-        edit::replace(&dir.join("config.toml"), &config.to_string())? | write_hooks(dir, &hooks)?;
+    let changed = edit::replace(&dir.join("config.toml"), &config.to_string())?
+        | edit::write_json(&dir.join("hooks.json"), &hooks)?;
     Ok(match changed {
         true => format!("set up (MCP server in config.toml, hooks in hooks.json): {TRUST}"),
         false => "already set up".to_string(),
@@ -96,7 +82,7 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
 
 pub fn check(dir: &Path) -> Result<(String, bool), String> {
     let config = read_config(dir)?;
-    let hooks = read_hooks(dir)?;
+    let hooks = edit::read_json(&dir.join("hooks.json"))?;
     let mut missing = Vec::new();
     let command = config
         .get("mcp_servers")
@@ -146,9 +132,9 @@ pub fn uninstall(dir: &Path) -> Result<String, String> {
         .get_mut("mcp_servers")
         .and_then(Item::as_table_like_mut)
         .is_some_and(|servers| servers.remove(SERVER).is_some());
-    let mut hooks = read_hooks(dir)?;
+    let mut hooks = edit::read_json(&dir.join("hooks.json"))?;
     without_ours(&mut hooks);
-    let mut changed = write_hooks_if_present(dir, &hooks)?;
+    let mut changed = edit::write_json_if_present(&dir.join("hooks.json"), &hooks)?;
     if had_server {
         changed |= edit::replace(&dir.join("config.toml"), &config.to_string())?;
     }
@@ -156,13 +142,6 @@ pub fn uninstall(dir: &Path) -> Result<String, String> {
         true => "removed (MCP server and hooks)".to_string(),
         false => "nothing to remove".to_string(),
     })
-}
-
-fn write_hooks_if_present(dir: &Path, hooks: &Value) -> Result<bool, String> {
-    match dir.join("hooks.json").exists() {
-        true => write_hooks(dir, hooks),
-        false => Ok(false),
-    }
 }
 
 #[cfg(test)]
