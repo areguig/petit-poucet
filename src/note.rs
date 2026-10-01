@@ -184,6 +184,16 @@ mod tests {
         assert!(note.body.starts_with("# Commit rules"));
     }
 
+    // Notes edited on Windows may have CRLF line endings.
+    #[test]
+    fn parses_a_note_with_crlf_line_endings() {
+        let note = Note::parse("Preferences/commit".into(), &GOOD.replace('\n', "\r\n"));
+        let fm = note.frontmatter.as_ref().unwrap();
+        assert_eq!(fm.created, jiff::civil::date(2026, 9, 14));
+        assert_eq!(note.summary(), Some("commit locally"));
+        assert_eq!(note.title(), "Commit rules");
+    }
+
     #[test]
     fn reports_bad_frontmatter_on_one_line() {
         let note = Note::parse("x".into(), &GOOD.replace("feedback", "opinion"));

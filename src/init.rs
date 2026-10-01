@@ -45,7 +45,8 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
     for dir in [PREFERENCES, PROJECTS] {
         fs::create_dir_all(path.join(dir)).map_err(|e| format!("{}: {e}", path.display()))?;
     }
-    let root = path.canonicalize().map_err(|e| e.to_string())?;
+    // Not `canonicalize`: on Windows its `\\?\` paths would end up in the config.
+    let root = dunce::canonicalize(&path).map_err(|e| e.to_string())?;
 
     let config_path = Config::path()?;
     let config = match fs::read_to_string(&config_path) {

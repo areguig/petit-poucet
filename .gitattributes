@@ -1,0 +1,2 @@
+# Repo files stay LF on every OS: tests compare them byte for byte and install.sh must run as is.
+* text=auto eol=lf
