@@ -62,10 +62,13 @@ fn subagent(agent: Agent, home: &Path) -> Option<(PathBuf, String)> {
             home.join(format!(".cursor/agents/{CLEANUP_NAME}.md")),
             markdown("", ""),
         ),
-        // Antigravity's prompt starts at an H1.
+        // Antigravity's prompt starts at an H1; mainAgent: false keeps it out of the agents a session can run as.
         Agent::Antigravity => (
             antigravity::dir(home).join(format!("agents/{CLEANUP_NAME}/agent.md")),
-            markdown("subagent: true\n", &format!("# {CLEANUP_NAME}\n\n")),
+            markdown(
+                "subagent: true\nmainAgent: false\n",
+                &format!("# {CLEANUP_NAME}\n\n"),
+            ),
         ),
         Agent::Claude | Agent::Copilot => return None,
     })
@@ -193,7 +196,7 @@ mod tests {
             (".cursor/agents/memory-cleanup.md", ""),
             (
                 ".gemini/config/agents/memory-cleanup/agent.md",
-                "subagent: true\n",
+                "subagent: true\nmainAgent: false\n",
             ),
         ] {
             let text = fs::read_to_string(home.join(path)).unwrap();
