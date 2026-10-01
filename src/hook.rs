@@ -33,7 +33,10 @@ If not, reply only: \"Nothing new to remember.\"";
 // Starts every line shown to the user.
 const PEBBLE: &str = "🪨 petit-poucet ·";
 
-pub fn session_start(agent: Agent, event: &Value) -> Value {
+pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
+    if agent.holds_memory_already(event) {
+        return None;
+    }
     let (context, message) = match memory_context(agent, event) {
         _ if !Config::is_set() => (
             setup_context(),
@@ -48,7 +51,7 @@ pub fn session_start(agent: Agent, event: &Value) -> Value {
             format!("{PEBBLE} memory unavailable: {e}"),
         ),
     };
-    agent.session_start_reply(&context, &message)
+    Some(agent.session_start_reply(&context, &message))
 }
 
 // Plugin installs have no `petit-poucet` on PATH: the launcher says where it is.
