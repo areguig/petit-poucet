@@ -4,20 +4,30 @@ use std::path::Path;
 use clap::ValueEnum;
 use serde_json::{Value, json};
 
+use crate::codex;
+
 // Every agent petit-poucet knows: how its hooks reply, how to find it, how it gets set up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Agent {
     Claude,
     Copilot,
+    Codex,
+}
+
+// Agents with a petit-poucet plugin are set up by it; the others by `petit-poucet setup`.
+pub struct Plugin {
+    pub install: &'static str,
+    pub uninstall: &'static str,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 2] = [Agent::Claude, Agent::Copilot];
+    pub const ALL: [Agent; 3] = [Agent::Claude, Agent::Copilot, Agent::Codex];
 
     pub fn name(self) -> &'static str {
         match self {
             Agent::Claude => "Claude Code",
             Agent::Copilot => "GitHub Copilot",
+            Agent::Codex => "Codex",
         }
     }
 
@@ -26,13 +36,14 @@ impl Agent {
         match self {
             Agent::Claude => "claude-code hook",
             Agent::Copilot => "copilot hook",
+            Agent::Codex => "codex hook",
         }
     }
 
-    // Copilot CLI hooks have no line for the user, so `message` is Claude Code's only.
+    // Copilot CLI hooks have no line for the user, so `message` goes to Claude Code and Codex only.
     pub fn session_start_reply(self, context: &str, message: &str) -> Value {
         match self {
-            Agent::Claude => json!({
+            Agent::Claude | Agent::Codex => json!({
                 "systemMessage": message,
                 "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context},
             }),
@@ -42,7 +53,7 @@ impl Agent {
 
     pub fn stop_reply(self, reason: &str, message: &str) -> Value {
         match self {
-            Agent::Claude => {
+            Agent::Claude | Agent::Codex => {
                 json!({"decision": "block", "reason": reason, "systemMessage": message})
             }
             Agent::Copilot => json!({"decision": "block", "reason": reason}),
@@ -53,6 +64,21 @@ impl Agent {
         match self {
             Agent::Claude => home.join(".claude").is_dir(),
             Agent::Copilot => home.join(".copilot").is_dir(),
+            Agent::Codex => codex::dir(home).is_dir(),
+        }
+    }
+
+    pub fn plugin(self) -> Option<Plugin> {
+        match self {
+            Agent::Claude => Some(Plugin {
+                install: "claude plugin marketplace add https://github.com/areguig/petit-poucet && claude plugin install petit-poucet@petit-poucet",
+                uninstall: "claude plugin uninstall petit-poucet@petit-poucet",
+            }),
+            Agent::Copilot => Some(Plugin {
+                install: "copilot plugin marketplace add areguig/petit-poucet && copilot plugin install petit-poucet@petit-poucet",
+                uninstall: "copilot plugin uninstall petit-poucet",
+            }),
+            Agent::Codex => None,
         }
     }
 
@@ -64,24 +90,7 @@ impl Agent {
                 .flatten()
                 .flatten()
                 .any(|marketplace| marketplace.path().join("petit-poucet").is_dir()),
-        }
-    }
-
-    pub fn plugin_install(self) -> &'static str {
-        match self {
-            Agent::Claude => {
-                "claude plugin marketplace add https://github.com/areguig/petit-poucet && claude plugin install petit-poucet@petit-poucet"
-            }
-            Agent::Copilot => {
-                "copilot plugin marketplace add areguig/petit-poucet && copilot plugin install petit-poucet@petit-poucet"
-            }
-        }
-    }
-
-    pub fn plugin_uninstall(self) -> &'static str {
-        match self {
-            Agent::Claude => "claude plugin uninstall petit-poucet@petit-poucet",
-            Agent::Copilot => "copilot plugin uninstall petit-poucet",
+            Agent::Codex => false,
         }
     }
 }

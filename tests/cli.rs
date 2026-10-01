@@ -475,7 +475,7 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
         "{out}"
     );
     assert!(
-        out.ends_with("agents: none found (supported: Claude Code, GitHub Copilot)\n"),
+        out.ends_with("agents: none found (supported: Claude Code, GitHub Copilot, Codex)\n"),
         "{out}"
     );
     assert!(vault.join("Index.md").is_file());
@@ -569,4 +569,102 @@ fn setup_for_one_agent_and_uninstall_keep_the_vault() {
         .output()
         .unwrap();
     assert!(!conflict.status.success());
+}
+
+#[test]
+fn setup_wires_codex_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let codex = home.path().join(".codex");
+    write(home.path(), ".codex/config.toml", "model = \"gpt-6\"\n");
+    let exe = Path::new(env!("CARGO_BIN_EXE_petit-poucet"))
+        .canonicalize()
+        .unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.ends_with("Codex: set up (MCP server in config.toml, hooks in hooks.json): open Codex and trust its hooks once with /hooks\n"),
+        "{out}"
+    );
+    let config = fs::read_to_string(codex.join("config.toml")).unwrap();
+    assert!(config.starts_with("model = \"gpt-6\"\n"), "{config}");
+    assert!(
+        config.contains(&format!("command = \"{}\"", exe.display())),
+        "{config}"
+    );
+    let hooks: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(codex.join("hooks.json")).unwrap()).unwrap();
+    let start = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        start,
+        format!("\"{}\" hook session-start --agent codex", exe.display())
+    );
+
+    assert!(setup(home.path(), &["--check"]).0);
+    assert!(
+        setup(home.path(), &[])
+            .1
+            .ends_with("Codex: already set up\n")
+    );
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.ends_with("Codex: removed (MCP server and hooks)\n"),
+        "{out}"
+    );
+    assert_eq!(
+        fs::read_to_string(codex.join("config.toml")).unwrap(),
+        "model = \"gpt-6\"\n"
+    );
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(
+        !ok && out.contains("Codex: missing the MCP server"),
+        "{out}"
+    );
+}
+
+#[test]
+fn codex_hooks_reply_in_codex_format() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let event =
+        serde_json::json!({"cwd": home.path(), "session_id": "codex-1", "source": "startup"});
+    let start: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "codex"],
+        &event.to_string(),
+    ))
+    .unwrap();
+    assert_eq!(start["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert!(
+        start["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .starts_with("Agent memory (petit-poucet)")
+    );
+    assert!(
+        start["systemMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("🪨 petit-poucet ·")
+    );
+
+    let stop = serde_json::json!({"session_id": "codex-1", "stop_hook_active": false}).to_string();
+    let replies: Vec<String> = (0..3)
+        .map(|_| hook(home.path(), &["stop", "--agent", "codex"], &stop))
+        .collect();
+    let third: serde_json::Value = serde_json::from_str(&replies[2]).unwrap();
+    assert_eq!(third["decision"], "block");
+    assert!(
+        third["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Memory check")
+    );
 }
