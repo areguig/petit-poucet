@@ -142,6 +142,10 @@ Then start a new session: the agent says memory has no vault yet and offers to c
 
 Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
 
+**Codex**
+
+Install the binary (below), then run `petit-poucet setup`: it adds the MCP server to `~/.codex/config.toml` and the session-start and stop hooks to `~/.codex/hooks.json`, keeping everything else in those files (and a `.petit-poucet.bak` copy of what it changed). Open Codex once and trust the new hooks with `/hooks`. `petit-poucet setup --uninstall` takes them out again.
+
 **The binary on its own**
 
 ```sh
