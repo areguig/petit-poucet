@@ -84,20 +84,24 @@ impl Agent {
 
     pub fn plugin_installed(self, home: &Path) -> bool {
         match self {
-            Agent::Claude => claude_plugin_enabled(home),
-            Agent::Copilot => fs::read_dir(home.join(".copilot/installed-plugins"))
-                .into_iter()
-                .flatten()
-                .flatten()
-                .any(|marketplace| marketplace.path().join("petit-poucet").is_dir()),
+            Agent::Claude => enabled_in(&home.join(".claude/settings.json")),
+            // A local install is only listed in the settings; a marketplace install is also copied.
+            Agent::Copilot => {
+                enabled_in(&home.join(".copilot/settings.json"))
+                    || fs::read_dir(home.join(".copilot/installed-plugins"))
+                        .into_iter()
+                        .flatten()
+                        .flatten()
+                        .any(|marketplace| marketplace.path().join("petit-poucet").is_dir())
+            }
             Agent::Codex => false,
         }
     }
 }
 
-// Claude Code lists enabled plugins in its settings as `name@marketplace: true`.
-fn claude_plugin_enabled(home: &Path) -> bool {
-    let Ok(text) = fs::read_to_string(home.join(".claude/settings.json")) else {
+// Claude Code and Copilot list enabled plugins in their settings as `name@marketplace: true`.
+fn enabled_in(settings: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(settings) else {
         return false;
     };
     let settings: Value = serde_json::from_str(&text).unwrap_or_default();
@@ -152,6 +156,21 @@ mod tests {
                 "{settings}"
             );
         }
+    }
+
+    #[test]
+    fn the_copilot_plugin_counts_when_enabled_in_its_settings() {
+        let home = tempfile::tempdir().unwrap();
+        write(
+            home.path(),
+            ".copilot/settings.json",
+            r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
+        );
+        assert!(Agent::Copilot.plugin_installed(home.path()));
+        assert!(
+            !Agent::Claude.plugin_installed(home.path()),
+            "each agent has its own settings"
+        );
     }
 
     #[test]
