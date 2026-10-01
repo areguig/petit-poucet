@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use crate::agent::Agent;
+use crate::agent::{Agent, Plugin};
+use crate::codex;
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
@@ -74,15 +75,33 @@ fn report(agent: Agent, mode: Mode, home: &Path, named: bool) -> (Option<String>
             true,
         );
     }
-    let plugin = agent.plugin_installed(home);
-    let line = match (mode, plugin) {
-        (Mode::Uninstall, true) => format!(
-            "{name}: remove the plugin with `{}`",
-            agent.plugin_uninstall()
-        ),
-        (Mode::Uninstall, false) => format!("{name}: nothing to remove"),
-        (_, true) => format!("{name}: set up by its plugin"),
-        (_, false) => format!("{name}: install its plugin: `{}`", agent.plugin_install()),
+    let (line, ok) = match agent.plugin() {
+        Some(plugin) => by_plugin(agent, &plugin, mode, home),
+        None => by_config(mode, home).unwrap_or_else(|e| (e, false)),
     };
-    (Some(line), plugin || mode == Mode::Uninstall)
+    (Some(format!("{name}: {line}")), ok)
+}
+
+fn by_plugin(agent: Agent, plugin: &Plugin, mode: Mode, home: &Path) -> (String, bool) {
+    let installed = agent.plugin_installed(home);
+    let line = match (mode, installed) {
+        (Mode::Uninstall, true) => format!("remove the plugin with `{}`", plugin.uninstall),
+        (Mode::Uninstall, false) => "nothing to remove".to_string(),
+        (_, true) => "set up by its plugin".to_string(),
+        (_, false) => format!("install its plugin: `{}`", plugin.install),
+    };
+    (line, installed || mode == Mode::Uninstall)
+}
+
+// Only Codex is set up this way so far.
+fn by_config(mode: Mode, home: &Path) -> Result<(String, bool), String> {
+    let dir = codex::dir(home);
+    match mode {
+        Mode::Setup => {
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            Ok((codex::setup(&dir, &exe)?, true))
+        }
+        Mode::Check => codex::check(&dir),
+        Mode::Uninstall => Ok((codex::uninstall(&dir)?, true)),
+    }
 }
