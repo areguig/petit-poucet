@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use clap::ValueEnum;
 use serde_json::{Value, json};
@@ -12,6 +12,7 @@ pub enum Agent {
     Claude,
     Copilot,
     Codex,
+    Cursor,
 }
 
 // Agents with a petit-poucet plugin are set up by it; the others by `petit-poucet setup`.
@@ -21,13 +22,14 @@ pub struct Plugin {
 }
 
 impl Agent {
-    pub const ALL: [Agent; 3] = [Agent::Claude, Agent::Copilot, Agent::Codex];
+    pub const ALL: [Agent; 4] = [Agent::Claude, Agent::Copilot, Agent::Codex, Agent::Cursor];
 
     pub fn name(self) -> &'static str {
         match self {
             Agent::Claude => "Claude Code",
             Agent::Copilot => "GitHub Copilot",
             Agent::Codex => "Codex",
+            Agent::Cursor => "Cursor",
         }
     }
 
@@ -37,10 +39,38 @@ impl Agent {
             Agent::Claude => "claude-code hook",
             Agent::Copilot => "copilot hook",
             Agent::Codex => "codex hook",
+            Agent::Cursor => "cursor hook",
         }
     }
 
-    // Copilot CLI hooks have no line for the user, so `message` goes to Claude Code and Codex only.
+    // What each agent's hooks receive: Cursor names things its own way, Copilot CLI in camelCase.
+    pub fn working_dir(self, event: &Value) -> Option<PathBuf> {
+        let dir = match self {
+            Agent::Cursor => &event["workspace_roots"][0],
+            _ => &event["cwd"],
+        };
+        dir.as_str().map(PathBuf::from)
+    }
+
+    pub fn session(self, event: &Value) -> Option<&str> {
+        let keys: &[&str] = match self {
+            Agent::Cursor => &["conversation_id", "session_id"],
+            _ => &["session_id", "sessionId"],
+        };
+        keys.iter().find_map(|key| event[*key].as_str())
+    }
+
+    // True when this stop follows our own reminder: reminding again would loop.
+    pub fn after_reminder(self, event: &Value) -> bool {
+        match self {
+            Agent::Cursor => event["loop_count"].as_u64().is_some_and(|n| n > 0),
+            _ => ["stop_hook_active", "stopHookActive"]
+                .iter()
+                .any(|key| event[*key] == json!(true)),
+        }
+    }
+
+    // Copilot CLI and Cursor hooks have no line for the user, so `message` goes to Claude Code and Codex only.
     pub fn session_start_reply(self, context: &str, message: &str) -> Value {
         match self {
             Agent::Claude | Agent::Codex => json!({
@@ -48,6 +78,7 @@ impl Agent {
                 "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context},
             }),
             Agent::Copilot => json!({"additionalContext": context}),
+            Agent::Cursor => json!({"additional_context": context}),
         }
     }
 
@@ -57,6 +88,8 @@ impl Agent {
                 json!({"decision": "block", "reason": reason, "systemMessage": message})
             }
             Agent::Copilot => json!({"decision": "block", "reason": reason}),
+            // Cursor sends it as the user's next message.
+            Agent::Cursor => json!({"followup_message": reason}),
         }
     }
 
@@ -65,6 +98,7 @@ impl Agent {
             Agent::Claude => home.join(".claude").is_dir(),
             Agent::Copilot => home.join(".copilot").is_dir(),
             Agent::Codex => codex::dir(home).is_dir(),
+            Agent::Cursor => home.join(".cursor").is_dir(),
         }
     }
 
@@ -78,7 +112,7 @@ impl Agent {
                 install: "copilot plugin marketplace add areguig/petit-poucet && copilot plugin install petit-poucet@petit-poucet",
                 uninstall: "copilot plugin uninstall petit-poucet",
             }),
-            Agent::Codex => None,
+            Agent::Codex | Agent::Cursor => None,
         }
     }
 
@@ -94,7 +128,7 @@ impl Agent {
                         .flatten()
                         .any(|marketplace| marketplace.path().join("petit-poucet").is_dir())
             }
-            Agent::Codex => false,
+            Agent::Codex | Agent::Cursor => false,
         }
     }
 }

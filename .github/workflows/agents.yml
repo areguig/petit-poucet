@@ -14,16 +14,18 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        agent: [codex, claude, copilot]
+        agent: [codex, claude, copilot, cursor]
         include:
-          - { agent: codex, package: "@openai/codex" }
-          - { agent: claude, package: "@anthropic-ai/claude-code" }
-          - { agent: copilot, package: "@github/copilot" }
+          - { agent: codex, install: "npm install -g @openai/codex" }
+          - { agent: claude, install: "npm install -g @anthropic-ai/claude-code" }
+          - { agent: copilot, install: "npm install -g @github/copilot" }
+          - agent: cursor
+            install: curl https://cursor.com/install -fsS | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
     name: ${{ matrix.agent }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
-      - run: npm install -g ${{ matrix.package }}
+      - run: ${{ matrix.install }}
       - run: sh tests/agents/${{ matrix.agent }}.sh
