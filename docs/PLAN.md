@@ -208,15 +208,22 @@ Agreed 2026-09-24. Ordered by what real use is likely to show first; each item o
 
 - **0.2.2, released 2026-10-01** after the owner's tests (session start in Claude Code; the 0.2.2 hook matched every project of the real vault): fixes #1–#6 and #8 from the 2026-09-30 review, one PR per issue. Workflow changed: `dev` replaced by one branch per version cut from `main`; release notes in `docs/releases/`; the tag goes out before the merge into `main`. #7 (launcher checksum) is still open.
 
-### 0.3: memory quality over time
+### 0.3: one memory for every agent you switch between (decided 2026-10-01)
+Target users: people who switch often between coding agents. Before new features, petit-poucet must work in the agents they use, installed the same way everywhere. Inspired by rtk: the binary is the product, one command wires it into each agent; the Claude Code and Copilot plugins stay as their one-command route. Tracked in #43, one PR per issue into `v0.3`:
+- #42 install script, binary on PATH; the plugin launcher prefers a PATH binary of its pinned version.
+- #11 `petit-poucet setup` / `--check` / `--uninstall` on one table of agents: MCP server, session-start hook or an instruction line, stop hook, skills. It may edit agents' global config files, own entries only, with backups (owner's decision).
+- Agents, in this order: Codex (#9), Cursor (#40), Gemini CLI (#41), OpenCode (#10). Each needs a local trial in that agent before the release.
+- Windows (#12): CI first, then the build and `install.ps1`; hooks calling the binary directly need no shell.
+
+### 0.4: memory quality over time
+Feature issues waiting for triage (#13–#25, #35, #36), among them:
 - Usage-driven cleanup: after a few weeks of read counts, `tidy-memory` proposes notes nobody opens (`feedback` notes excluded: they are applied from the Index without being read).
 - Stale facts: `check` reports notes naming a file or path that no longer exists; report only, never an automatic fix.
 - Facts that expire: an optional "re-check by" date (versions, MR status, deploy targets) that tidy brings up when it passes.
 
 ### Later, only when needed
-- Windows: a PowerShell launcher and a Windows build.
-- Install without the plugin: Homebrew tap or `cargo install`, for people who want the CLI.
+- Homebrew tap and `cargo install`, once the install script has users.
 - Search that scales: better ranking (stems, BM25) once vaults reach several hundred notes; semantic search stays optional behind `memory_search`.
 
 ### Out of scope
-Team or shared vaults, sharing or exporting notes between vaults, cloud sync, automatic capture from transcripts, a GUI of our own, and Codex.
+Team or shared vaults, sharing or exporting notes between vaults, cloud sync, automatic capture from transcripts, and a GUI of our own. (Codex was out of scope until 2026-10-01.)
