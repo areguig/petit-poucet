@@ -54,14 +54,11 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
     Some(agent.session_start_reply(&context, &message))
 }
 
-// Plugin installs have no `petit-poucet` on PATH: the launcher says where it is.
 fn setup_context() -> String {
-    let command = std::env::var("PETIT_POUCET_LAUNCHER").unwrap_or_else(|_| "petit-poucet".into());
-    format!(
-        "Agent memory (petit-poucet) is installed but has no vault yet. Tell the user, and offer to create one \
-         in ~/agent-memory by running `{command} init` (or `{command} init <folder>` for another place). \
-         It takes effect in the next session. Until then, don't write memory anywhere else."
-    )
+    "Agent memory (petit-poucet) is installed but has no vault yet. Tell the user, and offer to create one \
+     in ~/agent-memory by running `petit-poucet init` (or `petit-poucet init <folder>` for another place). \
+     It takes effect in the next session. Until then, don't write memory anywhere else."
+        .to_string()
 }
 
 // Returns the context for the agent and the line shown to the user.

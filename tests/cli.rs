@@ -350,10 +350,6 @@ fn session_start_says_when_memory_is_unavailable() {
 fn session_start_without_a_vault_offers_to_create_one() {
     let home = TempDir::new().unwrap();
     let output = petit_poucet(home.path())
-        .env(
-            "PETIT_POUCET_LAUNCHER",
-            "/plugins/petit-poucet/bin/petit-poucet",
-        )
         .args(["hook", "session-start", "--agent", "claude"])
         .write_stdin("not json")
         .output()
@@ -368,10 +364,7 @@ fn session_start_without_a_vault_offers_to_create_one() {
         message["systemMessage"],
         "🪨 petit-poucet · no vault yet: the agent will offer to create one"
     );
-    assert!(
-        context.contains("`/plugins/petit-poucet/bin/petit-poucet init`"),
-        "{context}"
-    );
+    assert!(context.contains("`petit-poucet init`"), "{context}");
 }
 
 #[test]
