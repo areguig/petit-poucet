@@ -868,6 +868,18 @@ fn setup_wires_antigravity_in_and_out() {
     );
 }
 
+// Antigravity leaves an empty mcp_config.json behind.
+#[test]
+fn setup_treats_an_empty_config_file_as_empty_settings() {
+    let home = TempDir::new().unwrap();
+    write(home.path(), ".gemini/config/mcp_config.json", "");
+    write(home.path(), ".gemini/config/hooks.json", "\n");
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(out.contains("Antigravity CLI: set up"), "{out}");
+    assert!(setup(home.path(), &["--check"]).0);
+}
+
 #[test]
 fn antigravity_hooks_reply_in_antigravity_format() {
     let home = TempDir::new().unwrap();
