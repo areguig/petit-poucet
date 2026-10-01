@@ -211,10 +211,14 @@ mod tests {
     fn check_reports_a_changed_skill() {
         let home = tempfile::tempdir().unwrap();
         setup(Agent::Codex, home.path()).unwrap();
-        fs::write(home.path().join(".agents/skills/memory/SKILL.md"), "old").unwrap();
+        let skill = skills_dir(Agent::Codex, home.path())
+            .unwrap()
+            .join("memory")
+            .join("SKILL.md");
+        fs::write(&skill, "old").unwrap();
         let (line, ok) = check(Agent::Codex, home.path());
         assert!(
-            !ok && line.contains("memory/SKILL.md") && line.ends_with("--agent codex`"),
+            !ok && line.contains(&skill.display().to_string()) && line.ends_with("--agent codex`"),
             "{line}"
         );
     }
