@@ -93,6 +93,11 @@ impl Agent {
         }
     }
 
+    // Codex keeps a resumed session's memory in its history but runs the hook again: answering would repeat it.
+    pub fn holds_memory_already(self, event: &Value) -> bool {
+        self == Agent::Codex && event["source"] == "resume"
+    }
+
     // Copilot CLI, Cursor and Antigravity hooks have no line for the user, so `message` goes to Claude Code and Codex only.
     pub fn session_start_reply(self, context: &str, message: &str) -> Value {
         match self {

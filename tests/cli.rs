@@ -672,6 +672,17 @@ fn codex_hooks_reply_in_codex_format() {
             .unwrap()
             .starts_with("🪨 petit-poucet ·")
     );
+    // A resumed Codex session still holds the memory it loaded: loading it again would repeat it.
+    let resume =
+        serde_json::json!({"cwd": home.path(), "session_id": "codex-1", "source": "resume"});
+    assert_eq!(
+        hook(
+            home.path(),
+            &["session-start", "--agent", "codex"],
+            &resume.to_string()
+        ),
+        ""
+    );
 
     let stop = serde_json::json!({"session_id": "codex-1", "stop_hook_active": false}).to_string();
     let replies: Vec<String> = (0..3)
