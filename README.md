@@ -148,7 +148,7 @@ Already keeping memory in files? Ask your agent to run the `migrate-memory` skil
 curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
 ```
 
-This installs the latest release in `~/.local/bin` (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version) after checking its SHA-256; run it again to upgrade. With it on your PATH you get the [command line](#command-line), and the plugins use it instead of downloading their own copy whenever it is the version they expect.
+This installs the latest release in `~/.local/bin` (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version) after checking its SHA-256; run it again to upgrade. Then run `petit-poucet setup`: it creates your vault if you have none and tells you, agent by agent, what's set up. With the binary on your PATH you also get the [command line](#command-line), and the plugins use it instead of downloading their own copy whenever it is the version they expect.
 
 ## Browse your memory in Obsidian
 
