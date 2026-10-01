@@ -29,3 +29,9 @@ start_model() {
 check_calls() {
   node "$repo/tests/agents/calls.mjs" "$calls" "$1" || fail "petit-poucet didn't reach the model as expected"
 }
+
+# old_plugin: a checkout of petit-poucet 0.2.2, the last version shipped as a Claude Code and Copilot plugin.
+old_plugin() {
+  git clone -q --depth 1 --branch v0.2.2 https://github.com/areguig/petit-poucet "$HOME/old-plugin"
+  echo "$HOME/old-plugin"
+}

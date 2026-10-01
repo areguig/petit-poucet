@@ -6,19 +6,19 @@ use serde::Deserialize;
 use crate::agent::Agent;
 use crate::{antigravity, codex, copilot, edit, note};
 
-// The plugin's skills and the subagent tidy-memory starts, embedded for the agents `setup` configures.
+// The skills and the subagent tidy-memory starts, embedded so `setup` can install them.
 const SKILLS: [(&str, &str); 3] = [
-    ("memory", include_str!("../plugin/skills/memory/SKILL.md")),
+    ("memory", include_str!("../skills/memory/SKILL.md")),
     (
         "migrate-memory",
-        include_str!("../plugin/skills/migrate-memory/SKILL.md"),
+        include_str!("../skills/migrate-memory/SKILL.md"),
     ),
     (
         "tidy-memory",
-        include_str!("../plugin/skills/tidy-memory/SKILL.md"),
+        include_str!("../skills/tidy-memory/SKILL.md"),
     ),
 ];
-const CLEANUP: &str = include_str!("../plugin/agents/memory-cleanup.md");
+const CLEANUP: &str = include_str!("../agents/memory-cleanup.md");
 const CLEANUP_NAME: &str = "memory-cleanup";
 
 // Codex, Cursor and Copilot share the Agent Skills folder; Claude Code and Antigravity read only their own.
