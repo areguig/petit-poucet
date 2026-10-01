@@ -19,6 +19,7 @@ has "$session" '"event":"result".*"status":"SUCCESS"'
 cd "$repo"
 # agy names each MCP server in its system prompt, above the server's tools.
 check_calls "# petit-poucet"
+check_update
 has "$("$pp" setup --check)" '^Antigravity CLI: set up'
 
 has "$("$pp" setup --uninstall)" '^Antigravity CLI: removed'

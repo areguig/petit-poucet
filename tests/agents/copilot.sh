@@ -28,6 +28,7 @@ for turn in one two three; do
 done
 cd "$repo"
 check_calls petit-poucet-memory_search
+check_update
 
 has "$("$pp" setup --uninstall)" '^GitHub Copilot: removed'
 if copilot mcp list 2>&1 | grep -q petit-poucet; then fail "Copilot still lists petit-poucet"; fi
