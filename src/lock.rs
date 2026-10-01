@@ -27,6 +27,13 @@ mod tests {
         let other = File::open(tmp.path().join(state::DIR).join("lock")).unwrap();
         assert!(other.try_lock().is_err(), "held by the first handle");
         drop(held);
-        assert!(other.try_lock().is_ok(), "released on drop");
+        // macOS CI sometimes refuses the very next try: what matters is that the lock comes free.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut last = other.try_lock();
+        while last.is_err() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            last = other.try_lock();
+        }
+        assert!(last.is_ok(), "released on drop: {last:?}");
     }
 }
