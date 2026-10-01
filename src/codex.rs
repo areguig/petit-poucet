@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 use toml_edit::{DocumentMut, Item, Table, value};
 
-use crate::{edit, hooks_json};
+use crate::{edit, hook_command, hooks_json};
 
 const SERVER: &str = "petit-poucet";
 const AGENT: &str = "codex";
@@ -37,7 +37,7 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
     let mut hooks = edit::read_json(&dir.join("hooks.json"))?;
     hooks_json::remove(&mut hooks, AGENT);
     for (event, ours) in EVENTS {
-        let command = hooks_json::command(exe, ours, AGENT);
+        let command = hook_command::shell(exe, ours, AGENT);
         hooks_json::add(
             &mut hooks,
             event,
@@ -159,11 +159,11 @@ mod tests {
         assert_eq!(hooks["hooks"]["Stop"][0]["hooks"][0]["command"], "notify");
         assert_eq!(
             hooks["hooks"]["Stop"][1]["hooks"][0]["command"],
-            "\"/opt/pp/petit-poucet\" hook stop --agent codex"
+            hook_command::shell(Path::new("/opt/pp/petit-poucet"), "stop", "codex")
         );
         assert_eq!(
             hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"],
-            "\"/opt/pp/petit-poucet\" hook session-start --agent codex"
+            hook_command::shell(Path::new("/opt/pp/petit-poucet"), "session-start", "codex")
         );
         assert!(edit::backup_path(&dir.join("config.toml")).is_file());
         assert!(edit::backup_path(&dir.join("hooks.json")).is_file());

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::{edit, hooks_json};
+use crate::{edit, hook_command};
 
 const SERVER: &str = "petit-poucet";
 const AGENT: &str = "copilot";
@@ -22,12 +22,10 @@ fn hooks_file(dir: &Path) -> PathBuf {
 
 // Copilot's IDE hosts run `bash` or `powershell` entries; its `exec` form is CLI-only.
 fn hook(exe: &Path, event: &str) -> Value {
-    let path = exe.display().to_string();
-    let args = format!(" hook {event} --agent {AGENT}");
     json!({
         "type": "command",
-        "bash": format!("'{}'{args}", path.replace('\'', r"'\''")),
-        "powershell": format!("& '{}'{args}", path.replace('\'', "''")),
+        "bash": hook_command::posix(exe, event, AGENT),
+        "powershell": hook_command::powershell(exe, event, AGENT),
         "timeoutSec": 30,
     })
 }
@@ -69,7 +67,7 @@ pub fn check(dir: &Path) -> Result<(String, bool), String> {
     for (event, _) in EVENTS {
         let found = hooks["hooks"][event][0]["bash"]
             .as_str()
-            .is_some_and(|c| hooks_json::is_ours(c, AGENT));
+            .is_some_and(|c| hook_command::is_ours(c, AGENT));
         if !found {
             missing.push(format!("the {event} hook"));
         }
@@ -137,33 +135,13 @@ mod tests {
         assert_eq!(hooks["version"], 1);
         assert_eq!(
             hooks["hooks"]["sessionStart"][0]["bash"],
-            r"'/opt/it'\''s/petit-poucet' hook session-start --agent copilot"
+            hook_command::posix(exe, "session-start", AGENT)
         );
         assert_eq!(
             hooks["hooks"]["agentStop"][0]["powershell"],
-            "& '/opt/it''s/petit-poucet' hook stop --agent copilot"
+            hook_command::powershell(exe, "stop", AGENT)
         );
         assert_eq!(setup(dir, exe).unwrap(), "already set up");
-    }
-
-    // The quoting `hook` writes, run by a real shell.
-    #[cfg(unix)]
-    #[test]
-    fn the_bash_command_survives_quotes_in_the_path() {
-        let tmp = tempfile::tempdir().unwrap();
-        let exe = tmp.path().join("it's here");
-        fs::write(&exe, "#!/bin/sh\necho \"$@\"\n").unwrap();
-        fs::set_permissions(&exe, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        let command = hook(&exe, "stop")["bash"].as_str().unwrap().to_string();
-        let out = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(&command)
-            .output()
-            .unwrap();
-        assert_eq!(
-            String::from_utf8_lossy(&out.stdout),
-            "hook stop --agent copilot\n"
-        );
     }
 
     #[test]

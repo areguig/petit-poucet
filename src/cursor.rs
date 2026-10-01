@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::{edit, hooks_json};
+use crate::{edit, hook_command};
 
 const SERVER: &str = "petit-poucet";
 const AGENT: &str = "cursor";
@@ -12,7 +12,7 @@ const EVENTS: [(&str, &str); 2] = [("sessionStart", "session-start"), ("stop", "
 fn is_ours(entry: &Value) -> bool {
     entry["command"]
         .as_str()
-        .is_some_and(|c| hooks_json::is_ours(c, AGENT))
+        .is_some_and(|c| hook_command::is_ours(c, AGENT))
 }
 
 fn without_ours(hooks: &mut Value) {
@@ -42,7 +42,7 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
         hooks["hooks"] = json!({});
     }
     for (event, ours) in EVENTS {
-        let entry = json!({"command": hooks_json::command(exe, ours, AGENT)});
+        let entry = json!({"command": hook_command::shell(exe, ours, AGENT)});
         match hooks["hooks"][event].as_array_mut() {
             Some(entries) => entries.push(entry),
             None => hooks["hooks"][event] = json!([entry]),
@@ -93,7 +93,7 @@ pub fn uninstall(dir: &Path) -> Result<String, String> {
     let had_server = mcp["mcpServers"]
         .as_object_mut()
         .is_some_and(|servers| servers.remove(SERVER).is_some());
-    hooks_json::drop_if_empty(&mut mcp, "mcpServers");
+    edit::drop_if_empty(&mut mcp, "mcpServers");
     let hooks_file = dir.join("hooks.json");
     let mut hooks = edit::read_json(&hooks_file)?;
     without_ours(&mut hooks);
@@ -145,11 +145,11 @@ mod tests {
         assert_eq!(hooks["hooks"]["stop"][0]["command"], "notify");
         assert_eq!(
             hooks["hooks"]["stop"][1]["command"],
-            "\"/opt/pp/petit-poucet\" hook stop --agent cursor"
+            hook_command::shell(Path::new("/opt/pp/petit-poucet"), "stop", "cursor")
         );
         assert_eq!(
             hooks["hooks"]["sessionStart"][0]["command"],
-            "\"/opt/pp/petit-poucet\" hook session-start --agent cursor"
+            hook_command::shell(Path::new("/opt/pp/petit-poucet"), "session-start", "cursor")
         );
         assert!(edit::backup_path(&dir.join("mcp.json")).is_file());
 
@@ -170,8 +170,8 @@ mod tests {
         assert_eq!(
             read(tmp.path(), "hooks.json"),
             json!({"version": 1, "hooks": {
-                "sessionStart": [{"command": "\"/bin/pp\" hook session-start --agent cursor"}],
-                "stop": [{"command": "\"/bin/pp\" hook stop --agent cursor"}],
+                "sessionStart": [{"command": hook_command::shell(Path::new("/bin/pp"), "session-start", "cursor")}],
+                "stop": [{"command": hook_command::shell(Path::new("/bin/pp"), "stop", "cursor")}],
             }})
         );
         uninstall(tmp.path()).unwrap();

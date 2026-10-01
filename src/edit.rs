@@ -50,6 +50,18 @@ pub fn write_json_if_present(path: &Path, value: &Value) -> Result<bool, String>
     }
 }
 
+// After an uninstall, a section only petit-poucet used is left out rather than empty.
+pub fn drop_if_empty(settings: &mut Value, key: &str) {
+    if let Some(object) = settings.as_object_mut()
+        && object
+            .get(key)
+            .and_then(Value::as_object)
+            .is_some_and(|o| o.is_empty())
+    {
+        object.remove(key);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

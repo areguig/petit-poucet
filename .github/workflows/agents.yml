@@ -13,22 +13,36 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         agent: [codex, claude, copilot, cursor, antigravity]
+        # install-windows only where Windows needs another command.
         include:
           - { agent: codex, install: "npm install -g @openai/codex" }
           - { agent: claude, install: "npm install -g @anthropic-ai/claude-code" }
           - { agent: copilot, install: "npm install -g @github/copilot" }
           - agent: cursor
             install: curl https://cursor.com/install -fsS | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: irm 'https://cursor.com/install?win32=true' | iex
           - agent: antigravity
             install: curl -fsSL https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: irm https://antigravity.google/cli/install.ps1 | iex
     name: ${{ matrix.agent }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
       - run: npm ci --prefix tests/agents
-      - run: ${{ matrix.install }}
+      - if: runner.os != 'Windows'
+        run: ${{ matrix.install }}
+      # Windows installers add their folder to the user Path, which later steps only see through GITHUB_PATH.
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $before = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
+          ${{ matrix.install-windows || matrix.install }}
+          [Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_ -and $before -notcontains $_ } | Add-Content $env:GITHUB_PATH
       - run: sh tests/agents/${{ matrix.agent }}.sh

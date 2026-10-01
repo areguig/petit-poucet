@@ -3,14 +3,17 @@
 # against the mock model: its hooks, MCP server and skills all reach the model.
 . "$(dirname "$0")/lib.sh"
 
-# petit-poucet 0.2 came as this plugin: setup removes it first.
-copilot plugin marketplace add "$(old_plugin)" >/dev/null
-copilot plugin install petit-poucet@petit-poucet >/dev/null
+mkdir -p "$HOME/.copilot"
+
+install_old_plugin copilot
 out=$("$pp" setup)
-has "$out" '^GitHub Copilot: removed its old petit-poucet plugin'
 has "$out" '^GitHub Copilot: set up'
-# A plugin loaded from a local folder is disabled rather than deleted.
-if copilot plugin list 2>&1 | grep -q 'petit-poucet@petit-poucet.*(enabled)'; then fail "the old plugin is still enabled"; fi
+# setup replaces the old plugin where there is one.
+if [ -z "$windows" ]; then
+  has "$out" '^GitHub Copilot: removed its old petit-poucet plugin'
+  # A plugin loaded from a local folder is disabled rather than deleted.
+  if copilot plugin list 2>&1 | grep -q 'petit-poucet@petit-poucet.*(enabled)'; then fail "the old plugin is still enabled"; fi
+fi
 has "$(copilot mcp list 2>&1)" 'petit-poucet'
 has "$("$pp" setup --check)" '^GitHub Copilot skills: installed'
 

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::{edit, hooks_json};
+use crate::{edit, hook_command};
 
 // Also the name of our entry in hooks.json, which holds named hooks.
 const SERVER: &str = "petit-poucet";
@@ -27,7 +27,7 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
     let hooks_file = dir.join("hooks.json");
     let mut hooks = edit::read_json(&hooks_file)?;
     let ours = EVENTS.map(|(event, ours)| {
-        let command = hooks_json::command(exe, ours, AGENT);
+        let command = hook_command::shell(exe, ours, AGENT);
         (
             event.to_string(),
             json!([{"type": "command", "command": command, "timeout": 30}]),
@@ -58,7 +58,7 @@ pub fn check(dir: &Path) -> Result<(String, bool), String> {
             handlers.iter().any(|h| {
                 h["command"]
                     .as_str()
-                    .is_some_and(|c| hooks_json::is_ours(c, AGENT))
+                    .is_some_and(|c| hook_command::is_ours(c, AGENT))
             })
         });
         if !found {
@@ -86,7 +86,7 @@ pub fn uninstall(dir: &Path) -> Result<String, String> {
     let had_server = mcp["mcpServers"]
         .as_object_mut()
         .is_some_and(|servers| servers.remove(SERVER).is_some());
-    hooks_json::drop_if_empty(&mut mcp, "mcpServers");
+    edit::drop_if_empty(&mut mcp, "mcpServers");
     let hooks_file = dir.join("hooks.json");
     let mut hooks = edit::read_json(&hooks_file)?;
     let had_hooks = hooks
@@ -149,8 +149,8 @@ mod tests {
         assert_eq!(
             hooks["petit-poucet"],
             json!({
-                "PreInvocation": [{"type": "command", "command": "\"/opt/pp/petit-poucet\" hook session-start --agent antigravity", "timeout": 30}],
-                "Stop": [{"type": "command", "command": "\"/opt/pp/petit-poucet\" hook stop --agent antigravity", "timeout": 30}],
+                "PreInvocation": [{"type": "command", "command": hook_command::shell(Path::new("/opt/pp/petit-poucet"), "session-start", "antigravity"), "timeout": 30}],
+                "Stop": [{"type": "command", "command": hook_command::shell(Path::new("/opt/pp/petit-poucet"), "stop", "antigravity"), "timeout": 30}],
             })
         );
         assert!(edit::backup_path(&dir.join("hooks.json")).is_file());

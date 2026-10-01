@@ -12,6 +12,7 @@ mod edit;
 mod git;
 mod guard;
 mod hook;
+mod hook_command;
 mod hooks_json;
 mod index;
 mod init;

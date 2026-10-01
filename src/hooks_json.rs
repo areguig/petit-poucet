@@ -2,34 +2,26 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-// The `petit-poucet hook` events an agent's hooks run.
-const OURS: [&str; 2] = ["session-start", "stop"];
+use crate::{edit, hook_command};
 
-pub fn command(exe: &Path, event: &str, agent: &str) -> String {
-    format!("\"{}\" hook {event} --agent {agent}", exe.display())
-}
-
-// Ours whatever the binary is called or where it lives: matched by the arguments `command` writes.
-pub fn is_ours(command: &str, agent: &str) -> bool {
-    OURS.iter()
-        .any(|event| command.ends_with(&format!(" hook {event} --agent {agent}")))
-}
+// The hooks layout Claude Code and Codex share:
+// {"hooks": {Event: [{"hooks": [{"type": "command", "command": …}]}]}}.
 
 // Run without a shell, so the same entry works on every OS.
 pub fn exec(exe: &Path, event: &str, agent: &str) -> Value {
-    json!({"type": "command", "command": exe.display().to_string(), "args": ["hook", event, "--agent", agent]})
+    json!({"type": "command", "command": exe.display().to_string(), "args": hook_command::args(event, agent)})
 }
 
 fn entry_is_ours(entry: &Value, agent: &str) -> bool {
-    let shell = entry["command"].as_str().is_some_and(|c| is_ours(c, agent));
-    let exec = OURS
+    let shell = entry["command"]
+        .as_str()
+        .is_some_and(|c| hook_command::is_ours(c, agent));
+    let exec = hook_command::EVENTS
         .iter()
-        .any(|event| entry["args"] == json!(["hook", event, "--agent", agent]));
+        .any(|event| entry["args"] == json!(hook_command::args(event, agent)));
     shell || exec
 }
 
-// The layout Codex shares with Claude Code:
-// {"hooks": {Event: [{"hooks": [{"type": "command", "command": …}]}]}}.
 fn group_is_ours(group: &Value, agent: &str) -> bool {
     group["hooks"]
         .as_array()
@@ -44,19 +36,7 @@ pub fn remove(settings: &mut Value, agent: &str) {
         }
         events.retain(|_, groups| groups.as_array().is_none_or(|g| !g.is_empty()));
     }
-    drop_if_empty(settings, "hooks");
-}
-
-// After an uninstall, a section only petit-poucet used is left out rather than empty.
-pub fn drop_if_empty(settings: &mut Value, key: &str) {
-    if let Some(object) = settings.as_object_mut()
-        && object
-            .get(key)
-            .and_then(Value::as_object)
-            .is_some_and(|o| o.is_empty())
-    {
-        object.remove(key);
-    }
+    edit::drop_if_empty(settings, "hooks");
 }
 
 pub fn add(settings: &mut Value, event: &str, hook: Value) {
@@ -79,15 +59,6 @@ pub fn has(settings: &Value, event: &str, agent: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn our_commands_are_recognised_by_their_arguments_only() {
-        let ours = command(Path::new("/any/name"), "stop", "codex");
-        assert_eq!(ours, "\"/any/name\" hook stop --agent codex");
-        assert!(is_ours(&ours, "codex"));
-        assert!(!is_ours(&ours, "cursor"), "another agent's entry");
-        assert!(!is_ours("notify --agent codex", "codex"));
-    }
 
     #[test]
     fn removing_from_settings_without_hooks_changes_nothing() {
@@ -114,7 +85,7 @@ mod tests {
         let mine =
             json!({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify"}]}]}});
         let mut settings = mine.clone();
-        let hook = |event| json!({"type": "command", "command": command(Path::new("/pp"), event, "codex")});
+        let hook = |event| json!({"type": "command", "command": hook_command::shell(Path::new("/pp"), event, "codex")});
         add(&mut settings, "SessionStart", hook("session-start"));
         add(&mut settings, "Stop", hook("stop"));
         assert!(has(&settings, "SessionStart", "codex") && has(&settings, "Stop", "codex"));
