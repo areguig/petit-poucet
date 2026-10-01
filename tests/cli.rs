@@ -449,3 +449,124 @@ fn init_without_a_path_uses_agent_memory_in_home_and_says_how_to_change_it() {
         )
     );
 }
+
+fn setup(home: &Path, args: &[&str]) -> (bool, String) {
+    let output = petit_poucet(home).arg("setup").args(args).output().unwrap();
+    (output.status.success(), stdout(&output))
+}
+
+fn write(home: &Path, path: &str, text: &str) {
+    let path = home.join(path);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+#[test]
+fn setup_creates_the_vault_once_and_reports_each_agent() {
+    let home = TempDir::new().unwrap();
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    let vault = home.path().join("agent-memory").canonicalize().unwrap();
+    assert!(
+        out.starts_with(&format!(
+            "vault: created, vault ready at {}",
+            vault.display()
+        )),
+        "{out}"
+    );
+    assert!(
+        out.ends_with("agents: none found (supported: Claude Code, GitHub Copilot)\n"),
+        "{out}"
+    );
+    assert!(vault.join("Index.md").is_file());
+
+    write(
+        home.path(),
+        ".claude/settings.json",
+        r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
+    );
+    fs::create_dir(home.path().join(".copilot")).unwrap();
+    let (ok, again) = setup(home.path(), &[]);
+    assert!(ok, "setup reports a missing plugin, it doesn't fail on it");
+    assert_eq!(
+        again,
+        format!(
+            "vault: {} (0 notes)\n\
+             Claude Code: set up by its plugin\n\
+             GitHub Copilot: install its plugin: `copilot plugin marketplace add areguig/petit-poucet && copilot plugin install petit-poucet@petit-poucet`\n",
+            vault.display()
+        )
+    );
+    assert_eq!(
+        git_log(&vault),
+        "init: vault\n",
+        "the vault is created once"
+    );
+}
+
+#[test]
+fn setup_check_fails_until_every_agent_found_is_set_up() {
+    let home = TempDir::new().unwrap();
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(!ok);
+    assert!(
+        out.starts_with("vault: none yet: run `petit-poucet setup`\n"),
+        "{out}"
+    );
+    assert!(
+        !home.path().join("agent-memory").exists(),
+        "check changes nothing"
+    );
+
+    setup(home.path(), &[]);
+    fs::create_dir(home.path().join(".copilot")).unwrap();
+    assert!(
+        !setup(home.path(), &["--check"]).0,
+        "Copilot plugin missing"
+    );
+    write(
+        home.path(),
+        ".copilot/installed-plugins/petit-poucet/petit-poucet/plugin.json",
+        "{}",
+    );
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(ok, "{out}");
+    assert!(
+        out.ends_with("GitHub Copilot: set up by its plugin\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn setup_for_one_agent_and_uninstall_keep_the_vault() {
+    let home = TempDir::new().unwrap();
+    setup(home.path(), &[]);
+    let (_, one) = setup(home.path(), &["--agent", "claude"]);
+    assert!(
+        one.ends_with("Claude Code: not found on this machine\n"),
+        "{one}"
+    );
+
+    write(
+        home.path(),
+        ".claude/settings.json",
+        r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
+    );
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    let vault = home.path().join("agent-memory").canonicalize().unwrap();
+    assert!(ok);
+    assert_eq!(
+        out,
+        format!(
+            "vault: kept at {}\nClaude Code: remove the plugin with `claude plugin uninstall petit-poucet@petit-poucet`\n",
+            vault.display()
+        )
+    );
+    assert!(vault.join("Index.md").is_file());
+
+    let conflict = petit_poucet(home.path())
+        .args(["setup", "--check", "--uninstall"])
+        .output()
+        .unwrap();
+    assert!(!conflict.status.success());
+}
