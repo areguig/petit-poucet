@@ -4,6 +4,12 @@ $ErrorActionPreference = 'Stop'
 
 function Log($message) { [Console]::Error.WriteLine("petit-poucet install: $message") }
 function Fail($message) { Log $message; exit 1 }
+# .NET rather than Get-FileHash: that cmdlet's module may not load when PSModulePath comes from another PowerShell.
+function Get-Sha256($path) {
+    $stream = [System.IO.File]::OpenRead($path)
+    try { -join ([System.Security.Cryptography.SHA256]::Create().ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) }
+    finally { $stream.Dispose() }
+}
 
 $target = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
     'X64' { 'x86_64-pc-windows-msvc' }
@@ -28,7 +34,7 @@ try {
     Log "downloading $url"
     try { $client.DownloadFile($url, $tmp) } catch { Fail "download failed: $url" }
     try { $expected = ($client.DownloadString("$url.sha256") -split '\s+')[0] } catch { Fail "checksum download failed: $url.sha256" }
-    $actual = (Get-FileHash -Algorithm SHA256 $tmp).Hash.ToLower()
+    $actual = Get-Sha256 $tmp
     if (-not $expected -or $actual -ne $expected.ToLower()) {
         Fail "checksum mismatch for $url (expected $expected, got $actual)"
     }
