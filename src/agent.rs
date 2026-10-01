@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::ValueEnum;
 use serde_json::{Value, json};
 
-use crate::{antigravity, codex};
+use crate::{antigravity, codex, copilot};
 
 // Every agent petit-poucet knows: how its hooks reply, how to find it, how it gets set up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -14,12 +14,6 @@ pub enum Agent {
     Codex,
     Cursor,
     Antigravity,
-}
-
-// Agents with a petit-poucet plugin are set up by it; the others by `petit-poucet setup`.
-pub struct Plugin {
-    pub install: &'static str,
-    pub uninstall: &'static str,
 }
 
 impl Agent {
@@ -127,23 +121,18 @@ impl Agent {
     pub fn installed(self, home: &Path) -> bool {
         match self {
             Agent::Claude => home.join(".claude").is_dir(),
-            Agent::Copilot => home.join(".copilot").is_dir(),
+            Agent::Copilot => copilot::dir(home).is_dir(),
             Agent::Codex => codex::dir(home).is_dir(),
             Agent::Cursor => home.join(".cursor").is_dir(),
             Agent::Antigravity => antigravity::dir(home).is_dir(),
         }
     }
 
-    pub fn plugin(self) -> Option<Plugin> {
+    // petit-poucet 0.2 came as a plugin for these two: setup removes it with the agent's own command.
+    pub fn old_plugin(self) -> Option<&'static [&'static str]> {
         match self {
-            Agent::Claude => Some(Plugin {
-                install: "claude plugin marketplace add https://github.com/areguig/petit-poucet && claude plugin install petit-poucet@petit-poucet",
-                uninstall: "claude plugin uninstall petit-poucet@petit-poucet",
-            }),
-            Agent::Copilot => Some(Plugin {
-                install: "copilot plugin marketplace add areguig/petit-poucet && copilot plugin install petit-poucet@petit-poucet",
-                uninstall: "copilot plugin uninstall petit-poucet",
-            }),
+            Agent::Claude => Some(&["claude", "plugin", "uninstall", "petit-poucet@petit-poucet"]),
+            Agent::Copilot => Some(&["copilot", "plugin", "uninstall", "petit-poucet"]),
             Agent::Codex | Agent::Cursor | Agent::Antigravity => None,
         }
     }
@@ -153,8 +142,8 @@ impl Agent {
             Agent::Claude => enabled_in(&home.join(".claude/settings.json")),
             // A local install is only listed in the settings; a marketplace install is also copied.
             Agent::Copilot => {
-                enabled_in(&home.join(".copilot/settings.json"))
-                    || fs::read_dir(home.join(".copilot/installed-plugins"))
+                enabled_in(&copilot::dir(home).join("settings.json"))
+                    || fs::read_dir(copilot::dir(home).join("installed-plugins"))
                         .into_iter()
                         .flatten()
                         .flatten()

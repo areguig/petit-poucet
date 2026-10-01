@@ -15,18 +15,30 @@ pub fn is_ours(command: &str, agent: &str) -> bool {
         .any(|event| command.ends_with(&format!(" hook {event} --agent {agent}")))
 }
 
+// Run without a shell, so the same entry works on every OS.
+pub fn exec(exe: &Path, event: &str, agent: &str) -> Value {
+    json!({"type": "command", "command": exe.display().to_string(), "args": ["hook", event, "--agent", agent]})
+}
+
+fn entry_is_ours(entry: &Value, agent: &str) -> bool {
+    let shell = entry["command"].as_str().is_some_and(|c| is_ours(c, agent));
+    let exec = OURS
+        .iter()
+        .any(|event| entry["args"] == json!(["hook", event, "--agent", agent]));
+    shell || exec
+}
+
 // The layout Codex shares with Claude Code:
 // {"hooks": {Event: [{"hooks": [{"type": "command", "command": …}]}]}}.
 fn group_is_ours(group: &Value, agent: &str) -> bool {
-    group["hooks"].as_array().is_some_and(|hooks| {
-        hooks
-            .iter()
-            .any(|h| h["command"].as_str().is_some_and(|c| is_ours(c, agent)))
-    })
+    group["hooks"]
+        .as_array()
+        .is_some_and(|hooks| hooks.iter().any(|h| entry_is_ours(h, agent)))
 }
 
 pub fn remove(settings: &mut Value, agent: &str) {
-    if let Some(events) = settings["hooks"].as_object_mut() {
+    // `settings["hooks"]` would add a null `hooks` to settings without one.
+    if let Some(events) = settings.get_mut("hooks").and_then(Value::as_object_mut) {
         for groups in events.values_mut().filter_map(Value::as_array_mut) {
             groups.retain(|g| !group_is_ours(g, agent));
         }
@@ -75,6 +87,26 @@ mod tests {
         assert!(is_ours(&ours, "codex"));
         assert!(!is_ours(&ours, "cursor"), "another agent's entry");
         assert!(!is_ours("notify --agent codex", "codex"));
+    }
+
+    #[test]
+    fn removing_from_settings_without_hooks_changes_nothing() {
+        let mut settings = json!({"model": "opus"});
+        remove(&mut settings, "claude");
+        assert_eq!(settings, json!({"model": "opus"}));
+    }
+
+    #[test]
+    fn exec_entries_are_recognised_by_their_arguments() {
+        let mut settings = json!({});
+        add(
+            &mut settings,
+            "Stop",
+            exec(Path::new("/any/pp"), "stop", "claude"),
+        );
+        assert!(has(&settings, "Stop", "claude") && !has(&settings, "Stop", "codex"));
+        remove(&mut settings, "claude");
+        assert_eq!(settings, json!({}));
     }
 
     #[test]
