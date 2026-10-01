@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::ValueEnum;
 use serde_json::{Value, json};
 
-use crate::codex;
+use crate::{antigravity, codex};
 
 // Every agent petit-poucet knows: how its hooks reply, how to find it, how it gets set up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -13,6 +13,7 @@ pub enum Agent {
     Copilot,
     Codex,
     Cursor,
+    Antigravity,
 }
 
 // Agents with a petit-poucet plugin are set up by it; the others by `petit-poucet setup`.
@@ -22,7 +23,13 @@ pub struct Plugin {
 }
 
 impl Agent {
-    pub const ALL: [Agent; 4] = [Agent::Claude, Agent::Copilot, Agent::Codex, Agent::Cursor];
+    pub const ALL: [Agent; 5] = [
+        Agent::Claude,
+        Agent::Copilot,
+        Agent::Codex,
+        Agent::Cursor,
+        Agent::Antigravity,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -30,6 +37,7 @@ impl Agent {
             Agent::Copilot => "GitHub Copilot",
             Agent::Codex => "Codex",
             Agent::Cursor => "Cursor",
+            Agent::Antigravity => "Antigravity CLI",
         }
     }
 
@@ -40,13 +48,15 @@ impl Agent {
             Agent::Copilot => "copilot hook",
             Agent::Codex => "codex hook",
             Agent::Cursor => "cursor hook",
+            Agent::Antigravity => "antigravity hook",
         }
     }
 
-    // What each agent's hooks receive: Cursor names things its own way, Copilot CLI in camelCase.
+    // What each agent's hooks receive: Cursor and Antigravity name things their own way, Copilot CLI in camelCase.
     pub fn working_dir(self, event: &Value) -> Option<PathBuf> {
         let dir = match self {
             Agent::Cursor => &event["workspace_roots"][0],
+            Agent::Antigravity => &event["workspacePaths"][0],
             _ => &event["cwd"],
         };
         dir.as_str().map(PathBuf::from)
@@ -55,6 +65,7 @@ impl Agent {
     pub fn session(self, event: &Value) -> Option<&str> {
         let keys: &[&str] = match self {
             Agent::Cursor => &["conversation_id", "session_id"],
+            Agent::Antigravity => &["conversationId"],
             _ => &["session_id", "sessionId"],
         };
         keys.iter().find_map(|key| event[*key].as_str())
@@ -64,13 +75,14 @@ impl Agent {
     pub fn after_reminder(self, event: &Value) -> bool {
         match self {
             Agent::Cursor => event["loop_count"].as_u64().is_some_and(|n| n > 0),
+            Agent::Antigravity => event["executionNum"].as_u64().is_some_and(|n| n > 0),
             _ => ["stop_hook_active", "stopHookActive"]
                 .iter()
                 .any(|key| event[*key] == json!(true)),
         }
     }
 
-    // Copilot CLI and Cursor hooks have no line for the user, so `message` goes to Claude Code and Codex only.
+    // Copilot CLI, Cursor and Antigravity hooks have no line for the user, so `message` goes to Claude Code and Codex only.
     pub fn session_start_reply(self, context: &str, message: &str) -> Value {
         match self {
             Agent::Claude | Agent::Codex => json!({
@@ -79,6 +91,8 @@ impl Agent {
             }),
             Agent::Copilot => json!({"additionalContext": context}),
             Agent::Cursor => json!({"additional_context": context}),
+            // Sent before every model call; an ephemeral message is never kept in the history.
+            Agent::Antigravity => json!({"injectSteps": [{"ephemeralMessage": context}]}),
         }
     }
 
@@ -90,6 +104,7 @@ impl Agent {
             Agent::Copilot => json!({"decision": "block", "reason": reason}),
             // Cursor sends it as the user's next message.
             Agent::Cursor => json!({"followup_message": reason}),
+            Agent::Antigravity => json!({"decision": "continue", "reason": reason}),
         }
     }
 
@@ -99,6 +114,7 @@ impl Agent {
             Agent::Copilot => home.join(".copilot").is_dir(),
             Agent::Codex => codex::dir(home).is_dir(),
             Agent::Cursor => home.join(".cursor").is_dir(),
+            Agent::Antigravity => antigravity::dir(home).is_dir(),
         }
     }
 
@@ -112,7 +128,7 @@ impl Agent {
                 install: "copilot plugin marketplace add areguig/petit-poucet && copilot plugin install petit-poucet@petit-poucet",
                 uninstall: "copilot plugin uninstall petit-poucet",
             }),
-            Agent::Codex | Agent::Cursor => None,
+            Agent::Codex | Agent::Cursor | Agent::Antigravity => None,
         }
     }
 
@@ -128,7 +144,7 @@ impl Agent {
                         .flatten()
                         .any(|marketplace| marketplace.path().join("petit-poucet").is_dir())
             }
-            Agent::Codex | Agent::Cursor => false,
+            Agent::Codex | Agent::Cursor | Agent::Antigravity => false,
         }
     }
 }
