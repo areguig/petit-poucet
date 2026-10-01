@@ -175,6 +175,8 @@ The same binary has a few commands for you (install it with the [install script]
 
 `plugin/` is the one plugin for every client: the launcher, the skills and `release.env` exist once. Claude Code reads `.claude-plugin/plugin.json`; Copilot reads `plugin.json`, which points at its own MCP config, hooks and agent in `copilot/`. Copilot's IDE hosts read the folder as a Claude plugin and use the Claude files.
 
+Each supported agent has a script in `tests/agents/` that installs petit-poucet into that agent's real CLI and checks the agent accepts it, in a throwaway HOME so your own config is never touched: `cargo build --release && sh tests/agents/codex.sh` (or `claude.sh`, `copilot.sh`). The Agents workflow runs them on Linux and macOS with each agent's latest release.
+
 Try a local build before any release: build it, then start an agent with the plugin folder from your checkout. Loaded from a checkout, the plugin runs the binary built there (`target/release/petit-poucet`) instead of downloading a release. Disable the installed plugin first so they don't both load:
 
 ```sh
