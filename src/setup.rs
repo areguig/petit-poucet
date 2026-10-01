@@ -4,7 +4,7 @@ use crate::agent::{Agent, Plugin};
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
-use crate::{codex, cursor};
+use crate::{antigravity, codex, cursor};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -111,6 +111,12 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
             cursor::check,
             cursor::uninstall,
             home.join(".cursor"),
+        ),
+        Agent::Antigravity => (
+            antigravity::setup,
+            antigravity::check,
+            antigravity::uninstall,
+            antigravity::dir(home),
         ),
         Agent::Claude | Agent::Copilot => return Err("set up by its plugin".to_string()),
     };

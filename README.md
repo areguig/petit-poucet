@@ -150,6 +150,10 @@ Install the binary (below), then run `petit-poucet setup`: it adds the MCP serve
 
 Install the binary (below), then run `petit-poucet setup`: it adds the MCP server to `~/.cursor/mcp.json` and the session-start and stop hooks to `~/.cursor/hooks.json`, keeping everything else in those files (and a `.petit-poucet.bak` copy of what it changed). Restart Cursor. Cloud agents don't read user-level hooks, so there memory loads through the MCP server's instructions instead. `petit-poucet setup --uninstall` takes it out again.
 
+**Antigravity CLI**
+
+Install the binary (below), then run `petit-poucet setup`: it adds the MCP server to `~/.gemini/config/mcp_config.json` and its hooks to `~/.gemini/config/hooks.json`, keeping everything else in those files (and a `.petit-poucet.bak` copy of what it changed). Memory reaches the model before each of its calls, and the end-of-turn hook reminds the agent to save what it learned. `petit-poucet setup --uninstall` takes it out again. Gemini CLI isn't supported: it no longer serves personal Google accounts, and Antigravity CLI replaces it.
+
 **The binary on its own**
 
 ```sh
@@ -179,7 +183,7 @@ The same binary has a few commands for you (install it with the [install script]
 
 `plugin/` is the one plugin for every client: the launcher, the skills and `release.env` exist once. Claude Code reads `.claude-plugin/plugin.json`; Copilot reads `plugin.json`, which points at its own MCP config, hooks and agent in `copilot/`. Copilot's IDE hosts read the folder as a Claude plugin and use the Claude files.
 
-Each supported agent has a script in `tests/agents/` that installs petit-poucet into that agent's real CLI and checks the agent accepts it, in a throwaway HOME so your own config is never touched: `cargo build --release && sh tests/agents/codex.sh` (or `claude.sh`, `copilot.sh`, `cursor.sh`). The Agents workflow runs them on Linux and macOS with each agent's latest release.
+Each supported agent has a script in `tests/agents/` that installs petit-poucet into that agent's real CLI and checks the agent accepts it, in a throwaway HOME so your own config is never touched: `cargo build --release && sh tests/agents/codex.sh` (or `claude.sh`, `copilot.sh`, `cursor.sh`, `antigravity.sh`). The Agents workflow runs them on Linux and macOS with each agent's latest release. Antigravity CLI needs a Google sign-in, so its script points it at `fake-gemini.py`, a stand-in model, and checks the hooks and the MCP server in real sessions.
 
 Try a local build before any release: build it, then start an agent with the plugin folder from your checkout. Loaded from a checkout, the plugin runs the binary built there (`target/release/petit-poucet`) instead of downloading a release. Disable the installed plugin first so they don't both load:
 

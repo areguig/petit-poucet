@@ -1,4 +1,5 @@
 mod agent;
+mod antigravity;
 mod change;
 mod check;
 mod codex;
@@ -9,6 +10,7 @@ mod edit;
 mod git;
 mod guard;
 mod hook;
+mod hooks_json;
 mod index;
 mod init;
 mod lock;

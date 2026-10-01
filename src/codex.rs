@@ -1,12 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{Value, json};
+use serde_json::json;
 use toml_edit::{DocumentMut, Item, Table, value};
 
-use crate::edit;
+use crate::{edit, hooks_json};
 
 const SERVER: &str = "petit-poucet";
+const AGENT: &str = "codex";
 // Codex event names, with the `petit-poucet hook` event each one runs.
 const EVENTS: [(&str, &str); 2] = [("SessionStart", "session-start"), ("Stop", "stop")];
 const TRUST: &str = "open Codex and trust its hooks once with /hooks";
@@ -15,36 +16,10 @@ pub fn dir(home: &Path) -> PathBuf {
     std::env::var_os("CODEX_HOME").map_or_else(|| home.join(".codex"), PathBuf::from)
 }
 
-fn hook_command(exe: &Path, event: &str) -> String {
-    format!("\"{}\" hook {event} --agent codex", exe.display())
-}
-
-// Ours whatever the binary is called or where it lives: matched by the arguments `hook_command` writes.
-fn is_ours(group: &Value) -> bool {
-    group["hooks"].as_array().is_some_and(|hooks| {
-        hooks.iter().any(|h| {
-            h["command"].as_str().is_some_and(|c| {
-                EVENTS
-                    .iter()
-                    .any(|(_, ours)| c.ends_with(&format!(" hook {ours} --agent codex")))
-            })
-        })
-    })
-}
-
 fn read_config(dir: &Path) -> Result<DocumentMut, String> {
     let path = dir.join("config.toml");
     let text = fs::read_to_string(&path).unwrap_or_default();
     text.parse().map_err(|e| format!("{}: {e}", path.display()))
-}
-
-fn without_ours(hooks: &mut Value) {
-    if let Some(events) = hooks["hooks"].as_object_mut() {
-        for groups in events.values_mut().filter_map(Value::as_array_mut) {
-            groups.retain(|g| !is_ours(g));
-        }
-        events.retain(|_, groups| groups.as_array().is_none_or(|g| !g.is_empty()));
-    }
 }
 
 pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
@@ -60,16 +35,14 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
     config["mcp_servers"][SERVER] = Item::Table(server);
 
     let mut hooks = edit::read_json(&dir.join("hooks.json"))?;
-    without_ours(&mut hooks);
-    if !hooks["hooks"].is_object() {
-        hooks["hooks"] = json!({});
-    }
+    hooks_json::remove(&mut hooks, AGENT);
     for (event, ours) in EVENTS {
-        let group = json!({"hooks": [{"type": "command", "command": hook_command(exe, ours), "timeout": 30}]});
-        match hooks["hooks"][event].as_array_mut() {
-            Some(groups) => groups.push(group),
-            None => hooks["hooks"][event] = json!([group]),
-        }
+        let command = hooks_json::command(exe, ours, AGENT);
+        hooks_json::add(
+            &mut hooks,
+            event,
+            json!({"type": "command", "command": command, "timeout": 30}),
+        );
     }
 
     let changed = edit::replace(&dir.join("config.toml"), &config.to_string())?
@@ -97,10 +70,7 @@ pub fn check(dir: &Path) -> Result<(String, bool), String> {
         Some(_) => {}
     }
     for (event, _) in EVENTS {
-        if !hooks["hooks"][event]
-            .as_array()
-            .is_some_and(|g| g.iter().any(is_ours))
-        {
+        if !hooks_json::has(&hooks, event, AGENT) {
             missing.push(format!("the {event} hook"));
         }
     }
@@ -133,7 +103,7 @@ pub fn uninstall(dir: &Path) -> Result<String, String> {
         .and_then(Item::as_table_like_mut)
         .is_some_and(|servers| servers.remove(SERVER).is_some());
     let mut hooks = edit::read_json(&dir.join("hooks.json"))?;
-    without_ours(&mut hooks);
+    hooks_json::remove(&mut hooks, AGENT);
     let mut changed = edit::write_json_if_present(&dir.join("hooks.json"), &hooks)?;
     if had_server {
         changed |= edit::replace(&dir.join("config.toml"), &config.to_string())?;
@@ -146,6 +116,8 @@ pub fn uninstall(dir: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use super::*;
 
     fn read(dir: &Path, file: &str) -> String {

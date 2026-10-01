@@ -481,7 +481,7 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI)\n"
         ),
         "{out}"
     );
@@ -703,7 +703,7 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("vault: set your git identity"), "{out}");
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI)\n"
         ),
         "{out}"
     );
@@ -824,4 +824,93 @@ fn cursor_hooks_reply_in_cursor_format() {
             .starts_with("Memory check")
     );
     assert_eq!(stop(1), "", "never reminds again inside its own follow-up");
+}
+
+#[test]
+fn setup_wires_antigravity_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let config = home.path().join(".gemini/config");
+    let mine = r#"{"mcpServers": {"other": {"serverUrl": "http://localhost:1"}}}"#;
+    write(home.path(), ".gemini/config/mcp_config.json", mine);
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.ends_with(
+            "Antigravity CLI: set up (MCP server in mcp_config.json, hooks in hooks.json)\n"
+        ),
+        "{out}"
+    );
+    let read = |file: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(config.join(file)).unwrap()).unwrap()
+    };
+    let mcp = read("mcp_config.json");
+    assert_eq!(
+        mcp["mcpServers"]["other"]["serverUrl"],
+        "http://localhost:1"
+    );
+    assert_eq!(
+        mcp["mcpServers"]["petit-poucet"]["command"],
+        exe.display().to_string()
+    );
+    assert!(read("hooks.json")["petit-poucet"]["PreInvocation"].is_array());
+
+    assert!(setup(home.path(), &["--check"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.ends_with("Antigravity CLI: removed (MCP server and hooks)\n"),
+        "{out}"
+    );
+    assert_eq!(
+        read("mcp_config.json"),
+        serde_json::from_str::<serde_json::Value>(mine).unwrap()
+    );
+}
+
+#[test]
+fn antigravity_hooks_reply_in_antigravity_format() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let event = serde_json::json!({"conversationId": "a-1", "workspacePaths": [home.path()], "invocationNum": 0});
+    let start: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "antigravity"],
+        &event.to_string(),
+    ))
+    .unwrap();
+    assert!(
+        start["injectSteps"][0]["ephemeralMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("Agent memory (petit-poucet)"),
+        "{start}"
+    );
+
+    let stop = |execution: u64| {
+        let event = serde_json::json!({"conversationId": "a-1", "executionNum": execution, "terminationReason": "NO_TOOL_CALL"});
+        hook(
+            home.path(),
+            &["stop", "--agent", "antigravity"],
+            &event.to_string(),
+        )
+    };
+    let replies: Vec<String> = (0..3).map(|_| stop(0)).collect();
+    let third: serde_json::Value = serde_json::from_str(&replies[2]).unwrap();
+    assert_eq!(third["decision"], "continue");
+    assert!(
+        third["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Memory check")
+    );
+    assert_eq!(
+        stop(1),
+        "",
+        "the stop after our reminder lets the agent stop"
+    );
 }
