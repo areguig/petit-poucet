@@ -5,6 +5,7 @@ use crate::change;
 use crate::config::Config;
 use crate::index;
 use crate::stops;
+use crate::update;
 use crate::vault::Vault;
 
 const FIRST_REMINDER: u32 = 3;
@@ -37,7 +38,8 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
     if agent.holds_memory_already(event) {
         return None;
     }
-    let (context, message) = match memory_context(agent, event) {
+    update::start();
+    let (mut context, mut message) = match memory_context(agent, event) {
         _ if !Config::is_set() => (
             setup_context(),
             format!("{PEBBLE} no vault yet: the agent will offer to create one"),
@@ -51,6 +53,14 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
             format!("{PEBBLE} memory unavailable: {e}"),
         ),
     };
+    if let Some(version) = update::newer() {
+        match agent.shows_hook_messages() {
+            true => message.push_str(&format!("\n{PEBBLE} {}", update::notice(&version))),
+            false => context.push_str(&format!(
+                "\n\npetit-poucet {version} is out: tell the user once, in one line, to run its installer again."
+            )),
+        }
+    }
     Some(agent.session_start_reply(&context, &message))
 }
 

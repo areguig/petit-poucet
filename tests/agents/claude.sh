@@ -25,6 +25,7 @@ for turn in one two three; do
 done
 cd "$repo"
 check_calls mcp__petit-poucet__memory_search
+check_update
 
 has "$("$pp" setup --uninstall)" '^Claude Code: removed'
 if claude mcp list 2>&1 | grep -q petit-poucet; then fail "Claude Code still lists petit-poucet"; fi

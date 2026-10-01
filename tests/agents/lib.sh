@@ -23,6 +23,12 @@ case "$(uname -s)" in
   *) windows= ;;
 esac
 
+# The latest release, as GitHub's API describes it, served from a local file to the sessions' update check.
+echo '{"tag_name": "v99.0.0"}' > "$HOME/latest.json"
+release_path="$HOME/latest.json"
+[ -z "$windows" ] || release_path="/$(cygpath -m "$release_path")"
+export PETIT_POUCET_LATEST_RELEASE="file://$release_path"
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # has <text> <pattern>: one line of text matches the grep pattern.
 has() { printf '%s\n' "$1" | grep -q -- "$2" || fail "expected /$2/ in:
@@ -43,6 +49,17 @@ start_model() {
 # check_calls <tools marker>: what the session sent the model; see calls.mjs.
 check_calls() {
   node "$repo/tests/agents/calls.mjs" "$calls" "$1" || fail "petit-poucet didn't reach the model as expected"
+}
+
+# check_update: the update check that session start leaves running in the background outlived the agent's hook.
+check_update() {
+  latest="$HOME/agent-memory/.petit-poucet/latest-release"
+  tries=0
+  until [ "$(cat "$latest" 2>/dev/null)" = 99.0.0 ]; do
+    tries=$((tries + 1))
+    [ "$tries" -le 200 ] || fail "the update check never recorded the latest release in $latest"
+    sleep 0.1
+  done
 }
 
 # install_old_plugin <claude|copilot>: installs the petit-poucet 0.2.2 plugin, the version `setup` replaces.

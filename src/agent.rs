@@ -92,6 +92,10 @@ impl Agent {
         self == Agent::Codex && event["source"] == "resume"
     }
 
+    pub fn shows_hook_messages(self) -> bool {
+        matches!(self, Agent::Claude | Agent::Codex)
+    }
+
     // Copilot CLI, Cursor and Antigravity hooks have no line for the user, so `message` goes to Claude Code and Codex only.
     pub fn session_start_reply(self, context: &str, message: &str) -> Value {
         match self {
