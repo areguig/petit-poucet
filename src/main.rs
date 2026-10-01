@@ -119,7 +119,7 @@ fn main() -> ExitCode {
 fn run_hook(event: HookEvent, agent: agent::Agent) {
     let input = serde_json::from_reader(std::io::stdin()).unwrap_or(serde_json::Value::Null);
     let output = match event {
-        HookEvent::SessionStart => Some(hook::session_start(agent, &input)),
+        HookEvent::SessionStart => hook::session_start(agent, &input),
         HookEvent::Stop => hook::stop(agent, &input),
     };
     if let Some(output) = output {
