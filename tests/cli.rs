@@ -713,3 +713,21 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("\nnot committed: "), "{out}");
     assert!(vault.join("Index.md").is_file());
 }
+
+// Copilot CLI 1.0.90 installs from a local folder without copying it: only its settings say so (#54).
+#[test]
+fn setup_sees_a_copilot_plugin_installed_from_a_local_folder() {
+    let home = TempDir::new().unwrap();
+    setup(home.path(), &[]);
+    write(
+        home.path(),
+        ".copilot/settings.json",
+        r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
+    );
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(ok, "{out}");
+    assert!(
+        out.ends_with("GitHub Copilot: set up by its plugin\n"),
+        "{out}"
+    );
+}
