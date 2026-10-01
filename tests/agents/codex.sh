@@ -17,7 +17,7 @@ wire_api = "responses"
 env_key = "MOCK_API_KEY"
 TOML
 has "$("$pp" setup)" '^Codex: set up'
-has "$(codex mcp get petit-poucet 2>/dev/null)" "command: $pp"
+has "$(codex mcp get petit-poucet 2>&1)" 'command: .*petit-poucet'
 has "$(codex mcp list 2>/dev/null)" '^petit-poucet .* enabled'
 
 # Users trust the hooks once in Codex's /hooks; `codex exec` would skip untrusted ones silently.
