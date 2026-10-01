@@ -475,7 +475,9 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
         "{out}"
     );
     assert!(
-        out.ends_with("agents: none found (supported: Claude Code, GitHub Copilot, Codex)\n"),
+        out.ends_with(
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor)\n"
+        ),
         "{out}"
     );
     assert!(vault.join("Index.md").is_file());
@@ -696,7 +698,9 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("\nvault: not committed: "), "{out}");
     assert!(out.contains("vault: set your git identity"), "{out}");
     assert!(
-        out.ends_with("agents: none found (supported: Claude Code, GitHub Copilot, Codex)\n"),
+        out.ends_with(
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor)\n"
+        ),
         "{out}"
     );
     assert!(home.path().join("agent-memory/Index.md").is_file());
@@ -730,4 +734,92 @@ fn setup_sees_a_copilot_plugin_installed_from_a_local_folder() {
         out.ends_with("GitHub Copilot: set up by its plugin\n"),
         "{out}"
     );
+}
+
+#[test]
+fn setup_wires_cursor_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let cursor = home.path().join(".cursor");
+    write(
+        home.path(),
+        ".cursor/mcp.json",
+        r#"{"mcpServers": {"other": {"url": "http://localhost:1"}}}"#,
+    );
+    let exe = Path::new(env!("CARGO_BIN_EXE_petit-poucet"))
+        .canonicalize()
+        .unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.ends_with(
+            "Cursor: set up (MCP server in mcp.json, hooks in hooks.json): restart Cursor\n"
+        ),
+        "{out}"
+    );
+    let mcp: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(cursor.join("mcp.json")).unwrap()).unwrap();
+    assert_eq!(mcp["mcpServers"]["other"]["url"], "http://localhost:1");
+    assert_eq!(
+        mcp["mcpServers"]["petit-poucet"]["command"],
+        exe.display().to_string()
+    );
+
+    assert!(setup(home.path(), &["--check"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.ends_with("Cursor: removed (MCP server and hooks)\n"),
+        "{out}"
+    );
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(
+        !ok && out.contains("Cursor: missing the MCP server"),
+        "{out}"
+    );
+}
+
+#[test]
+fn cursor_hooks_reply_in_cursor_format() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // Cursor gives the project folder only as workspace_roots: the fixture's `alpha` is matched by folder name.
+    let alpha = home.path().join("alpha");
+    fs::create_dir(&alpha).unwrap();
+    let event = serde_json::json!({"conversation_id": "c-1", "workspace_roots": [alpha]});
+    let start: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "cursor"],
+        &event.to_string(),
+    ))
+    .unwrap();
+    let context = start["additional_context"].as_str().unwrap();
+    assert!(
+        context.contains("[[Projects/alpha/plugin-design]]"),
+        "{context}"
+    );
+    assert_eq!(start.as_object().unwrap().len(), 1, "{start}");
+
+    let stop = |loop_count: u32| {
+        let event = serde_json::json!({"conversation_id": "c-1", "status": "completed", "loop_count": loop_count});
+        hook(
+            home.path(),
+            &["stop", "--agent", "cursor"],
+            &event.to_string(),
+        )
+    };
+    let replies: Vec<String> = (0..3).map(|_| stop(0)).collect();
+    assert_eq!(&replies[..2], ["", ""]);
+    let third: serde_json::Value = serde_json::from_str(&replies[2]).unwrap();
+    assert!(
+        third["followup_message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Memory check")
+    );
+    assert_eq!(stop(1), "", "never reminds again inside its own follow-up");
 }

@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use serde_json::Value;
 
 use crate::agent::Agent;
@@ -35,11 +33,6 @@ If not, reply only: \"Nothing new to remember.\"";
 // Starts every line shown to the user.
 const PEBBLE: &str = "🪨 petit-poucet ·";
 
-// Claude Code sends snake_case event fields, Copilot CLI camelCase.
-fn field<'a>(event: &'a Value, snake: &str, camel: &str) -> Option<&'a Value> {
-    event.get(snake).or_else(|| event.get(camel))
-}
-
 pub fn session_start(agent: Agent, event: &Value) -> Value {
     let (context, message) = match memory_context(agent, event) {
         _ if !Config::is_set() => (
@@ -72,10 +65,8 @@ fn setup_context() -> String {
 fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), String> {
     let config = Config::load()?;
     let vault = Vault::load(&config.vault)?;
-    let dir = event
-        .get("cwd")
-        .and_then(Value::as_str)
-        .map(PathBuf::from)
+    let dir = agent
+        .working_dir(event)
         .or_else(|| std::env::current_dir().ok());
     let project = dir.and_then(|d| change::identify(&config, &vault, &d, agent.hook_label()));
     let project = project.as_deref();
@@ -93,10 +84,10 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), Strin
 
 // Reminds at the 3rd stop of a session, then every 10th; never without a session id to count by.
 pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
-    if field(event, "stop_hook_active", "stopHookActive").and_then(Value::as_bool) == Some(true) {
+    if agent.after_reminder(event) {
         return None;
     }
-    let session = field(event, "session_id", "sessionId").and_then(Value::as_str)?;
+    let session = agent.session(event)?;
     let count = stops::record(session)?;
     let due = count >= FIRST_REMINDER && (count - FIRST_REMINDER).is_multiple_of(EVERY);
     due.then(|| {

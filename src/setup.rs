@@ -1,10 +1,10 @@
 use std::path::Path;
 
 use crate::agent::{Agent, Plugin};
-use crate::codex;
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
+use crate::{codex, cursor};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -80,7 +80,7 @@ fn report(agent: Agent, mode: Mode, home: &Path, named: bool) -> (Option<String>
     }
     let (line, ok) = match agent.plugin() {
         Some(plugin) => by_plugin(agent, &plugin, mode, home),
-        None => by_config(mode, home).unwrap_or_else(|e| (e, false)),
+        None => by_config(agent, mode, home).unwrap_or_else(|e| (e, false)),
     };
     (Some(format!("{name}: {line}")), ok)
 }
@@ -96,15 +96,31 @@ fn by_plugin(agent: Agent, plugin: &Plugin, mode: Mode, home: &Path) -> (String,
     (line, installed || mode == Mode::Uninstall)
 }
 
-// Only Codex is set up this way so far.
-fn by_config(mode: Mode, home: &Path) -> Result<(String, bool), String> {
-    let dir = codex::dir(home);
+// Agents without a plugin: petit-poucet writes their config itself.
+fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), String> {
+    let exe = || std::env::current_exe().map_err(|e| e.to_string());
+    let (setup, check, uninstall, dir): (Setup, Check, Uninstall, _) = match agent {
+        Agent::Codex => (
+            codex::setup,
+            codex::check,
+            codex::uninstall,
+            codex::dir(home),
+        ),
+        Agent::Cursor => (
+            cursor::setup,
+            cursor::check,
+            cursor::uninstall,
+            home.join(".cursor"),
+        ),
+        Agent::Claude | Agent::Copilot => return Err("set up by its plugin".to_string()),
+    };
     match mode {
-        Mode::Setup => {
-            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-            Ok((codex::setup(&dir, &exe)?, true))
-        }
-        Mode::Check => codex::check(&dir),
-        Mode::Uninstall => Ok((codex::uninstall(&dir)?, true)),
+        Mode::Setup => Ok((setup(&dir, &exe()?)?, true)),
+        Mode::Check => check(&dir),
+        Mode::Uninstall => Ok((uninstall(&dir)?, true)),
     }
 }
+
+type Setup = fn(&Path, &Path) -> Result<String, String>;
+type Check = fn(&Path) -> Result<(String, bool), String>;
+type Uninstall = fn(&Path) -> Result<String, String>;

@@ -3,6 +3,7 @@ mod change;
 mod check;
 mod codex;
 mod config;
+mod cursor;
 mod delete;
 mod edit;
 mod git;
