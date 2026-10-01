@@ -27,10 +27,13 @@ pub fn replace(path: &Path, text: &str) -> Result<bool, String> {
 }
 
 // A missing file is empty; one it can't parse is an error, so the user's content is never overwritten.
+// Missing or blank (agents leave empty files behind): no settings yet.
 pub fn read_json(path: &Path) -> Result<Value, String> {
     match fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display())),
-        Err(_) => Ok(json!({})),
+        Ok(text) if !text.trim().is_empty() => {
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+        }
+        _ => Ok(json!({})),
     }
 }
 
@@ -80,6 +83,8 @@ mod tests {
         );
         assert!(write_json_if_present(&file, &json!({"b": 2})).unwrap());
 
+        fs::write(&file, " \n").unwrap();
+        assert_eq!(read_json(&file).unwrap(), json!({}), "blank");
         fs::write(&file, "{ broken").unwrap();
         assert!(read_json(&file).is_err());
     }
