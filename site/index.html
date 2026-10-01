@@ -80,6 +80,10 @@
   .button.primary { background: var(--accent); color: var(--accent-ink); }
   .clients { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 28px 0 0; padding: 0; list-style: none; }
   .clients li { font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+  .clients.planned { margin-top: 10px; }
+  .clients.planned li { background: transparent; border-style: dashed; }
+  .clients.planned li:first-child { border: 0; padding-right: 0; font-weight: 600; }
+  .clients.planned a { color: inherit; }
 
   .problems { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 16px; margin-top: 24px; }
   .problem { padding: 20px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 12px 12px 0; }
@@ -146,6 +150,9 @@
     </div>
     <ul class="clients" aria-label="Works with">
       <li>Claude Code</li><li>Copilot CLI</li><li>Copilot in VS Code</li><li>Copilot in IntelliJ</li><li>GitHub Copilot app</li><li>any MCP client</li>
+    </ul>
+    <ul class="clients planned" aria-label="Planned">
+      <li>Planned:</li><li><a href="https://github.com/areguig/petit-poucet/issues/9">Codex</a></li><li><a href="https://github.com/areguig/petit-poucet/issues/10">OpenCode</a></li><li><a href="https://github.com/areguig/petit-poucet/issues/11">other popular agents</a></li>
     </ul>
   </section>
 
@@ -287,6 +294,7 @@ copilot plugin install petit-poucet@petit-poucet</pre>
     <details><summary>Does my memory leave my machine?</summary><p>petit-poucet itself sends nothing anywhere: the vault is a local folder and a local git repository, never pushed. Like any file your agent reads, the Index and the notes it opens become part of the conversation with its model.</p></details>
     <details><summary>Do I need Obsidian?</summary><p>No. Obsidian is a nice way to browse and edit the vault, but petit-poucet doesn't need it running. Your edits are picked up on the next tool call.</p></details>
     <details><summary>What stops an agent from saving nonsense, or a secret?</summary><p>Every note needs a type, a one-line summary and a source; tokens, keys and passwords are refused; a near-duplicate is reported so the agent updates the existing note. Rules you stated can't be changed without your confirmation.</p></details>
+    <details><summary>My agent isn't supported yet</summary><p>Codex and OpenCode are planned, and other popular agents will follow as people use them. Give a 👍 to <a href="https://github.com/areguig/petit-poucet/issues/9">Codex</a>, <a href="https://github.com/areguig/petit-poucet/issues/10">OpenCode</a> or <a href="https://github.com/areguig/petit-poucet/issues/11">other agents</a>, or comment with yours: the votes decide what comes first.</p></details>
     <details><summary>Can my team share one memory?</summary><p>Not by design: each person keeps their own vault. Knowledge the whole team needs belongs in the repository, in <code>AGENTS.md</code> or <code>CLAUDE.md</code>.</p></details>
   </section>
 

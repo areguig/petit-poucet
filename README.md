@@ -12,6 +12,8 @@
 
 In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, so every new session in Claude Code, GitHub Copilot CLI or any MCP client starts where the last one left off.
 
+Planned: [Codex](https://github.com/areguig/petit-poucet/issues/9), [OpenCode](https://github.com/areguig/petit-poucet/issues/10) and [other popular agents](https://github.com/areguig/petit-poucet/issues/11). A 👍 on the issue for your agent helps decide what comes first.
+
 ## Why
 
 Coding agents forget everything between sessions, and each tool keeps its own memory in its own format. petit-poucet gives them one shared memory that:
