@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "The mock model the agent tests run real sessions against.",
+  "dependencies": {
+    "@copilotkit/aimock": "1.43.0"
+  }
+}
