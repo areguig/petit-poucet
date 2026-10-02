@@ -1,0 +1,18 @@
+# petit-poucet
+
+> An MCP memory server for coding agents: one curated memory for every agent you switch between. Your rules, decisions and verified facts live in a Markdown folder you own, with every change in git, and Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor and Antigravity CLI load it at the start of every session. One Rust binary for macOS, Linux and Windows; Apache-2.0.
+
+- Install: `curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh` (macOS, Linux) or `irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex` (Windows), then `petit-poucet setup`, which wires every agent it finds: MCP server, session-start and stop hooks, skills.
+- Memory is loaded by a session-start hook, not left to the model to look up; any other MCP client can use the tools.
+- Notes are saved on purpose, one fact each with its source; rules the user stated change only with their confirmation; secrets are refused.
+- The vault is plain Markdown (Obsidian-compatible) and a local git repository, never pushed.
+
+## Docs
+
+- [README](https://github.com/areguig/petit-poucet/blob/main/README.md): how it works, tools, skills, install, agents, command line
+- [Latest release and notes](https://github.com/areguig/petit-poucet/releases/latest)
+
+## Optional
+
+- [Design and plan](https://github.com/areguig/petit-poucet/blob/main/docs/PLAN.md)
+- [Source code](https://github.com/areguig/petit-poucet)
