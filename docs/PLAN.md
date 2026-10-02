@@ -4,11 +4,11 @@ Written 2026-09-24 from a design session. Decisions marked **(decided)** were ma
 
 ## 1. Goal
 
-One curated, shared memory for coding agents (Claude Code, GitHub Copilot CLI, any MCP client), stored as a personal Obsidian-compatible Markdown vault, served by a single Rust binary, distributed from GitHub as an easy-to-install plugin for teammates.
+One curated, shared memory for coding agents (Claude Code, GitHub Copilot CLI, any MCP client), stored as a personal Obsidian-compatible Markdown vault, served by a single Rust binary. Since 0.3 an install script puts the binary on the PATH and `petit-poucet setup` wires it into every agent on the machine (until 0.2: a plugin per agent).
 
 ### Decided
 
-- Rust, one binary. macOS and Linux first, Windows later.
+- Rust, one binary. macOS and Linux first; Windows since 0.3.
 - Personal vault only: one per person, no shared team vault.
 - Markdown files are the only source of truth; Obsidian is only a viewer/editor and does not need to run.
 - The vault is a git repository; the server commits locally after every change (on by default, never pushes).
@@ -103,10 +103,11 @@ One binary, `petit-poucet`, with subcommands:
 | Command | Purpose |
 |---|---|
 | `serve` | MCP server over stdio (stdout is reserved for the protocol; logs go to stderr) |
-| `hook session-start --agent claude\|copilot` | print the rules + filtered Index in the agent's hook format, or "memory unavailable" |
-| `hook stop --agent claude\|copilot` | occasional reminder to save (see §7) |
+| `hook session-start --agent claude\|copilot\|codex\|cursor\|antigravity` | print the rules + filtered Index in the agent's hook format, or "memory unavailable" |
+| `hook stop --agent <same>` | occasional reminder to save (see §7) |
 | `check` | validate the vault: frontmatter, missing summaries, broken links, orphan Index lines, secrets |
 | `init <path>` | create a vault (folders, `git init`, first Index) and the config file |
+| `setup` | wire every agent found (MCP server, hooks, skills, `memory-cleanup` subagent); `--check`, `--uninstall`, `--agent` (0.3) |
 | `migrate` | one-off upgrade of an existing vault (add `summary`, `_project.md`, regenerate Index) |
 
 Config: `~/.config/petit-poucet/config.toml` (`vault` path, `git_autocommit = true`, reminder cadence); `PETIT_POUCET_VAULT` env var overrides the path.
@@ -145,9 +146,12 @@ Replace today's `~/.config/agent-memory/memory-hook.py` (a working prototype wor
 - **Session start** — prints a short rules block (the prompt-enforced rules of §2) plus the filtered Index. If the vault is missing or unreadable: a one-line "memory unavailable, tell the user, don't write memory elsewhere".
   - Claude Code: `{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "…"}}`
   - Copilot CLI: `{"additionalContext": "…"}`
+  - 0.3 adds Codex (Claude's format), Cursor (`{"additional_context": …}`) and Antigravity CLI (a `PreInvocation` hook answering `{"injectSteps": [{"ephemeralMessage": …}]}` before each model call). Each agent's formats live in `src/agent.rs`.
 - **Stop** — at the 3rd stop of a session, then every 10th: `{"decision": "block", "reason": "<save reminder>"}`; do nothing when `stop_hook_active` is set. Per-session counter in a temp file keyed by session id. Cadence configurable.
 
 ## 8. Distribution
+
+**Since 0.3 (decided 2026-10-01, #42, #11, #70):** the binary is the product. `install.sh` / `install.ps1` download the release binary for the OS and architecture, check its SHA-256 and put it in `~/.local/bin`; `petit-poucet setup` writes each agent's user-level config (own entries only, with a `.petit-poucet.bak` backup) and removes the 0.2 plugins with the agents' own commands. Releases: macOS, Linux (static musl) and Windows, each on x64 and ARM. The plan below is how 0.1–0.2 shipped.
 
 - **Binaries:** GitHub Releases for macOS (arm64, x86_64) and Linux (x86_64, arm64, static musl), built by GitHub Actions (evaluate `cargo-dist`). Later: `cargo install petit-poucet`, Homebrew tap.
 - **Claude Code plugin** in this repo (`.claude-plugin/`): declares the MCP server and both hooks; installable from this repo as a marketplace.
@@ -208,14 +212,26 @@ Agreed 2026-09-24. Ordered by what real use is likely to show first; each item o
 
 - **0.2.2, released 2026-10-01** after the owner's tests (session start in Claude Code; the 0.2.2 hook matched every project of the real vault): fixes #1–#6 and #8 from the 2026-09-30 review, one PR per issue. Workflow changed: `dev` replaced by one branch per version cut from `main`; release notes in `docs/releases/`; the tag goes out before the merge into `main`. #7 (launcher checksum) is still open.
 
-### 0.3: one memory for every agent you switch between (decided 2026-10-01)
+### 0.3: one memory for every agent you switch between (decided 2026-10-01; built 2026-10-01, released after the owner's local trial)
 Target users: people who switch often between coding agents. Before new features, petit-poucet must work in the agents they use, installed the same way everywhere. Inspired by rtk: the binary is the product, one command wires it into each agent; the Claude Code and Copilot plugins stay as their one-command route. Tracked in #43, one PR per issue into `v0.3`:
 - #42 install script, binary on PATH; the plugin launcher prefers a PATH binary of its pinned version.
 - #11 `petit-poucet setup` / `--check` / `--uninstall` on one table of agents: MCP server, session-start hook or an instruction line, stop hook, skills. It may edit agents' global config files, own entries only, with backups (owner's decision).
 - Agents, in this order: Codex (#9), Cursor (#40), Gemini CLI (#41), OpenCode (#10). Each needs a local trial in that agent before the release.
 - Windows (#12): CI first, then the build and `install.ps1`; hooks calling the binary directly need no shell.
 
-### 0.4: memory quality over time
+How it was built, and what changed on the way (owner's decisions, 2026-10-01):
+- Gemini CLI no longer serves personal Google accounts: **Antigravity CLI** replaces it (#60; #41 closed as not planned). Its hook runs before every model call, with an ephemeral message that never stays in the history.
+- **OpenCode moves to 0.4**: 0.3 was crowded enough.
+- **The plugins are dropped** (#70): `setup` wires Claude Code and Copilot directly like every other agent (#68) and uninstalls the 0.2 plugin first, so hooks never run twice. The launcher goes with them, which makes #7 moot. Copilot's IDE hosts and app read `~/.copilot` like the CLI.
+- **Skills everywhere** (#62): every agent gets the `memory`, `migrate-memory` and `tidy-memory` skills and the `memory-cleanup` subagent, in its own format, hidden from main-agent pickers where the agent allows it.
+- **Real agents in CI** (#51, #64): one job per agent and OS installs petit-poucet into the agent's real CLI and runs a three-turn session against a mock model (aimock, pinned), checking the memory, tools, skills and reminder in every request. Cursor can't use another model: its job checks the MCP server only.
+- **Windows** (#12): Linux, macOS and Windows runners for every test and agent. Hooks that agents run through `cmd /c` use the binary's unquoted 8.3 short path.
+- **Update notice** (#69): once a day, session start checks the latest release in a detached process (`curl`, no TLS in the binary) and the next session tells the user; `PETIT_POUCET_NO_UPDATE_CHECK` turns it off. `update-informer` was considered and left out: its check is synchronous and its URL can't be pointed at a test server.
+- Bugs found on the way: a resumed Codex session reloaded its memory (#65); a Copilot plugin installed from a local folder went unseen (#54); `init` and `setup` failed without a git identity (#49).
+
+### 0.4: OpenCode, then memory quality over time
+- OpenCode (#10), moved from 0.3.
+
 Feature issues waiting for triage (#13–#25, #35, #36), among them:
 - Usage-driven cleanup: after a few weeks of read counts, `tidy-memory` proposes notes nobody opens (`feedback` notes excluded: they are applied from the Index without being read).
 - Stale facts: `check` reports notes naming a file or path that no longer exists; report only, never an automatic fix.

@@ -10,14 +10,16 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/areguig/petit-poucet" alt="Apache-2.0"></a>
 </p>
 
-In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, so every new session in Claude Code, GitHub Copilot CLI or any MCP client starts where the last one left off.
+In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, and every agent you switch between starts each session with it.
 
-Planned: [Codex](https://github.com/areguig/petit-poucet/issues/9), [OpenCode](https://github.com/areguig/petit-poucet/issues/10) and [other popular agents](https://github.com/areguig/petit-poucet/issues/11). A 👍 on the issue for your agent helps decide what comes first.
+One binary (an MCP memory server and its hooks), one command to wire it into **Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor and Antigravity CLI**, on macOS, Linux and Windows. Any other MCP client can use its tools. Next: [OpenCode](https://github.com/areguig/petit-poucet/issues/10); a 👍 on the issue for your agent helps decide what comes after.
 
 ## Why
 
-Coding agents forget everything between sessions, and each tool keeps its own memory in its own format. petit-poucet gives them one shared memory that:
+Coding agents forget everything between sessions, and each tool keeps its own memory in its own format: what you taught Claude Code on Monday, Codex doesn't know on Tuesday. petit-poucet gives them one shared memory that:
 
+- **follows you across agents**: `petit-poucet setup` wires the same vault into every agent it finds, so switching tools doesn't mean teaching them again;
+- **is there from the first message**: a session-start hook hands the agent your rules and the Index, so memory doesn't depend on the model deciding to look it up;
 - **is plain Markdown**: a folder of notes you can read and edit in [Obsidian](https://obsidian.md) or any editor; no database, no cloud;
 - **is curated, not recorded**: agents save a decision, a correction or a verified fact deliberately, with its source; nothing is captured from transcripts;
 - **enforces its own rules**: note format, Index and links are checked by the server, not left to each agent's good will;
@@ -32,7 +34,7 @@ Claude Code, Copilot and Codex now keep memories of their own, and that's useful
 | | Claude Code auto memory | GitHub Copilot Memory | Codex memories | petit-poucet |
 |---|---|---|---|---|
 | Where it lives | `~/.claude/projects/<repo>/memory/`, on this machine | Stored by GitHub (in VS Code: local memory files) | Generated files in `~/.codex/memories/` | A folder you choose: plain Markdown, Obsidian-compatible |
-| Other agents | Claude Code only | Copilot only | Codex only | Every agent you plug in: Claude Code, Copilot, any MCP client |
+| Other agents | Claude Code only | Copilot only | Codex only | Claude Code, Copilot, Codex, Cursor, Antigravity CLI, any MCP client |
 | Scope | One repo; rules for all repos go in `CLAUDE.md`, by hand | One repo | Global | Preferences for every repo, notes per repo (matched by git remote), topics tied to no repo |
 | How notes are made | Claude decides what to save | The agent saves while working | Summarised in the background from past chats | Saved on purpose, one fact per note, each with its source |
 | Your say | Edit the files yourself | Review and delete in repository settings | Docs advise against editing them by hand | Rules you stated change only with your confirmation; your edits are never overwritten |
@@ -45,7 +47,7 @@ If you use one agent and are happy with what it remembers, its built-in memory m
 
 ## What your agent sees
 
-At the start of every session, a hook gives the agent the memory rules and the Index of what applies here: your preferences and the current repo's notes, one line each. Claude Code also shows you a pebble line:
+At the start of every session, a hook gives the agent the memory rules and the Index of what applies here: your preferences and the current repo's notes, one line each. Claude Code and Codex also show you a pebble line:
 
 ```
 🪨 petit-poucet · 20 notes loaded (preferences + chargepath-api)
@@ -68,9 +70,10 @@ The agent opens only the notes a task needs, saves new facts as it learns them, 
 
 ```
 Claude Code ─┐
-Copilot CLI ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
-other MCP   ─┘                                       ├─ Index.md           generated
-                                                     ├─ Preferences/       every repo, always loaded
+Copilot     ─┤
+Codex       ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
+Cursor      ─┤                                       ├─ Index.md           generated
+Antigravity ─┘                                       ├─ Preferences/       every repo, always loaded
                                                      ├─ Projects/<repo>/   loaded in that repo
                                                      └─ Topics/<topic>/    no repo (homelab, a server…), searched on demand
 ```
@@ -108,6 +111,7 @@ Commit each finished step locally; never push.
 
 ### Skills
 
+- **`memory`**: tells the agent to load your memory at the start of a task, where hooks don't run (Copilot in IntelliJ).
 - **`migrate-memory`**: moves an agent's older file-based memory (`MEMORY.md` files, memory folders, memory sections of instruction files) into petit-poucet in one pass. It shows you the list first and saves only what you confirm; the old files are never touched.
 - **`tidy-memory`**: a read-only subagent reviews the whole vault for duplicates, contradictions, stale or unused notes, and proposes fixes; your agent applies only what you confirm.
 
@@ -120,7 +124,7 @@ Commit each finished step locally; never push.
 
 ## Install
 
-Needs `git`. On macOS or Linux:
+Needs `git`, and `curl` on macOS or Linux (Windows 10 and later ship it). On macOS or Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
@@ -134,7 +138,7 @@ irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | ie
 petit-poucet setup
 ```
 
-The script installs the latest release in `~/.local/bin` after checking its SHA-256 (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version); run it again to upgrade. Once a day, session start checks for a new release in the background and tells you when one is out (`PETIT_POUCET_NO_UPDATE_CHECK=1` turns the check off). On Windows it also adds that folder to your user `Path` (`PETIT_POUCET_NO_MODIFY_PATH=1` leaves it alone): open a new terminal before `petit-poucet setup`. `petit-poucet setup` creates your vault in `~/agent-memory` if you have none, then wires every agent it finds: the MCP server, the session-start and end-of-turn hooks, the `memory`, `migrate-memory` and `tidy-memory` skills, and the `memory-cleanup` subagent that `tidy-memory` hands the review to. It writes each agent's user-level config, keeps everything else in those files and leaves a `.petit-poucet.bak` copy of what it changed. `setup --check` says what's missing, `setup --uninstall` takes it all out again (your vault stays), and `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`) limits either to one agent.
+The script installs the latest release in `~/.local/bin` after checking its SHA-256 (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version); run it again to upgrade. On Windows it also adds that folder to your user `Path` (`PETIT_POUCET_NO_MODIFY_PATH=1` leaves it alone): open a new terminal before `petit-poucet setup`. Once a day, session start checks for a new release in the background and tells you when one is out (`PETIT_POUCET_NO_UPDATE_CHECK=1` turns the check off). `petit-poucet setup` creates your vault in `~/agent-memory` if you have none, then wires every agent it finds: the MCP server, the session-start and end-of-turn hooks, the `memory`, `migrate-memory` and `tidy-memory` skills, and the `memory-cleanup` subagent that `tidy-memory` hands the review to. It writes each agent's user-level config, keeps everything else in those files and leaves a `.petit-poucet.bak` copy of what it changed. `setup --check` says what's missing, `setup --uninstall` takes it all out again (your vault stays), and `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`) limits either to one agent.
 
 | Agent | What `setup` writes | Then |
 |---|---|---|
@@ -169,7 +173,7 @@ The same binary has a few commands for you (install it with the [install script]
 
 The skills (`skills/`) and the `memory-cleanup` prompt (`agents/`) are embedded in the binary: `setup` writes them for each agent in its own format.
 
-Each supported agent has a script in `tests/agents/` that installs petit-poucet into that agent's real CLI, in a throwaway HOME so your own config is never touched: `cargo build --release && npm ci --prefix tests/agents && sh tests/agents/codex.sh` (or `claude.sh`, `copilot.sh`, `cursor.sh`, `antigravity.sh`). The Agents workflow runs them on Linux and macOS with each agent's latest release. Except Cursor's, which can't use another model, each script then runs a three-turn session against a mock model ([aimock](https://github.com/CopilotKit/llmock), in `tests/agents/model.mjs`) and checks every request the agent sent: the memory is there once, petit-poucet's tools and skills are offered, and the save reminder comes once, after the third turn.
+Each supported agent has a script in `tests/agents/` that installs petit-poucet into that agent's real CLI, in a throwaway HOME so your own config is never touched: `cargo build --release && npm ci --prefix tests/agents && sh tests/agents/codex.sh` (or `claude.sh`, `copilot.sh`, `cursor.sh`, `antigravity.sh`). The Agents workflow runs them on Linux, macOS and Windows with each agent's latest release. Except Cursor's, which can't use another model, each script then runs a three-turn session against a mock model ([aimock](https://github.com/CopilotKit/llmock), in `tests/agents/model.mjs`) and checks every request the agent sent: the memory is there once, petit-poucet's tools and skills are offered, and the save reminder comes once, after the third turn.
 
 Try a local build before any release: `cargo build --release && ./target/release/petit-poucet setup` points every agent at that build. Run `setup` from the installed binary afterwards to point them back.
 
@@ -178,7 +182,7 @@ Try a local build before any release: `cargo build --release && ./target/release
 Only after the change was tried locally:
 
 1. On the version branch, set the new version in `Cargo.toml` and finish the release notes in `docs/releases/vX.Y.Z.md` (`cargo test` fails until the notes for the crate's version exist).
-2. Tag `vX.Y.Z` on the version branch and push the tag: the release workflow builds the four binaries and publishes them with their checksums and the notes. Once the release is out, merge the version branch into `main` with a pull request that lists `Closes #…` for its issues. In that order, `main` never describes a version whose binaries aren't published yet.
+2. Tag `vX.Y.Z` on the version branch and push the tag: the release workflow builds the six binaries (macOS, Linux and Windows, each on x64 and ARM) and publishes them with their checksums and the notes. Once the release is out, merge the version branch into `main` with a pull request that lists `Closes #…` for its issues. In that order, `main` never describes a version whose binaries aren't published yet.
 3. Delete the version branch, after moving its still-open pull requests to the next version's branch. A fix needed before the next version is ready gets its own patch branch from `main`, named `vX.Y.Z-fixes` (e.g. `v0.3.1-fixes`: the tag `v0.3.1` must not share its name); once released, merge `main` into the branch in progress.
 
 ## Acknowledgements
