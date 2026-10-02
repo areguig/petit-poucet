@@ -182,7 +182,7 @@ Try a local build before any release: `cargo build --release && ./target/release
 Only after the change was tried locally:
 
 1. On the version branch, set the new version in `Cargo.toml` and finish the release notes in `docs/releases/vX.Y.Z.md` (`cargo test` fails until the notes for the crate's version exist).
-2. Tag `vX.Y.Z` on the version branch and push the tag: the release workflow builds the six binaries (macOS, Linux and Windows, each on x64 and ARM) and publishes them with their checksums and the notes. Once the release is out, merge the version branch into `main` with a pull request that lists `Closes #…` for its issues. In that order, `main` never describes a version whose binaries aren't published yet.
+2. Merge the version branch into `main` with a pull request that lists `Closes #…` for its issues, then tag `vX.Y.Z` on `main` and push the tag: the release workflow builds the six binaries (macOS, Linux and Windows, each on x64 and ARM) and publishes them with their checksums and the notes. Until it's done (a few minutes), `main` describes a version the install scripts can't download yet.
 3. Delete the version branch, after moving its still-open pull requests to the next version's branch. A fix needed before the next version is ready gets its own patch branch from `main`, named `vX.Y.Z-fixes` (e.g. `v0.3.1-fixes`: the tag `v0.3.1` must not share its name); once released, merge `main` into the branch in progress.
 
 ## Acknowledgements
