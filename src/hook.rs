@@ -1,12 +1,11 @@
-use std::path::PathBuf;
+use serde_json::Value;
 
-use clap::ValueEnum;
-use serde_json::{Value, json};
-
+use crate::agent::Agent;
 use crate::change;
 use crate::config::Config;
 use crate::index;
 use crate::stops;
+use crate::update;
 use crate::vault::Vault;
 
 const FIRST_REMINDER: u32 = 3;
@@ -32,22 +31,15 @@ const REMINDER: &str = "Memory check: did this session produce a user decision, 
 or a verified fact, that memory doesn't hold yet or holds wrongly? If yes, save or fix it with memory_save. \
 If not, reply only: \"Nothing new to remember.\"";
 
-// Shown to the user by Claude Code; Copilot CLI hooks have no user-facing message.
+// Starts every line shown to the user.
 const PEBBLE: &str = "🪨 petit-poucet ·";
 
-#[derive(Clone, Copy, ValueEnum)]
-pub enum Agent {
-    Claude,
-    Copilot,
-}
-
-// Claude Code sends snake_case event fields, Copilot CLI camelCase.
-fn field<'a>(event: &'a Value, snake: &str, camel: &str) -> Option<&'a Value> {
-    event.get(snake).or_else(|| event.get(camel))
-}
-
-pub fn session_start(agent: Agent, event: &Value) -> Value {
-    let (context, message) = match memory_context(agent, event) {
+pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
+    if agent.holds_memory_already(event) {
+        return None;
+    }
+    update::start();
+    let (mut context, mut message) = match memory_context(agent, event) {
         _ if !Config::is_set() => (
             setup_context(),
             format!("{PEBBLE} no vault yet: the agent will offer to create one"),
@@ -61,39 +53,32 @@ pub fn session_start(agent: Agent, event: &Value) -> Value {
             format!("{PEBBLE} memory unavailable: {e}"),
         ),
     };
-    match agent {
-        Agent::Claude => json!({
-            "systemMessage": message,
-            "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context},
-        }),
-        Agent::Copilot => json!({"additionalContext": context}),
+    if let Some(version) = update::newer() {
+        match agent.shows_hook_messages() {
+            true => message.push_str(&format!("\n{PEBBLE} {}", update::notice(&version))),
+            false => context.push_str(&format!(
+                "\n\npetit-poucet {version} is out: tell the user once, in one line, to run its installer again."
+            )),
+        }
     }
+    Some(agent.session_start_reply(&context, &message))
 }
 
-// Plugin installs have no `petit-poucet` on PATH: the launcher says where it is.
 fn setup_context() -> String {
-    let command = std::env::var("PETIT_POUCET_LAUNCHER").unwrap_or_else(|_| "petit-poucet".into());
-    format!(
-        "Agent memory (petit-poucet) is installed but has no vault yet. Tell the user, and offer to create one \
-         in ~/agent-memory by running `{command} init` (or `{command} init <folder>` for another place). \
-         It takes effect in the next session. Until then, don't write memory anywhere else."
-    )
+    "Agent memory (petit-poucet) is installed but has no vault yet. Tell the user, and offer to create one \
+     in ~/agent-memory by running `petit-poucet init` (or `petit-poucet init <folder>` for another place). \
+     It takes effect in the next session. Until then, don't write memory anywhere else."
+        .to_string()
 }
 
 // Returns the context for the agent and the line shown to the user.
 fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), String> {
     let config = Config::load()?;
     let vault = Vault::load(&config.vault)?;
-    let dir = event
-        .get("cwd")
-        .and_then(Value::as_str)
-        .map(PathBuf::from)
+    let dir = agent
+        .working_dir(event)
         .or_else(|| std::env::current_dir().ok());
-    let label = match agent {
-        Agent::Claude => "claude-code hook",
-        Agent::Copilot => "copilot hook",
-    };
-    let project = dir.and_then(|d| change::identify(&config, &vault, &d, label));
+    let project = dir.and_then(|d| change::identify(&config, &vault, &d, agent.hook_label()));
     let project = project.as_deref();
     let loaded = vault
         .notes
@@ -109,18 +94,16 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), Strin
 
 // Reminds at the 3rd stop of a session, then every 10th; never without a session id to count by.
 pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
-    if field(event, "stop_hook_active", "stopHookActive").and_then(Value::as_bool) == Some(true) {
+    if agent.after_reminder(event) {
         return None;
     }
-    let session = field(event, "session_id", "sessionId").and_then(Value::as_str)?;
+    let session = agent.session(event)?;
     let count = stops::record(session)?;
     let due = count >= FIRST_REMINDER && (count - FIRST_REMINDER).is_multiple_of(EVERY);
-    due.then(|| match agent {
-        Agent::Claude => json!({
-            "decision": "block",
-            "reason": REMINDER,
-            "systemMessage": format!("{PEBBLE} checking whether this session is worth remembering"),
-        }),
-        Agent::Copilot => json!({"decision": "block", "reason": REMINDER}),
+    due.then(|| {
+        agent.stop_reply(
+            REMINDER,
+            &format!("{PEBBLE} checking whether this session is worth remembering"),
+        )
     })
 }

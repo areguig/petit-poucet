@@ -7,13 +7,22 @@ use assert_cmd::Command;
 
 pub const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/vault");
 
-// A fake HOME keeps the real config untouched; git runs without the user's global config.
+// Windows needs these to start processes and find its temp folder.
+const SYSTEM: [&str; 6] = ["PATH", "SystemRoot", "ComSpec", "PATHEXT", "TEMP", "TMP"];
+
+// A fake home (HOME, USERPROFILE on Windows) keeps the real config untouched, git's global config included.
+// Tests stay offline: no update check unless a test turns it back on.
 pub fn command(home: &Path) -> std::process::Command {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_petit-poucet"));
-    cmd.env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap())
-        .env("HOME", home)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+    cmd.env_clear();
+    for key in SYSTEM {
+        if let Some(value) = std::env::var_os(key) {
+            cmd.env(key, value);
+        }
+    }
+    cmd.env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("PETIT_POUCET_NO_UPDATE_CHECK", "1")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")

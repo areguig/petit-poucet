@@ -10,14 +10,16 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/areguig/petit-poucet" alt="Apache-2.0"></a>
 </p>
 
-In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, so every new session in Claude Code, GitHub Copilot CLI or any MCP client starts where the last one left off.
+In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, and every agent you switch between starts each session with it.
 
-Planned: [Codex](https://github.com/areguig/petit-poucet/issues/9), [OpenCode](https://github.com/areguig/petit-poucet/issues/10) and [other popular agents](https://github.com/areguig/petit-poucet/issues/11). A 👍 on the issue for your agent helps decide what comes first.
+One binary (an MCP memory server and its hooks), one command to wire it into **Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor and Antigravity CLI**, on macOS, Linux and Windows. Any other MCP client can use its tools. Next: [OpenCode](https://github.com/areguig/petit-poucet/issues/10); a 👍 on the issue for your agent helps decide what comes after.
 
 ## Why
 
-Coding agents forget everything between sessions, and each tool keeps its own memory in its own format. petit-poucet gives them one shared memory that:
+Coding agents forget everything between sessions, and each tool keeps its own memory in its own format: what you taught Claude Code on Monday, Codex doesn't know on Tuesday. petit-poucet gives them one shared memory that:
 
+- **follows you across agents**: `petit-poucet setup` wires the same vault into every agent it finds, so switching tools doesn't mean teaching them again;
+- **is there from the first message**: a session-start hook hands the agent your rules and the Index, so memory doesn't depend on the model deciding to look it up;
 - **is plain Markdown**: a folder of notes you can read and edit in [Obsidian](https://obsidian.md) or any editor; no database, no cloud;
 - **is curated, not recorded**: agents save a decision, a correction or a verified fact deliberately, with its source; nothing is captured from transcripts;
 - **enforces its own rules**: note format, Index and links are checked by the server, not left to each agent's good will;
@@ -32,7 +34,7 @@ Claude Code, Copilot and Codex now keep memories of their own, and that's useful
 | | Claude Code auto memory | GitHub Copilot Memory | Codex memories | petit-poucet |
 |---|---|---|---|---|
 | Where it lives | `~/.claude/projects/<repo>/memory/`, on this machine | Stored by GitHub (in VS Code: local memory files) | Generated files in `~/.codex/memories/` | A folder you choose: plain Markdown, Obsidian-compatible |
-| Other agents | Claude Code only | Copilot only | Codex only | Every agent you plug in: Claude Code, Copilot, any MCP client |
+| Other agents | Claude Code only | Copilot only | Codex only | Claude Code, Copilot, Codex, Cursor, Antigravity CLI, any MCP client |
 | Scope | One repo; rules for all repos go in `CLAUDE.md`, by hand | One repo | Global | Preferences for every repo, notes per repo (matched by git remote), topics tied to no repo |
 | How notes are made | Claude decides what to save | The agent saves while working | Summarised in the background from past chats | Saved on purpose, one fact per note, each with its source |
 | Your say | Edit the files yourself | Review and delete in repository settings | Docs advise against editing them by hand | Rules you stated change only with your confirmation; your edits are never overwritten |
@@ -45,7 +47,7 @@ If you use one agent and are happy with what it remembers, its built-in memory m
 
 ## What your agent sees
 
-At the start of every session, a hook gives the agent the memory rules and the Index of what applies here: your preferences and the current repo's notes, one line each. Claude Code also shows you a pebble line:
+At the start of every session, a hook gives the agent the memory rules and the Index of what applies here: your preferences and the current repo's notes, one line each. Claude Code and Codex also show you a pebble line:
 
 ```
 🪨 petit-poucet · 20 notes loaded (preferences + chargepath-api)
@@ -68,9 +70,10 @@ The agent opens only the notes a task needs, saves new facts as it learns them, 
 
 ```
 Claude Code ─┐
-Copilot CLI ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
-other MCP   ─┘                                       ├─ Index.md           generated
-                                                     ├─ Preferences/       every repo, always loaded
+Copilot     ─┤
+Codex       ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
+Cursor      ─┤                                       ├─ Index.md           generated
+Antigravity ─┘                                       ├─ Preferences/       every repo, always loaded
                                                      ├─ Projects/<repo>/   loaded in that repo
                                                      └─ Topics/<topic>/    no repo (homelab, a server…), searched on demand
 ```
@@ -108,6 +111,7 @@ Commit each finished step locally; never push.
 
 ### Skills
 
+- **`memory`**: tells the agent to load your memory at the start of a task, where hooks don't run (Copilot in IntelliJ).
 - **`migrate-memory`**: moves an agent's older file-based memory (`MEMORY.md` files, memory folders, memory sections of instruction files) into petit-poucet in one pass. It shows you the list first and saves only what you confirm; the old files are never touched.
 - **`tidy-memory`**: a read-only subagent reviews the whole vault for duplicates, contradictions, stale or unused notes, and proposes fixes; your agent applies only what you confirm.
 
@@ -120,27 +124,33 @@ Commit each finished step locally; never push.
 
 ## Install
 
-Needs `git` and `curl` (macOS or Linux). The plugin downloads the petit-poucet binary for your platform on first use, checks its SHA-256 and caches it in `~/.cache/petit-poucet`.
-
-**Claude Code**
+Needs `git`, and `curl` on macOS or Linux (Windows 10 and later ship it). On macOS or Linux:
 
 ```sh
-claude plugin marketplace add https://github.com/areguig/petit-poucet
-claude plugin install petit-poucet@petit-poucet
+curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
+petit-poucet setup
 ```
 
-**GitHub Copilot CLI**
+On Windows, in PowerShell:
 
-```sh
-copilot plugin marketplace add areguig/petit-poucet
-copilot plugin install petit-poucet@petit-poucet
+```powershell
+irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex
+petit-poucet setup
 ```
 
-This one install also serves Copilot in VS Code, IntelliJ and the GitHub Copilot app: they load the plugins Copilot CLI installed. The IDEs don't run plugin hooks, so there the `memory` skill loads your memory at the start of a task instead.
+The script installs the latest release in `~/.local/bin` after checking its SHA-256 (`PETIT_POUCET_INSTALL_DIR` changes the folder, `PETIT_POUCET_VERSION` picks a version); run it again to upgrade. On Windows it also adds that folder to your user `Path` (`PETIT_POUCET_NO_MODIFY_PATH=1` leaves it alone): open a new terminal before `petit-poucet setup`. Once a day, session start checks for a new release in the background and tells you when one is out (`PETIT_POUCET_NO_UPDATE_CHECK=1` turns the check off). `petit-poucet setup` creates your vault in `~/agent-memory` if you have none, then wires every agent it finds: the MCP server, the session-start and end-of-turn hooks, the `memory`, `migrate-memory` and `tidy-memory` skills, and the `memory-cleanup` subagent that `tidy-memory` hands the review to. It writes each agent's user-level config, keeps everything else in those files and leaves a `.petit-poucet.bak` copy of what it changed. `setup --check` says what's missing, `setup --uninstall` takes it all out again (your vault stays), and `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`) limits either to one agent.
 
-Then start a new session: the agent says memory has no vault yet and offers to create one in `~/agent-memory` (or wherever you prefer). Both agents share it. The vault path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it). Nothing is ever pushed from the vault.
+| Agent | What `setup` writes | Then |
+|---|---|---|
+| Claude Code | `~/.claude.json`, `~/.claude/settings.json`, `~/.claude/skills`, `~/.claude/agents` | Restart Claude Code. |
+| GitHub Copilot: CLI, VS Code, IntelliJ, the Copilot app | `~/.copilot/mcp-config.json`, `~/.copilot/hooks/petit-poucet.json`, `~/.agents/skills`, `~/.copilot/agents` | All of them read `~/.copilot`. Where hooks don't run (IntelliJ), the `memory` skill loads your memory at the start of a task. |
+| Codex | `~/.codex/config.toml`, `~/.codex/hooks.json`, `~/.agents/skills`, `~/.codex/agents` | Open Codex once and trust the new hooks with `/hooks`. |
+| Cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json`, `~/.agents/skills`, `~/.cursor/agents` | Restart Cursor. Cloud agents don't read user-level hooks: there memory loads through the MCP server's instructions. |
+| Antigravity CLI | `~/.gemini/config/`: `mcp_config.json`, `hooks.json`, `skills`, `agents` | Memory reaches the model before each of its calls. Gemini CLI isn't supported: it no longer serves personal Google accounts, and Antigravity CLI replaces it. |
 
-Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
+Coming from the 0.2 plugin for Claude Code or Copilot? `petit-poucet setup` removes it with the agent's own command, so its hooks don't run twice.
+
+Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it). Nothing is ever pushed from the vault. Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
 
 ## Browse your memory in Obsidian
 
@@ -148,36 +158,31 @@ The vault is a plain folder of Markdown notes, so any editor works. For [Obsidia
 
 ## Command line
 
-The same binary has a few commands for you (the release binaries are on the [Releases](https://github.com/areguig/petit-poucet/releases) page):
+The same binary has a few commands for you (install it with the [install script](#install), or take a binary from the [Releases](https://github.com/areguig/petit-poucet/releases) page):
 
 | Command | What it does |
 |---|---|
-| `petit-poucet check` | Validate the vault: frontmatter, summaries, scopes, links, secrets, Index |
+| `petit-poucet setup` | Set up memory for every agent on this machine and create the vault if there's none; `--check` reports what's missing, `--uninstall` removes petit-poucet from the agents (never the vault), `--agent <name>` limits it to one |
+| `petit-poucet check` | Validate the vault: frontmatter, summaries, scopes, links, secrets, Index; and report the latest release |
 | `petit-poucet init [path]` | Create a vault (default `~/agent-memory`) and the config file |
 | `petit-poucet migrate` | Upgrade a hand-maintained vault: summaries from its old Index, full-path links, project identities, git |
 
 ## Developing
 
-`main` is what plugin users get: it only ever holds released versions. Each version is built on its own branch cut from `main` after the previous release (e.g. `v0.3`): pull requests for that version target it. Documentation-only changes (README, `site/`, `docs/`) go to `main` directly, as long as they describe the released version.
+`main` is what users get (the install script and the site come from it): it only ever holds released versions. Each version is built on its own branch cut from `main` after the previous release (e.g. `v0.3`): pull requests for that version target it. Documentation-only changes (README, `site/`, `docs/`) go to `main` directly, as long as they describe the released version.
 
-`plugin/` is the one plugin for every client: the launcher, the skills and `release.env` exist once. Claude Code reads `.claude-plugin/plugin.json`; Copilot reads `plugin.json`, which points at its own MCP config, hooks and agent in `copilot/`. Copilot's IDE hosts read the folder as a Claude plugin and use the Claude files.
+The skills (`skills/`) and the `memory-cleanup` prompt (`agents/`) are embedded in the binary: `setup` writes them for each agent in its own format.
 
-Try a local build before any release: build it, then start an agent with the plugin folder from your checkout. Loaded from a checkout, the plugin runs the binary built there (`target/release/petit-poucet`) instead of downloading a release. Disable the installed plugin first so they don't both load:
+Each supported agent has a script in `tests/agents/` that installs petit-poucet into that agent's real CLI, in a throwaway HOME so your own config is never touched: `cargo build --release && npm ci --prefix tests/agents && sh tests/agents/codex.sh` (or `claude.sh`, `copilot.sh`, `cursor.sh`, `antigravity.sh`). The Agents workflow runs them on Linux, macOS and Windows with each agent's latest release. Except Cursor's, which can't use another model, each script then runs a three-turn session against a mock model ([aimock](https://github.com/CopilotKit/llmock), in `tests/agents/model.mjs`) and checks every request the agent sent: the memory is there once, petit-poucet's tools and skills are offered, and the save reminder comes once, after the third turn.
 
-```sh
-cargo build --release
-claude plugin disable petit-poucet@petit-poucet          # or: copilot plugin disable petit-poucet
-claude --plugin-dir ./plugin                             # or: copilot --plugin-dir ./plugin
-```
-
-Re-enable the installed plugin afterwards (`claude plugin enable …`, `copilot plugin enable …`).
+Try a local build before any release: `cargo build --release && ./target/release/petit-poucet setup` points every agent at that build. Run `setup` from the installed binary afterwards to point them back.
 
 ### Releasing
 
 Only after the change was tried locally:
 
-1. On the version branch, set the new version in `Cargo.toml`, `plugin/release.env`, `plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` and `.github/plugin/marketplace.json`, and write the release notes in `docs/releases/vX.Y.Z.md` (`cargo test` fails until they all match and the notes exist).
-2. Tag `vX.Y.Z` on the version branch and push the tag: the release workflow builds the four binaries and publishes them with their checksums and the notes. Once the release is out, merge the version branch into `main` with a pull request that lists `Closes #…` for its issues. In that order, plugin users never get a `release.env` whose binaries aren't published yet.
+1. On the version branch, set the new version in `Cargo.toml` and finish the release notes in `docs/releases/vX.Y.Z.md` (`cargo test` fails until the notes for the crate's version exist).
+2. Merge the version branch into `main` with a pull request that lists `Closes #…` for its issues, then tag `vX.Y.Z` on `main` and push the tag: the release workflow builds the six binaries (macOS, Linux and Windows, each on x64 and ARM) and publishes them with their checksums and the notes. Until it's done (a few minutes), `main` describes a version the install scripts can't download yet.
 3. Delete the version branch, after moving its still-open pull requests to the next version's branch. A fix needed before the next version is ready gets its own patch branch from `main`, named `vX.Y.Z-fixes` (e.g. `v0.3.1-fixes`: the tag `v0.3.1` must not share its name); once released, merge `main` into the branch in progress.
 
 ## Acknowledgements

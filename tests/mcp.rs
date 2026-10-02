@@ -242,7 +242,7 @@ fn an_agent_saves_finds_and_reads_a_note() {
 
     drop(client);
     assert!(child.wait().unwrap().success());
-    let vault = vault.canonicalize().unwrap();
+    let vault = dunce::canonicalize(vault).unwrap();
     assert_eq!(
         git_log(&vault),
         "create: Topics/homelab/nas-backups (test-agent)\n\
@@ -464,7 +464,7 @@ fn two_agents_writing_at_once_lose_nothing() {
         agent.join().unwrap();
     }
 
-    let vault = vault.canonicalize().unwrap();
+    let vault = dunce::canonicalize(vault).unwrap();
     assert_eq!(git_log(&vault).lines().count(), 2 + 2 * EACH);
     let index = std::fs::read_to_string(vault.join("Index.md")).unwrap();
     assert_eq!(index.matches("- [[Preferences/").count(), 1 + 2 * EACH);
@@ -514,7 +514,7 @@ fn an_update_keeps_tags_and_is_committed_as_an_update() {
 
     drop(client);
     assert!(child.wait().unwrap().success());
-    let log = git_log(&vault.canonicalize().unwrap());
+    let log = git_log(&dunce::canonicalize(vault).unwrap());
     assert!(
         log.starts_with(
             "update: Preferences/broken (test-agent)\nupdate: Preferences/editor (test-agent)\n"

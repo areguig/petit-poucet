@@ -20,13 +20,27 @@ pub fn vault(root: &Path) -> Result<File, String> {
 mod tests {
     use super::*;
 
+    // Repeated, so one CI run on macOS (where a single try was flaky, #52) exercises it many times.
     #[test]
     fn one_holder_at_a_time_until_dropped() {
         let tmp = tempfile::tempdir().unwrap();
-        let held = vault(tmp.path()).unwrap();
+        drop(vault(tmp.path()).unwrap());
         let other = File::open(tmp.path().join(state::DIR).join("lock")).unwrap();
-        assert!(other.try_lock().is_err(), "held by the first handle");
-        drop(held);
-        assert!(other.try_lock().is_ok(), "released on drop");
+        for round in 0..50 {
+            let held = vault(tmp.path()).unwrap();
+            assert!(
+                other.try_lock().is_err(),
+                "round {round}: held by the first handle"
+            );
+            drop(held);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let mut last = other.try_lock();
+            while last.is_err() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                last = other.try_lock();
+            }
+            assert!(last.is_ok(), "round {round}: released on drop: {last:?}");
+            other.unlock().unwrap();
+        }
     }
 }

@@ -60,12 +60,10 @@ fn init_creates_a_valid_vault_a_config_and_a_commit() {
 
     assert!(vault.join("Preferences").is_dir() && vault.join("Projects").is_dir());
     let config = fs::read_to_string(home.path().join(".config/petit-poucet/config.toml")).unwrap();
-    let vault = vault.canonicalize().unwrap();
-    assert!(
-        config.contains(&format!("vault = \"{}\"", vault.display())),
-        "{config}"
-    );
-    assert!(config.contains("git_autocommit = true"), "{config}");
+    let vault = dunce::canonicalize(vault).unwrap();
+    let config: toml::Table = toml::from_str(&config).unwrap();
+    assert_eq!(config["vault"].as_str(), vault.to_str());
+    assert_eq!(config["git_autocommit"].as_bool(), Some(true));
     assert_eq!(git_log(&vault), "init: vault\n");
 
     let output = petit_poucet(home.path()).arg("check").output().unwrap();
@@ -136,10 +134,13 @@ fn init_does_not_commit_when_autocommit_is_off() {
     fs::create_dir(&vault).unwrap();
     let config_dir = home.path().join(".config/petit-poucet");
     fs::create_dir_all(&config_dir).unwrap();
-    let vault = vault.canonicalize().unwrap();
+    let vault = dunce::canonicalize(vault).unwrap();
     fs::write(
         config_dir.join("config.toml"),
-        format!("vault = \"{}\"\ngit_autocommit = false\n", vault.display()),
+        format!(
+            "vault = {}\ngit_autocommit = false\n",
+            toml::Value::from(vault.to_str().unwrap())
+        ),
     )
     .unwrap();
 
@@ -213,6 +214,8 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
 fn hook(home: &Path, args: &[&str], input: &str) -> String {
     let output = petit_poucet(home)
         .env("TMPDIR", home)
+        .env("TMP", home)
+        .env("TEMP", home)
         .arg("hook")
         .args(args)
         .write_stdin(input)
@@ -347,10 +350,6 @@ fn session_start_says_when_memory_is_unavailable() {
 fn session_start_without_a_vault_offers_to_create_one() {
     let home = TempDir::new().unwrap();
     let output = petit_poucet(home.path())
-        .env(
-            "PETIT_POUCET_LAUNCHER",
-            "/plugins/petit-poucet/bin/petit-poucet",
-        )
         .args(["hook", "session-start", "--agent", "claude"])
         .write_stdin("not json")
         .output()
@@ -365,10 +364,7 @@ fn session_start_without_a_vault_offers_to_create_one() {
         message["systemMessage"],
         "🪨 petit-poucet · no vault yet: the agent will offer to create one"
     );
-    assert!(
-        context.contains("`/plugins/petit-poucet/bin/petit-poucet init`"),
-        "{context}"
-    );
+    assert!(context.contains("`petit-poucet init`"), "{context}");
 }
 
 #[test]
@@ -437,7 +433,9 @@ fn init_without_a_path_uses_agent_memory_in_home_and_says_how_to_change_it() {
     let home = TempDir::new().unwrap();
     let output = petit_poucet(home.path()).arg("init").output().unwrap();
     assert!(output.status.success());
-    let vault = home.path().canonicalize().unwrap().join("agent-memory");
+    let vault = dunce::canonicalize(home.path())
+        .unwrap()
+        .join("agent-memory");
     assert!(vault.join("Index.md").is_file());
     let config = home.path().join(".config/petit-poucet/config.toml");
     assert_eq!(
@@ -447,5 +445,573 @@ fn init_without_a_path_uses_agent_memory_in_home_and_says_how_to_change_it() {
             vault.display(),
             config.display()
         )
+    );
+}
+
+fn setup(home: &Path, args: &[&str]) -> (bool, String) {
+    let output = petit_poucet(home).arg("setup").args(args).output().unwrap();
+    (output.status.success(), stdout(&output))
+}
+
+fn write(home: &Path, path: &str, text: &str) {
+    let path = home.join(path);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+#[test]
+fn setup_creates_the_vault_once_and_reports_each_agent() {
+    let home = TempDir::new().unwrap();
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
+    assert!(
+        out.starts_with(&format!(
+            "vault: created, vault ready at {}",
+            vault.display()
+        )),
+        "{out}"
+    );
+    assert!(
+        out.ends_with(
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI)\n"
+        ),
+        "{out}"
+    );
+    assert!(vault.join("Index.md").is_file());
+
+    fs::create_dir(home.path().join(".claude")).unwrap();
+    fs::create_dir(home.path().join(".copilot")).unwrap();
+    let (ok, again) = setup(home.path(), &[]);
+    assert!(ok, "{again}");
+    let skills = |dir: &str| home.path().join(dir).display().to_string();
+    assert_eq!(
+        again,
+        format!(
+            "vault: {} (0 notes)\n\
+             Claude Code: set up (MCP server in ~/.claude.json, hooks in settings.json): restart Claude Code\n\
+             Claude Code skills: installed in {} (with the memory-cleanup subagent)\n\
+             GitHub Copilot: set up (MCP server in mcp-config.json, hooks in hooks/petit-poucet.json)\n\
+             GitHub Copilot skills: installed in {} (with the memory-cleanup subagent)\n",
+            vault.display(),
+            skills(".claude/skills"),
+            skills(".agents/skills"),
+        )
+    );
+    assert_eq!(
+        git_log(&vault),
+        "init: vault\n",
+        "the vault is created once"
+    );
+}
+
+#[test]
+fn setup_check_fails_until_every_agent_found_is_set_up() {
+    let home = TempDir::new().unwrap();
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(!ok);
+    assert!(
+        out.starts_with("vault: none yet: run `petit-poucet setup`\n"),
+        "{out}"
+    );
+    assert!(
+        !home.path().join("agent-memory").exists(),
+        "check changes nothing"
+    );
+
+    setup(home.path(), &[]);
+    fs::create_dir(home.path().join(".copilot")).unwrap();
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(
+        !ok && out.contains("GitHub Copilot: missing the MCP server"),
+        "{out}"
+    );
+    setup(home.path(), &[]);
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(ok, "{out}");
+    assert!(out.ends_with("GitHub Copilot skills: installed\n"), "{out}");
+}
+
+#[test]
+fn setup_for_one_agent_and_uninstall_keep_the_vault() {
+    let home = TempDir::new().unwrap();
+    setup(home.path(), &[]);
+    let (_, one) = setup(home.path(), &["--agent", "claude"]);
+    assert!(
+        one.ends_with("Claude Code: not found on this machine\n"),
+        "{one}"
+    );
+
+    fs::create_dir(home.path().join(".claude")).unwrap();
+    assert!(setup(home.path(), &["--agent", "claude"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
+    assert!(ok);
+    assert_eq!(
+        out,
+        format!(
+            "vault: kept at {}\nClaude Code: removed (MCP server and hooks)\nClaude Code skills: removed\n",
+            vault.display()
+        )
+    );
+    assert!(vault.join("Index.md").is_file());
+
+    let conflict = petit_poucet(home.path())
+        .args(["setup", "--check", "--uninstall"])
+        .output()
+        .unwrap();
+    assert!(!conflict.status.success());
+}
+
+#[test]
+fn setup_wires_codex_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let codex = home.path().join(".codex");
+    write(home.path(), ".codex/config.toml", "model = \"gpt-6\"\n");
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains("Codex: set up (MCP server in config.toml, hooks in hooks.json): open Codex and trust its hooks once with /hooks\n"),
+        "{out}"
+    );
+    let skills = home.path().join(".agents/skills");
+    assert!(
+        out.ends_with(&format!(
+            "Codex skills: installed in {} (with the memory-cleanup subagent)\n",
+            skills.display()
+        )),
+        "{out}"
+    );
+    assert!(skills.join("tidy-memory/SKILL.md").is_file());
+    assert!(codex.join("agents/memory-cleanup.toml").is_file());
+    let config = fs::read_to_string(codex.join("config.toml")).unwrap();
+    assert!(config.starts_with("model = \"gpt-6\"\n"), "{config}");
+    let parsed: toml::Table = toml::from_str(&config).unwrap();
+    assert_eq!(
+        parsed["mcp_servers"]["petit-poucet"]["command"].as_str(),
+        exe.to_str()
+    );
+    let hooks: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(codex.join("hooks.json")).unwrap()).unwrap();
+    let start = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
+    // The command line names this binary, whatever quoting the OS's shell needs.
+    let (path, args) = start.split_once(" hook ").unwrap();
+    assert_eq!(args, "session-start --agent codex");
+    #[cfg(unix)]
+    assert_eq!(shlex::split(path).unwrap(), [exe.display().to_string()]);
+    #[cfg(windows)]
+    assert!(Path::new(path).is_file(), "{path}");
+
+    assert!(setup(home.path(), &["--check"]).0);
+    assert!(
+        setup(home.path(), &[])
+            .1
+            .contains("Codex: already set up\n")
+    );
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.contains("Codex: removed (MCP server and hooks)\n"),
+        "{out}"
+    );
+    assert!(out.ends_with("Codex skills: removed\n"), "{out}");
+    assert!(!skills.join("tidy-memory").exists());
+    assert_eq!(
+        fs::read_to_string(codex.join("config.toml")).unwrap(),
+        "model = \"gpt-6\"\n"
+    );
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(
+        !ok && out.contains("Codex: missing the MCP server"),
+        "{out}"
+    );
+}
+
+#[test]
+fn codex_hooks_reply_in_codex_format() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let event =
+        serde_json::json!({"cwd": home.path(), "session_id": "codex-1", "source": "startup"});
+    let start: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "codex"],
+        &event.to_string(),
+    ))
+    .unwrap();
+    assert_eq!(start["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert!(
+        start["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .starts_with("Agent memory (petit-poucet)")
+    );
+    assert!(
+        start["systemMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("🪨 petit-poucet ·")
+    );
+    // A resumed Codex session still holds the memory it loaded: loading it again would repeat it.
+    let resume =
+        serde_json::json!({"cwd": home.path(), "session_id": "codex-1", "source": "resume"});
+    assert_eq!(
+        hook(
+            home.path(),
+            &["session-start", "--agent", "codex"],
+            &resume.to_string()
+        ),
+        ""
+    );
+
+    let stop = serde_json::json!({"session_id": "codex-1", "stop_hook_active": false}).to_string();
+    let replies: Vec<String> = (0..3)
+        .map(|_| hook(home.path(), &["stop", "--agent", "codex"], &stop))
+        .collect();
+    let third: serde_json::Value = serde_json::from_str(&replies[2]).unwrap();
+    assert_eq!(third["decision"], "block");
+    assert!(
+        third["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Memory check")
+    );
+}
+
+// A fresh machine or a container often has no git identity, and git must not guess one.
+fn without_git_identity(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
+    for var in [
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ] {
+        cmd.env_remove(var);
+    }
+    cmd.env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "user.useConfigOnly")
+        .env("GIT_CONFIG_VALUE_0", "true")
+}
+
+#[test]
+fn init_and_setup_work_without_a_git_identity() {
+    let home = TempDir::new().unwrap();
+    let output = without_git_identity(&mut petit_poucet(home.path()))
+        .arg("setup")
+        .output()
+        .unwrap();
+    let (out, err) = (stdout(&output), String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "{out}{err}");
+    assert!(out.contains("\nvault: not committed: "), "{out}");
+    assert!(out.contains("vault: set your git identity"), "{out}");
+    assert!(
+        out.ends_with(
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI)\n"
+        ),
+        "{out}"
+    );
+    assert!(home.path().join("agent-memory/Index.md").is_file());
+
+    // A home of its own: no config left by the setup above.
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    let output = without_git_identity(&mut petit_poucet(home.path()))
+        .args(["init", vault.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let (out, err) = (stdout(&output), String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "{out}{err}");
+    assert!(out.contains("\nnot committed: "), "{out}");
+    assert!(vault.join("Index.md").is_file());
+}
+
+// petit-poucet 0.2 came as a plugin; Copilot CLI 1.0.90 installs one from a local folder without copying it (#54).
+fn with_old_copilot_plugin(home: &Path) {
+    setup(home, &[]);
+    write(
+        home,
+        ".copilot/settings.json",
+        r#"{"enabledPlugins": {"petit-poucet@petit-poucet": true}}"#,
+    );
+}
+
+#[test]
+fn setup_leaves_the_agent_alone_while_its_old_plugin_stays() {
+    let home = TempDir::new().unwrap();
+    with_old_copilot_plugin(home.path());
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(!ok);
+    assert!(
+        out.ends_with("GitHub Copilot: its old petit-poucet plugin is still installed: run `petit-poucet setup --agent copilot`\n"),
+        "{out}"
+    );
+
+    // No `copilot` to remove it with: the plugin's hooks would run next to new ones, so nothing is written.
+    let empty = TempDir::new().unwrap();
+    let output = petit_poucet(home.path())
+        .env("PATH", empty.path())
+        .args(["setup", "--agent", "copilot"])
+        .output()
+        .unwrap();
+    let out = stdout(&output);
+    assert!(
+        out.contains("GitHub Copilot: couldn't remove its old petit-poucet plugin (")
+            && out.ends_with(
+                "run `copilot plugin uninstall petit-poucet`, then `petit-poucet setup` again\n"
+            ),
+        "{out}"
+    );
+    assert!(!home.path().join(".copilot/mcp-config.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_removes_the_old_plugin_then_wires_the_agent() {
+    let home = TempDir::new().unwrap();
+    with_old_copilot_plugin(home.path());
+    let bin = TempDir::new().unwrap();
+    let copilot = bin.path().join("copilot");
+    fs::write(
+        &copilot,
+        format!(
+            "#!/bin/sh\necho \"$*\" > '{}'\n",
+            bin.path().join("args").display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(
+        &copilot,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+
+    let output = petit_poucet(home.path())
+        .env("PATH", bin.path())
+        .args(["setup", "--agent", "copilot"])
+        .output()
+        .unwrap();
+    let out = stdout(&output);
+    assert!(output.status.success(), "{out}");
+    assert!(
+        out.contains("GitHub Copilot: removed its old petit-poucet plugin\nGitHub Copilot: set up"),
+        "{out}"
+    );
+    assert_eq!(
+        fs::read_to_string(bin.path().join("args")).unwrap(),
+        "plugin uninstall petit-poucet\n"
+    );
+    assert!(
+        home.path()
+            .join(".copilot/hooks/petit-poucet.json")
+            .is_file()
+    );
+}
+
+#[test]
+fn setup_wires_cursor_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let cursor = home.path().join(".cursor");
+    write(
+        home.path(),
+        ".cursor/mcp.json",
+        r#"{"mcpServers": {"other": {"url": "http://localhost:1"}}}"#,
+    );
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains(
+            "Cursor: set up (MCP server in mcp.json, hooks in hooks.json): restart Cursor\n"
+        ),
+        "{out}"
+    );
+    let mcp: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(cursor.join("mcp.json")).unwrap()).unwrap();
+    assert_eq!(mcp["mcpServers"]["other"]["url"], "http://localhost:1");
+    assert_eq!(
+        mcp["mcpServers"]["petit-poucet"]["command"],
+        exe.display().to_string()
+    );
+
+    assert!(
+        home.path()
+            .join(".cursor/agents/memory-cleanup.md")
+            .is_file()
+    );
+    assert!(setup(home.path(), &["--check"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.contains("Cursor: removed (MCP server and hooks)\n"),
+        "{out}"
+    );
+    assert!(out.ends_with("Cursor skills: removed\n"), "{out}");
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(
+        !ok && out.contains("Cursor: missing the MCP server"),
+        "{out}"
+    );
+}
+
+#[test]
+fn cursor_hooks_reply_in_cursor_format() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // Cursor gives the project folder only as workspace_roots: the fixture's `alpha` is matched by folder name.
+    let alpha = home.path().join("alpha");
+    fs::create_dir(&alpha).unwrap();
+    let event = serde_json::json!({"conversation_id": "c-1", "workspace_roots": [alpha]});
+    let start: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "cursor"],
+        &event.to_string(),
+    ))
+    .unwrap();
+    let context = start["additional_context"].as_str().unwrap();
+    assert!(
+        context.contains("[[Projects/alpha/plugin-design]]"),
+        "{context}"
+    );
+    assert_eq!(start.as_object().unwrap().len(), 1, "{start}");
+
+    let stop = |loop_count: u32| {
+        let event = serde_json::json!({"conversation_id": "c-1", "status": "completed", "loop_count": loop_count});
+        hook(
+            home.path(),
+            &["stop", "--agent", "cursor"],
+            &event.to_string(),
+        )
+    };
+    let replies: Vec<String> = (0..3).map(|_| stop(0)).collect();
+    assert_eq!(&replies[..2], ["", ""]);
+    let third: serde_json::Value = serde_json::from_str(&replies[2]).unwrap();
+    assert!(
+        third["followup_message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Memory check")
+    );
+    assert_eq!(stop(1), "", "never reminds again inside its own follow-up");
+}
+
+#[test]
+fn setup_wires_antigravity_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let config = home.path().join(".gemini/config");
+    let mine = r#"{"mcpServers": {"other": {"serverUrl": "http://localhost:1"}}}"#;
+    write(home.path(), ".gemini/config/mcp_config.json", mine);
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains(
+            "Antigravity CLI: set up (MCP server in mcp_config.json, hooks in hooks.json)\n"
+        ),
+        "{out}"
+    );
+    let read = |file: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(config.join(file)).unwrap()).unwrap()
+    };
+    let mcp = read("mcp_config.json");
+    assert_eq!(
+        mcp["mcpServers"]["other"]["serverUrl"],
+        "http://localhost:1"
+    );
+    assert_eq!(
+        mcp["mcpServers"]["petit-poucet"]["command"],
+        exe.display().to_string()
+    );
+    assert!(read("hooks.json")["petit-poucet"]["PreInvocation"].is_array());
+    assert!(
+        out.ends_with(&format!(
+            "Antigravity CLI skills: installed in {} (with the memory-cleanup subagent)\n",
+            config.join("skills").display()
+        )),
+        "{out}"
+    );
+    assert!(config.join("agents/memory-cleanup/agent.md").is_file());
+
+    assert!(setup(home.path(), &["--check"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.contains("Antigravity CLI: removed (MCP server and hooks)\n"),
+        "{out}"
+    );
+    assert_eq!(
+        read("mcp_config.json"),
+        serde_json::from_str::<serde_json::Value>(mine).unwrap()
+    );
+}
+
+// Antigravity leaves an empty mcp_config.json behind.
+#[test]
+fn setup_treats_an_empty_config_file_as_empty_settings() {
+    let home = TempDir::new().unwrap();
+    write(home.path(), ".gemini/config/mcp_config.json", "");
+    write(home.path(), ".gemini/config/hooks.json", "\n");
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(out.contains("Antigravity CLI: set up"), "{out}");
+    assert!(setup(home.path(), &["--check"]).0);
+}
+
+#[test]
+fn antigravity_hooks_reply_in_antigravity_format() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let event = serde_json::json!({"conversationId": "a-1", "workspacePaths": [home.path()], "invocationNum": 0});
+    let start: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "antigravity"],
+        &event.to_string(),
+    ))
+    .unwrap();
+    assert!(
+        start["injectSteps"][0]["ephemeralMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("Agent memory (petit-poucet)"),
+        "{start}"
+    );
+
+    let stop = |execution: u64| {
+        let event = serde_json::json!({"conversationId": "a-1", "executionNum": execution, "terminationReason": "NO_TOOL_CALL"});
+        hook(
+            home.path(),
+            &["stop", "--agent", "antigravity"],
+            &event.to_string(),
+        )
+    };
+    let replies: Vec<String> = (0..3).map(|_| stop(0)).collect();
+    let third: serde_json::Value = serde_json::from_str(&replies[2]).unwrap();
+    assert_eq!(third["decision"], "continue");
+    assert!(
+        third["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Memory check")
+    );
+    assert_eq!(
+        stop(1),
+        "",
+        "the stop after our reminder lets the agent stop"
     );
 }

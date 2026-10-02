@@ -1,10 +1,19 @@
+mod agent;
+mod antigravity;
 mod change;
 mod check;
+mod claude;
+mod codex;
 mod config;
+mod copilot;
+mod cursor;
 mod delete;
+mod edit;
 mod git;
 mod guard;
 mod hook;
+mod hook_command;
+mod hooks_json;
 mod index;
 mod init;
 mod lock;
@@ -17,8 +26,11 @@ mod save;
 mod search;
 mod secrets;
 mod server;
+mod setup;
+mod skills;
 mod state;
 mod stops;
+mod update;
 mod usage;
 mod vault;
 
@@ -45,7 +57,7 @@ enum Command {
     Hook {
         event: HookEvent,
         #[arg(long)]
-        agent: hook::Agent,
+        agent: agent::Agent,
     },
     /// Validate the vault
     Check,
@@ -53,6 +65,21 @@ enum Command {
     Init { path: Option<PathBuf> },
     /// Upgrade an existing vault to the current format
     Migrate,
+    /// Set up memory for the agents on this machine (and create the vault if there's none)
+    Setup {
+        /// Only this agent
+        #[arg(long)]
+        agent: Option<agent::Agent>,
+        /// Report what's set up, without changing anything; fails if something is missing
+        #[arg(long, conflicts_with = "uninstall")]
+        check: bool,
+        /// Remove petit-poucet from the agents (the vault is kept)
+        #[arg(long)]
+        uninstall: bool,
+    },
+    /// Record the latest release's version: session start runs it in the background
+    #[command(hide = true)]
+    UpdateCheck,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -75,8 +102,17 @@ fn main() -> ExitCode {
                 println!("{report}");
                 true
             }),
+        Command::Setup {
+            agent,
+            check,
+            uninstall,
+        } => run_setup(agent, check, uninstall),
         Command::Hook { event, agent } => {
             run_hook(event, agent);
+            Ok(true)
+        }
+        Command::UpdateCheck => {
+            update::fetch();
             Ok(true)
         }
     };
@@ -91,15 +127,28 @@ fn main() -> ExitCode {
 }
 
 // Hooks never fail the agent's session: problems are reported inside the output.
-fn run_hook(event: HookEvent, agent: hook::Agent) {
+fn run_hook(event: HookEvent, agent: agent::Agent) {
     let input = serde_json::from_reader(std::io::stdin()).unwrap_or(serde_json::Value::Null);
     let output = match event {
-        HookEvent::SessionStart => Some(hook::session_start(agent, &input)),
+        HookEvent::SessionStart => hook::session_start(agent, &input),
         HookEvent::Stop => hook::stop(agent, &input),
     };
     if let Some(output) = output {
         println!("{output}");
     }
+}
+
+fn run_setup(agent: Option<agent::Agent>, check: bool, uninstall: bool) -> Result<bool, String> {
+    let mode = match (check, uninstall) {
+        (true, _) => setup::Mode::Check,
+        (_, true) => setup::Mode::Uninstall,
+        _ => setup::Mode::Setup,
+    };
+    let (lines, ok) = setup::run(mode, agent)?;
+    for line in lines {
+        println!("{line}");
+    }
+    Ok(ok || mode != setup::Mode::Check)
 }
 
 fn run_check() -> Result<bool, String> {
@@ -117,6 +166,9 @@ fn run_check() -> Result<bool, String> {
         vault.notes.len(),
         issues.len() - errors
     );
+    if let Some(line) = update::report() {
+        println!("{line}");
+    }
     Ok(errors == 0)
 }
 

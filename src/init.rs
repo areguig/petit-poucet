@@ -45,7 +45,8 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
     for dir in [PREFERENCES, PROJECTS] {
         fs::create_dir_all(path.join(dir)).map_err(|e| format!("{}: {e}", path.display()))?;
     }
-    let root = path.canonicalize().map_err(|e| e.to_string())?;
+    // Not `canonicalize`: on Windows its `\\?\` paths would end up in the config.
+    let root = dunce::canonicalize(&path).map_err(|e| e.to_string())?;
 
     let config_path = Config::path()?;
     let config = match fs::read_to_string(&config_path) {
@@ -70,15 +71,23 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
     ensure_repo(&root)?;
     let vault = Vault::load(&root)?;
     write_atomic(&root.join(INDEX_FILE), &index::generate(&vault))?;
-    if config.git_autocommit {
-        git::commit(&root, &[INDEX_FILE, GITIGNORE], "init: vault")?;
-    }
-    Ok(format!(
+    // The vault works without its first commit, so a refused one (no git identity) only warns.
+    let committed = match config.git_autocommit {
+        true => git::commit(&root, &[INDEX_FILE, GITIGNORE], "init: vault").err(),
+        false => None,
+    };
+    let mut reply = format!(
         "vault ready at {} ({} notes)\nto use another folder, change `vault` in {}",
         root.display(),
         vault.notes.len(),
         config_path.display()
-    ))
+    );
+    if let Some(e) = committed {
+        reply.push_str(&format!(
+            "\nnot committed: {e}\nset your git identity (`git config --global user.name …`, `git config --global user.email …`) so the vault keeps its history"
+        ));
+    }
+    Ok(reply)
 }
 
 #[cfg(test)]
