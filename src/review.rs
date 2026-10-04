@@ -1,18 +1,14 @@
-use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::fs;
 use std::time::SystemTime;
 
-use jiff::ToSpan;
-use jiff::civil::Date;
-
 use crate::config::{Config, Review};
 use crate::index::NO_SUMMARY;
 use crate::note::Note;
-use crate::usage::{self, Activity, Usage};
-use crate::vault::{PREFERENCES, PROJECTS, Vault};
-use crate::{check, cleanup};
+use crate::usage::{self, Activity};
+use crate::vault::{Vault, folder};
+use crate::{check, cleanup, priority};
 
 // Antigravity CLI saves a tool result over about 4 KB to a file: the smallest limit of the supported agents.
 pub const PAGE_BYTES: usize = 3 * 1024;
@@ -35,14 +31,7 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
     let limits = &config.review;
     let mut items = match full || vault.notes.len() <= limits.full_review_max_notes {
         true => vault.notes.iter().map(|n| item(n, &activity)).collect(),
-        false => by_priority(
-            &vault,
-            &changed,
-            &activity,
-            limits,
-            jiff::Zoned::now().date(),
-            &findings,
-        ),
+        false => by_priority(&vault, &changed, &activity, limits, &findings),
     };
     let shown = items.len();
     items.extend(findings);
@@ -53,7 +42,13 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
             pages.len()
         ));
     };
-    let scope = scope(since, changed.len(), shown, vault.notes.len(), limits);
+    let scope = scope(
+        since,
+        changed.len(),
+        shown,
+        vault.notes.len(),
+        limits.review_max_pages,
+    );
     let mut out = format!(
         "vault: {}\n{scope}, then the problems found in the whole vault\npage {page} of {} ({LEGEND})\n{body}",
         vault.root.display(),
@@ -68,54 +63,33 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
     Ok(out)
 }
 
-fn folder(path: &str) -> &str {
-    path.rsplit_once('/').map_or("", |(folder, _)| folder)
-}
-
-// Whole folders: preferences and changed folders always, then folders by most recent use, the rest while pages last.
+// Whole folders in priority order, the optional ones only while the pages, findings included, stay within the budget.
 fn by_priority(
     vault: &Vault,
     changed: &[&Note],
     activity: &Activity,
     limits: &Review,
-    today: Date,
     findings: &[Item],
 ) -> Vec<Item> {
-    let mut folders: BTreeMap<&str, Vec<&Note>> = BTreeMap::new();
+    let mut notes: BTreeMap<&str, Vec<&Note>> = BTreeMap::new();
     for note in &vault.notes {
-        folders.entry(folder(&note.path)).or_default().push(note);
+        notes.entry(folder(&note.path)).or_default().push(note);
     }
-    // Sorted, so Preferences comes first.
-    let always: BTreeSet<&str> = changed
-        .iter()
-        .map(|n| folder(&n.path))
-        .chain([PREFERENCES])
-        .collect();
-    let used = last_used(activity);
-    let since = today.saturating_sub(limits.active_days.days());
-    let mut active: Vec<&str> = folders
-        .keys()
-        .copied()
-        .filter(|f| !always.contains(f) && used.get(*f).is_some_and(|day| *day >= since))
-        .collect();
-    active.sort_by_key(|f| (Reverse(used[*f]), *f));
-    let rest = folders
-        .keys()
-        .copied()
-        .filter(|f| !always.contains(f) && !active.contains(f));
-    let lines = |f: &str| -> Vec<Item> {
-        folders
-            .get(f)
-            .into_iter()
-            .flatten()
+    let folders: BTreeSet<&str> = notes.keys().copied().collect();
+    let changed: BTreeSet<&str> = changed.iter().map(|n| folder(&n.path)).collect();
+    let today = jiff::Zoned::now().date();
+    let (always, then) = priority::order(&folders, &changed, activity, limits.active_days, today);
+    let items_of = |f: &str| {
+        notes[f]
+            .iter()
             .map(|n| item(n, activity))
-            .collect()
+            .collect::<Vec<_>>()
     };
 
-    let mut items: Vec<Item> = always.iter().flat_map(|f| lines(f)).collect();
-    for f in active.iter().copied().chain(rest) {
+    let mut items: Vec<Item> = always.into_iter().flat_map(items_of).collect();
+    for f in then {
         let before = items.len();
-        items.extend(lines(f));
+        items.extend(items_of(f));
         let with_findings: Vec<Item> = items.iter().chain(findings).cloned().collect();
         if paginate(&with_findings).len() > limits.review_max_pages {
             items.truncate(before);
@@ -125,43 +99,24 @@ fn by_priority(
     items
 }
 
-// The last day each folder was used: a note read in it, or a session loading its project.
-fn last_used(activity: &Activity) -> BTreeMap<String, Date> {
-    let reads = activity
-        .notes
-        .iter()
-        .map(|(path, u)| (folder(path).to_string(), u.last_read));
-    let sessions = activity
-        .projects
-        .iter()
-        .map(|(key, day)| (format!("{PROJECTS}/{key}"), *day));
-    let mut used = BTreeMap::new();
-    for (folder, day) in reads.chain(sessions) {
-        let last = used.entry(folder).or_insert(day);
-        *last = (*last).max(day);
-    }
-    used
-}
-
+// A big vault's first cleanup sends every folder, as each one has changed: only a later one sends part of it.
 fn scope(
     since: Option<SystemTime>,
     changed: usize,
     shown: usize,
     total: usize,
-    limits: &Review,
+    max_pages: usize,
 ) -> String {
-    let date = since
-        .and_then(|t| jiff::Timestamp::try_from(t).ok())
-        .map(|t| t.strftime("%Y-%m-%d").to_string());
-    match (shown == total, date) {
-        (true, None) => format!("first cleanup: all {total} notes"),
-        (true, Some(date)) => {
-            format!("all {total} notes, {changed} changed since the last cleanup ({date})")
-        }
-        (false, date) => format!(
-            "{shown} of {total} notes: preferences, folders changed since {}, then folders by recent use, up to {} pages (full=true for every note)",
-            date.unwrap_or_default(),
-            limits.review_max_pages
+    if shown < total {
+        return format!(
+            "{shown} of {total} notes: preferences, folders changed since the last cleanup, then folders by recent use, up to {max_pages} pages (full=true for every note)"
+        );
+    }
+    match since.and_then(|t| jiff::Timestamp::try_from(t).ok()) {
+        None => format!("first cleanup: all {total} notes"),
+        Some(t) => format!(
+            "all {total} notes, {changed} changed since the last cleanup ({})",
+            t.strftime("%Y-%m-%d")
         ),
     }
 }
@@ -201,34 +156,32 @@ fn paginate(items: &[Item]) -> Vec<String> {
     pages
 }
 
-// One (folder, line) per note.
 fn item(note: &Note, activity: &Activity) -> Item {
-    let (folder, slug) = note.path.rsplit_once('/').unwrap_or(("", &note.path));
-    (
-        folder.to_string(),
-        line(note, slug, activity.notes.get(&note.path)),
-    )
-}
-
-fn line(note: &Note, slug: &str, usage: Option<&Usage>) -> String {
     let fm = note.frontmatter.as_ref().ok();
     let dates = fm.map_or("-".to_string(), |f| match f.updated {
         Some(updated) => format!("{}/{updated}", f.created),
         None => f.created.to_string(),
     });
-    let reads = usage.map_or("never".to_string(), |u| {
-        format!("{}r {}", u.reads, u.last_read)
-    });
-    format!(
+    let reads = activity
+        .notes
+        .get(&note.path)
+        .map_or("never".to_string(), |u| {
+            format!("{}r {}", u.reads, u.last_read)
+        });
+    let slug = note.path.rsplit('/').next().unwrap_or(&note.path);
+    let line = format!(
         "- {slug} | {} | {dates} | {reads} | {}",
         fm.map_or("invalid", |f| f.note_type.name()),
         note.summary().unwrap_or(NO_SUMMARY),
-    )
+    );
+    (folder(&note.path).to_string(), line)
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
+
+    use jiff::ToSpan;
 
     use super::*;
 
@@ -375,7 +328,9 @@ mod tests {
 
         let text = every_page(&config, false);
         assert!(
-            text.contains("\n6 of 206 notes: preferences, folders changed since 20"),
+            text.contains(
+                "\n6 of 206 notes: preferences, folders changed since the last cleanup, then"
+            ),
             "{text}"
         );
         assert!(

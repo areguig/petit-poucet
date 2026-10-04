@@ -89,6 +89,11 @@ fn read(path: &Path) -> Result<String, String> {
 }
 
 // Temp file + rename, so Obsidian or a reader never sees a half-written file.
+// A note path's folder: `Preferences`, `Projects/<key>` or `Topics/<topic>`.
+pub fn folder(path: &str) -> &str {
+    path.rsplit_once('/').map_or("", |(folder, _)| folder)
+}
+
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
     let dir = path.parent().ok_or("no parent folder")?;
     let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
