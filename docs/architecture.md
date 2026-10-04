@@ -10,7 +10,7 @@ Technical notes for contributors. The design and its decisions are in [PLAN.md](
 | `Index.md` | generated from each note's `summary`; never edited by hand | yes |
 | `.last-cleanup` | when the last cleanup review was read to its end | yes |
 | `.usage/<machine-id>.json` | what one machine read and loaded | yes, with the next commit |
-| `.petit-poucet/` | this machine only: the vault lock, the machine id, the latest release seen | no |
+| `.petit-poucet/` | this machine only: the vault lock, the machine id, the latest release seen, each project's checkout | no |
 
 Dot-files and dot-folders are skipped by the vault loader and by Obsidian.
 
@@ -43,6 +43,11 @@ A folder comes whole so a note is judged next to its neighbours. Reading the las
 Why the limits: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. 10 pages of 200-character summaries hold about 300 notes, about 37k tokens of input per cleanup.
 
 The limits live in `~/.config/petit-poucet/config.toml`. `init` writes every setting; reading a config written by an older version writes in the settings it lacks, keeping the user's own lines and comments, so the file always shows the values in effect.
+
+## Paths gone from the checkout (`check`)
+- **Checkout:** identifying a project (session start, or a tool given the agent's directory) records its git root on this machine in `.petit-poucet/checkouts.json`. Each machine has its own, so it is never synced; a project never opened on this machine is skipped.
+- **Paths:** words joined by slashes in backticks in a project note's body, that name a file (`src/main.rs`) or a folder (`docs/`). Branches (`feat/x`), remotes (`github.com/me/app`), climbs (`../x`), absolute and home paths are left out.
+- **Report only:** a warning per missing path; the note may be right about history, so nothing is changed.
 
 ## Near-duplicates (`check`)
 - **Words:** a note's title and summary, lowercased, split on anything that isn't a letter or digit (Unicode), words of 3+ characters. The body is not used.

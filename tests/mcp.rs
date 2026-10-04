@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdout, Stdio};
 
-use common::{command, git_log, petit_poucet};
+use common::{command, git_log, petit_poucet, stdout};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -418,6 +418,45 @@ fn repos_sharing_a_folder_name_keep_separate_projects() {
         "{index}"
     );
 
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// A note naming a file its project's checkout no longer has is reported, by the review and by `check` (#23).
+#[test]
+fn notes_naming_paths_gone_from_the_checkout_are_reported() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let app = home.path().join("src/app");
+    checkout(&app, "git@github.com:me/app.git");
+    std::fs::create_dir(app.join("scripts")).unwrap();
+    std::fs::write(app.join("scripts/build.sh"), "").unwrap();
+    let (mut child, mut client, _) = start(home.path());
+    let (_, saved) = client.call(
+        "memory_save",
+        json!({"type": "project", "project_dir": app, "title": "Release",
+               "summary": "how to release", "fact": "Run `scripts/build.sh`, then `scripts/release.sh`.",
+               "source": "test on 2026-10-04", "how_to_apply": "When releasing."}),
+    );
+    assert_eq!(saved, "saved Projects/app/release");
+    // The next task starts by loading the project, which records where it is checked out.
+    client.call("memory_index", json!({"project_dir": app}));
+    let warning = "Projects/app/release.md: warning: names `scripts/release.sh`, missing from ";
+
+    let (pages, _) = review_pages(&mut client, false);
+    let text = pages.concat();
+    assert!(text.contains(warning), "{text}");
+    assert!(!text.contains("`scripts/build.sh`, missing"), "{text}");
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(stdout(&check).contains(warning), "{}", stdout(&check));
+
+    std::fs::write(app.join("scripts/release.sh"), "").unwrap();
+    let (pages, _) = review_pages(&mut client, false);
+    assert!(!pages.concat().contains("missing from"), "{pages:?}");
     drop(client);
     assert!(child.wait().unwrap().success());
 }

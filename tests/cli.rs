@@ -270,6 +270,16 @@ fn session_start_injects_rules_and_the_project_index() {
     let usage: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(usage.path()).unwrap()).unwrap();
     assert!(usage["projects"]["alpha"].is_string(), "{usage}");
+    // And it records where the project is checked out on this machine, outside the synced vault (#23).
+    let checkouts: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(vault.join(".petit-poucet/checkouts.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        checkouts["alpha"],
+        alpha_checkout.to_str().unwrap(),
+        "{checkouts}"
+    );
     assert!(
         context.ends_with("memory_index with `topic` lists one): homelab (2)\n"),
         "{context}"

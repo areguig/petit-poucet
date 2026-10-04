@@ -238,7 +238,7 @@ Memory quality before new reach: checks that are deterministic, so the `memory-c
 - #14 also warns about summaries over 200 characters (a config tunable), which keeps a 300-note full review near 10 pages.
 - #90 archived projects (needs triage): proposed by a cleanup, confirmed by the user, left out of reviews and the search over every note.
 - #36 near-duplicates across the vault, reported by `check` and so by every review: notes linked by the `memory_save` similarity rule form a group, one short line per note after the group's first; only notes sharing a word are compared (a 5,000-note vault takes about 0.1 s). **Built 2026-10-04.**
-- #23 notes naming paths that no longer exist (report only, never an automatic fix).
+- #23 notes naming paths that no longer exist (report only, never an automatic fix): identifying a project records its checkout on this machine (`.petit-poucet/checkouts.json`, never synced), and `check` warns about relative paths in backticks missing from it. **Built 2026-10-04.**
 - Moved out of 0.4 to triage (owner's decision 2026-10-04): #35 file names that no longer match their title (the full review shows title and slug side by side), #24 facts that expire (a new frontmatter field agents must set).
 - #25 usage-driven cleanup: the review lists notes not read, written or updated for `unused_days` (90), once usage has counted that long (`since` in the usage files); `feedback` notes excluded: they apply from the Index without being read. **Built 2026-10-04.**
 - #22 `migrate-memory` covers every supported agent's instruction files and own memory (Codex memories, VS Code's memory tool, Cursor Memories, Antigravity rules and knowledge).

@@ -1,11 +1,11 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::note::{self, Note, NoteType};
 use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{INDEX_FILE, PROJECTS, Vault, write_atomic};
-use crate::{git, index, lock, usage};
+use crate::{checkouts, git, index, lock, usage};
 
 pub fn find_note<'a>(vault: &'a Vault, path: &str) -> Result<&'a Note, String> {
     let path = path.strip_suffix(".md").unwrap_or(path);
@@ -83,6 +83,13 @@ pub fn list(files: &[String]) -> String {
 pub fn identify(config: &Config, vault: &Vault, dir: &Path, agent: &str) -> Option<String> {
     let key = project::resolve(&vault.projects, dir)?.to_string();
     let found = vault.projects.iter().find(|p| p.key == key)?;
+    // Only a session in the project knows where it is checked out: `check` resolves the paths its notes name there.
+    let checkout = git::toplevel(dir).map_or_else(|| dir.to_path_buf(), PathBuf::from);
+    let recorded =
+        lock::vault(&vault.root).and_then(|_lock| checkouts::record(&vault.root, &key, &checkout));
+    if let Err(e) = recorded {
+        eprintln!("petit-poucet: checkout of {key} not recorded: {e}");
+    }
     if let (Some(remotes), Ok(identity)) = (project::missing_remotes(found, dir), &found.identity) {
         let file = format!("{PROJECTS}/{key}/{IDENTITY_FILE}");
         let saved = lock::vault(&vault.root).and_then(|_lock| {
