@@ -124,8 +124,8 @@ mod tests {
             ),
         );
         let config = Config {
-            vault: tmp.path().to_path_buf(),
             git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
         };
         (tmp, config)
     }

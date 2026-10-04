@@ -68,8 +68,8 @@ mod tests {
             fs::write(tmp.path().join(format!("{PREFERENCES}/{name}.md")), text).unwrap();
         }
         let config = Config {
-            vault: tmp.path().to_path_buf(),
             git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
         };
         (tmp, config)
     }

@@ -441,12 +441,12 @@ fn sync(from: &Path, to: &Path) {
     }
 }
 
-// Reads every page of memory_review; returns the pages and the note lines they hold (#77).
-fn review_pages(client: &mut Client) -> (Vec<String>, usize) {
+// Reads every page of memory_review; returns the pages and the project note lines they hold (#77).
+fn review_pages(client: &mut Client, full: bool) -> (Vec<String>, usize) {
     let mut pages = Vec::new();
     loop {
         let page = pages.len() + 1;
-        let (is_error, text) = client.call("memory_review", json!({"page": page}));
+        let (is_error, text) = client.call("memory_review", json!({"page": page, "full": full}));
         // Antigravity saves a tool result over about 4 KB to a file the agent has to page through.
         assert!(
             !is_error && text.len() <= 3500,
@@ -465,8 +465,25 @@ fn review_pages(client: &mut Client) -> (Vec<String>, usize) {
     }
 }
 
+// Lowers a limit in a config `init` wrote.
+fn set_review_max_pages(home: &Path, pages: usize) {
+    let path = home.join(".config/petit-poucet/config.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("review_max_pages = 10\n"), "{text}");
+    let text = text.replace(
+        "review_max_pages = 10\n",
+        &format!("review_max_pages = {pages}\n"),
+    );
+    std::fs::write(&path, text).unwrap();
+}
+
+fn joined(pages: &[String]) -> String {
+    pages.concat()
+}
+
+// Over 300 notes, a later cleanup sends preferences, changed and recently used folders whole, then the rest while pages last (#89).
 #[test]
-fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
+fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
     let home = TempDir::new().unwrap();
     let vault = home.path().join("vault");
     petit_poucet(home.path())
@@ -498,7 +515,7 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
     );
     assert_eq!(saved, "saved Preferences/tabs");
 
-    let (first, notes) = review_pages(&mut client);
+    let (first, notes) = review_pages(&mut client, false);
     assert!(
         first[0].contains("\nfirst cleanup: all 301 notes"),
         "{}",
@@ -518,7 +535,7 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
         "{log}"
     );
 
-    // Another machine gets the vault through a sync that keeps file times, then edits one note.
+    // Another machine, with room for 3 pages, gets the vault through a sync that keeps file times, then edits one note.
     let other = TempDir::new().unwrap();
     let synced = other.path().join("vault");
     sync(&vault, &synced);
@@ -526,6 +543,7 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
         .args(["init", synced.to_str().unwrap()])
         .assert()
         .success();
+    set_review_max_pages(other.path(), 3);
     let note = synced.join("Projects/infra/fact-3.md");
     let text = std::fs::read_to_string(&note).unwrap();
     std::fs::write(
@@ -534,21 +552,40 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
     )
     .unwrap();
     let (mut other_child, mut other_client, _) = start(other.path());
-    let (there, notes) = review_pages(&mut other_client);
+    let (there, notes) = review_pages(&mut other_client, false);
+    let text = joined(&there);
+    assert!(text.contains("\n101 of 301 notes: preferences, "), "{text}");
+    assert_eq!(notes, 100, "the changed note's whole folder");
+    assert!(text.contains("## Preferences\n- tabs | "), "{text}");
+    assert!(text.contains("## Projects/infra\n"), "{text}");
     assert!(
-        there[0].contains("\n1 of 301 notes changed since the last cleanup ("),
-        "{}",
-        there[0]
+        !text.contains("## Projects/api") && !text.contains("## Projects/web"),
+        "no room left: {text}"
     );
-    assert_eq!(notes, 1);
+
+    // A read makes its folder one of the recently used ones.
+    other_client.call("memory_read", json!({"path": "Projects/web/fact-1"}));
+    let (next, notes) = review_pages(&mut other_client, false);
+    let text = joined(&next);
+    assert_eq!(notes, 100);
+    assert!(text.contains("## Projects/web\n"), "{text}");
     assert!(
-        there[0].contains("## Projects/infra\n- fact-3 | "),
-        "{}",
-        there[0]
+        !text.contains("## Projects/infra"),
+        "reviewed already: {text}"
     );
+
+    // A whole review on demand.
+    let (full, notes) = review_pages(&mut other_client, true);
+    assert!(
+        full[0].contains("\nall 301 notes, 0 changed since the last cleanup ("),
+        "{}",
+        full[0]
+    );
+    assert_eq!(notes, 300);
     drop(other_client);
     assert!(other_child.wait().unwrap().success());
 
+    // With the default 10 pages, everything fits again.
     for file in ["Projects/api/fact-7.md", "Projects/web/fact-42.md"] {
         let path = vault.join(file);
         let text = std::fs::read_to_string(&path).unwrap();
@@ -558,22 +595,15 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
         )
         .unwrap();
     }
-    let (second, notes) = review_pages(&mut client);
-    assert_eq!(second.len(), 1, "{second:?}");
+    let (second, notes) = review_pages(&mut client, false);
     assert!(
-        second[0].contains("\n2 of 301 notes changed since the last cleanup ("),
+        second[0].contains("\nall 301 notes, 2 changed since the last cleanup ("),
         "{}",
         second[0]
     );
-    assert_eq!(notes, 2);
-    assert!(
-        second[0].contains("## Projects/api\n- fact-7 | ")
-            && second[0].contains("## Projects/web\n- fact-42 | "),
-        "{}",
-        second[0]
-    );
+    assert_eq!(notes, 300);
 
-    let (is_error, _) = client.call("memory_review", json!({"page": 2}));
+    let (is_error, _) = client.call("memory_review", json!({"page": second.len() + 1}));
     assert!(is_error);
 
     // An agent saves what an old note already says: the review names the pair once (#36).
@@ -583,17 +613,15 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
                "fact": "Again.", "source": "the user on 2026-10-04", "how_to_apply": "Never."}),
     );
     assert!(saved.starts_with("saved Preferences/api-fact"), "{saved}");
-    let (third, _) = review_pages(&mut client);
-    assert_eq!(third.len(), 1, "{third:?}");
+    let (third, _) = review_pages(&mut client, false);
     assert_eq!(
-        third[0]
+        joined(&third)
             .matches(
                 "- Projects/api/fact-7.md: warning: near-duplicate of [[Preferences/api-fact]]"
             )
             .count(),
         1,
-        "{}",
-        third[0]
+        "{third:?}"
     );
     drop(client);
     assert!(child.wait().unwrap().success());
@@ -646,12 +674,21 @@ fn usage_rides_with_the_next_commit_and_adds_up_across_machines() {
         .success();
     let (mut other_child, mut other_client, _) = start(other.path());
     other_client.call("memory_read", json!({"path": "Preferences/tabs"}));
-    let (pages, _) = review_pages(&mut other_client);
+    let (pages, _) = review_pages(&mut other_client, false);
     assert!(pages[0].contains("- tabs | user | 2026-"), "{}", pages[0]);
     assert!(
         pages[0].contains(" | 3r "),
         "2 reads there + 1 here: {}",
         pages[0]
+    );
+    // A small vault: a later cleanup still lists every note, changed or not (#89).
+    let (again, _) = review_pages(&mut other_client, false);
+    assert!(
+        again[0].contains("\nall 2 notes, 0 changed since the last cleanup (")
+            && again[0].contains("- tabs | ")
+            && again[0].contains("- spaces | "),
+        "{}",
+        again[0]
     );
     assert_eq!(std::fs::read_dir(synced.join(".usage")).unwrap().count(), 2);
     drop(other_client);
