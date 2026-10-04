@@ -515,9 +515,9 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
 }
 
-// A config written before 0.4 gets the cleanup review's limits, the user's own lines kept (#89).
+// A config written by an older version gets the settings added since, the user's own lines kept, as soon as it is read.
 #[test]
-fn setup_writes_in_the_settings_an_older_config_lacks() {
+fn an_older_config_gets_the_new_settings_written_in() {
     let home = TempDir::new().unwrap();
     let vault = home.path().join("vault");
     fs::create_dir_all(&vault).unwrap();
@@ -527,22 +527,13 @@ fn setup_writes_in_the_settings_an_older_config_lacks() {
     );
     write(home.path(), ".config/petit-poucet/config.toml", &old);
 
-    let (ok, out) = setup(home.path(), &[]);
-    assert!(ok, "{out}");
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(ok && out.starts_with("vault: "), "{out}");
     let config = home.path().join(".config/petit-poucet/config.toml");
-    assert!(
-        out.starts_with(&format!(
-            "config: added full_review_max_notes, review_max_pages, active_days to {}\n",
-            config.display()
-        )),
-        "{out}"
-    );
     assert_eq!(
         fs::read_to_string(&config).unwrap(),
         format!("{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\n")
     );
-    let (_, again) = setup(home.path(), &[]);
-    assert!(again.starts_with("vault: "), "{again}");
 }
 
 #[test]

@@ -39,7 +39,7 @@ A folder comes whole so a note is judged next to its neighbours. Reading the las
 
 Why the limits: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. 10 pages of 200-character summaries hold about 300 notes, about 37k tokens of input per cleanup.
 
-The three limits live in `~/.config/petit-poucet/config.toml`. `init` writes them, `setup` adds any an older config lacks, and a config without them uses the defaults above.
+The three limits live in `~/.config/petit-poucet/config.toml`. `init` writes every setting; reading a config written by an older version writes in the settings it lacks, keeping the user's own lines and comments, so the file always shows the values in effect.
 
 ## Near-duplicates (`check`)
 - **Words:** a note's title and summary, lowercased, split on anything that isn't a letter or digit (Unicode), words of 3+ characters. The body is not used.

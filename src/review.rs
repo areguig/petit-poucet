@@ -276,14 +276,15 @@ mod tests {
         full_review_max_notes: usize,
         review_max_pages: usize,
     ) -> Config {
+        let config = Config::new(root.to_path_buf());
         Config {
             git_autocommit: false,
             review: Review {
                 full_review_max_notes,
                 review_max_pages,
-                ..Review::default()
+                ..config.review
             },
-            ..Config::new(root.to_path_buf())
+            ..config
         }
     }
 
