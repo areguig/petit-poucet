@@ -43,8 +43,8 @@ mod tests {
     fn none_until_recorded_then_the_recorded_time_to_the_nanosecond_in_a_readable_file() {
         let tmp = tempfile::tempdir().unwrap();
         let config = Config {
-            vault: tmp.path().to_path_buf(),
             git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
         };
         assert_eq!(last(tmp.path()), None);
         // Windows counts system and file times in steps of 100 ns.

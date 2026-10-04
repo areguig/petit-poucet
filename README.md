@@ -107,7 +107,7 @@ Commit each finished step locally; never push.
 | `memory_save` | Create or update a note; the Index and a git commit follow |
 | `memory_move` | Rename or re-scope a note, rewriting every link to it |
 | `memory_delete` | Delete a note (with a reason) and unlink it everywhere |
-| `memory_review` | For the cleanup agent: the notes changed since the last cleanup (all of them the first time) and the problems found in the whole vault, in pages small enough for every agent |
+| `memory_review` | For the cleanup agent: every note of a vault up to 300 notes (above that, preferences, changed and recently used folders; everything when you ask for a whole review) and the problems found in the whole vault, in pages small enough for every agent |
 
 ### Skills
 
@@ -150,7 +150,7 @@ The script installs the latest release in `~/.local/bin` after checking its SHA-
 
 Coming from the 0.2 plugin for Claude Code or Copilot? `petit-poucet setup` removes it with the agent's own command, so its hooks don't run twice.
 
-Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it). Nothing is ever pushed from the vault. Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
+Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it), with the cleanup review's limits: `full_review_max_notes`, `review_max_pages` and `active_days`. Nothing is ever pushed from the vault. Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
 
 ## Browse your memory in Obsidian
 

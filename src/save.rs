@@ -223,8 +223,8 @@ mod tests {
         fs::create_dir_all(root.join(PREFERENCES)).unwrap();
         fs::create_dir_all(root.join(PROJECTS)).unwrap();
         let config = Config {
-            vault: root,
             git_autocommit: false,
+            ..Config::new(root)
         };
         (tmp, config)
     }
