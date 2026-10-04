@@ -3,6 +3,7 @@ mod antigravity;
 mod change;
 mod check;
 mod claude;
+mod cleanup;
 mod codex;
 mod config;
 mod copilot;

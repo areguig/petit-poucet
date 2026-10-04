@@ -44,6 +44,12 @@ pub struct ReadRequest {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ReviewRequest {
+    /// Page to return, from 1 (the default); each page names the next one.
+    page: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct SearchRequest {
     query: String,
     /// The agent's working directory, used to find the project.
@@ -123,10 +129,14 @@ impl Server {
     }
 
     #[tool(
-        description = "Every note in one line (type, dates, reads, summary) plus the vault's check findings, for a memory cleanup review. Only for the memory-cleanup agent."
+        description = "For a memory cleanup review, in pages: the notes changed since the last cleanup (every note the first time), one line each, then the problems found in the whole vault. Reading the last page marks the cleanup done. Only for the memory-cleanup agent."
     )]
-    fn memory_review(&self) -> Result<String, String> {
-        review::review(&self.config)
+    fn memory_review(
+        &self,
+        Parameters(req): Parameters<ReviewRequest>,
+        client: Peer<RoleServer>,
+    ) -> Result<String, String> {
+        review::review(&self.config, req.page.unwrap_or(1), &agent_name(&client))
     }
 
     #[tool(
