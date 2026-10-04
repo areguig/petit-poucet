@@ -6,7 +6,7 @@ use jiff::Timestamp;
 
 use crate::config::Config;
 use crate::vault::write_atomic;
-use crate::{git, lock};
+use crate::{git, lock, usage};
 
 // In the vault (a dot-file the loader and Obsidian skip), synced and committed: a cleanup counts on every machine.
 pub const FILE: &str = ".last-cleanup";
@@ -24,11 +24,11 @@ pub fn record(config: &Config, at: SystemTime, agent: &str) -> Result<(), String
     let _lock = lock::vault(root)?;
     write_atomic(&root.join(FILE), &format!("{at:.9}\n"))?;
     if config.git_autocommit {
-        git::commit(
-            root,
-            &[FILE],
-            &format!("cleanup: memory reviewed ({agent})"),
-        )?;
+        let paths: Vec<&str> = [Some(FILE), usage::to_commit(root)]
+            .into_iter()
+            .flatten()
+            .collect();
+        git::commit(root, &paths, &format!("cleanup: memory reviewed ({agent})"))?;
     }
     Ok(())
 }

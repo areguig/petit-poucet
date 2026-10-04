@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::note::{self, Note, NoteType};
 use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{INDEX_FILE, PROJECTS, Vault, write_atomic};
-use crate::{git, index, lock};
+use crate::{git, index, lock, usage};
 
 pub fn find_note<'a>(vault: &'a Vault, path: &str) -> Result<&'a Note, String> {
     let path = path.strip_suffix(".md").unwrap_or(path);
@@ -44,6 +44,7 @@ pub fn finish(
         return Ok((vault, None));
     }
     changed.push(INDEX_FILE.to_string());
+    changed.extend(usage::to_commit(root).map(str::to_string));
     let paths: Vec<&str> = changed.iter().map(String::as_str).collect();
     let warning = git::commit(root, &paths, message)
         .err()

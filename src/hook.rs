@@ -4,8 +4,10 @@ use crate::agent::Agent;
 use crate::change;
 use crate::config::Config;
 use crate::index;
+use crate::lock;
 use crate::stops;
 use crate::update;
+use crate::usage;
 use crate::vault::Vault;
 
 const FIRST_REMINDER: u32 = 3;
@@ -71,6 +73,16 @@ fn setup_context() -> String {
         .to_string()
 }
 
+// A session that loads a project counts as a use of it, even if no note is opened.
+fn record_session(vault: &Vault, project: &str) {
+    let today = jiff::Zoned::now().date();
+    let recorded = lock::vault(&vault.root)
+        .and_then(|_lock| usage::record_session(&vault.root, project, today));
+    if let Err(e) = recorded {
+        eprintln!("petit-poucet: session not recorded: {e}");
+    }
+}
+
 // Returns the context for the agent and the line shown to the user.
 fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), String> {
     let config = Config::load()?;
@@ -80,6 +92,9 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), Strin
         .or_else(|| std::env::current_dir().ok());
     let project = dir.and_then(|d| change::identify(&config, &vault, &d, agent.hook_label()));
     let project = project.as_deref();
+    if let Some(project) = project {
+        record_session(&vault, project);
+    }
     let loaded = vault
         .notes
         .iter()

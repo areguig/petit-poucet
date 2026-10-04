@@ -261,6 +261,15 @@ fn session_start_injects_rules_and_the_project_index() {
     assert!(context.contains("[[Projects/alpha/plugin-design]]"));
     assert!(!context.contains("Projects/beta"));
     assert!(!context.contains("[[Topics/"), "topic notes are not loaded");
+    // The session counts as a use of its project, in this machine's usage file in the vault (#88).
+    let usage = fs::read_dir(vault.join(".usage"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap();
+    let usage: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(usage.path()).unwrap()).unwrap();
+    assert!(usage["projects"]["alpha"].is_string(), "{usage}");
     assert!(
         context.ends_with("memory_index with `topic` lists one): homelab (2)\n"),
         "{context}"
