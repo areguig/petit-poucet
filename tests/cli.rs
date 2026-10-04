@@ -532,7 +532,9 @@ fn an_older_config_gets_the_new_settings_written_in() {
     let config = home.path().join(".config/petit-poucet/config.toml");
     assert_eq!(
         fs::read_to_string(&config).unwrap(),
-        format!("{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\n")
+        format!(
+            "{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\n"
+        )
     );
 }
 

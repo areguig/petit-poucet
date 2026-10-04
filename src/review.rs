@@ -3,12 +3,14 @@ use std::fmt::Write;
 use std::fs;
 use std::time::SystemTime;
 
+use jiff::civil::Date;
+
 use crate::config::{Config, Review};
 use crate::index::NO_SUMMARY;
 use crate::note::Note;
 use crate::usage::{self, Activity};
 use crate::vault::{Vault, folder};
-use crate::{check, cleanup, priority};
+use crate::{check, cleanup, priority, unused};
 
 // Antigravity CLI saves a tool result over about 4 KB to a file: the smallest limit of the supported agents.
 pub const PAGE_BYTES: usize = 3 * 1024;
@@ -24,14 +26,21 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
     let since = cleanup::last(&vault.root);
     let changed = changed_since(&vault, since);
     let activity = usage::load(&vault.root);
+    let today = jiff::Zoned::now().date();
+    let unused = unused::find(&vault, &activity, config.review.unused_days, today);
     let findings: Vec<Item> = check::check(&vault)
         .into_iter()
         .map(|issue| ("check".to_string(), format!("- {issue}")))
+        .chain(
+            unused
+                .into_iter()
+                .map(|note| ("unused".to_string(), format!("- {note}"))),
+        )
         .collect();
     let limits = &config.review;
     let mut items = match full || vault.notes.len() <= limits.full_review_max_notes {
         true => vault.notes.iter().map(|n| item(n, &activity)).collect(),
-        false => by_priority(&vault, &changed, &activity, limits, &findings),
+        false => by_priority(&vault, &changed, &activity, limits, today, &findings),
     };
     let shown = items.len();
     items.extend(findings);
@@ -69,6 +78,7 @@ fn by_priority(
     changed: &[&Note],
     activity: &Activity,
     limits: &Review,
+    today: Date,
     findings: &[Item],
 ) -> Vec<Item> {
     let mut notes: BTreeMap<&str, Vec<&Note>> = BTreeMap::new();
@@ -77,7 +87,6 @@ fn by_priority(
     }
     let folders: BTreeSet<&str> = notes.keys().copied().collect();
     let changed: BTreeSet<&str> = changed.iter().map(|n| folder(&n.path)).collect();
-    let today = jiff::Zoned::now().date();
     let (always, then) = priority::order(&folders, &changed, activity, limits.active_days, today);
     let items_of = |f: &str| {
         notes[f]

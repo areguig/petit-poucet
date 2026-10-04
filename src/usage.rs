@@ -27,6 +27,9 @@ pub struct Activity {
     // Last day a session loaded each project.
     #[serde(default)]
     pub projects: BTreeMap<String, Date>,
+    // The first day counted: a note can only be called unused once its whole period was counted.
+    #[serde(default)]
+    pub since: Option<Date>,
 }
 
 impl Activity {
@@ -44,6 +47,10 @@ impl Activity {
             let last = self.projects.entry(project).or_insert(day);
             *last = (*last).max(day);
         }
+        self.since = match (self.since, other.since) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
     }
 }
 
@@ -118,15 +125,16 @@ pub fn to_commit(root: &Path) -> Option<&'static str> {
     root.join(DIR).exists().then_some(DIR)
 }
 
-fn update(root: &Path, change: impl FnOnce(&mut Activity)) -> Result<(), String> {
+fn update(root: &Path, today: Date, change: impl FnOnce(&mut Activity)) -> Result<(), String> {
     let file = own_file(root)?;
     let mut activity = read(&file);
+    activity.since.get_or_insert(today);
     change(&mut activity);
     write(&file, &activity)
 }
 
 pub fn record_read(root: &Path, path: &str, today: Date) -> Result<(), String> {
-    update(root, |activity| {
+    update(root, today, |activity| {
         let entry = activity.notes.entry(path.to_string()).or_insert(Usage {
             reads: 0,
             last_read: today,
@@ -137,7 +145,7 @@ pub fn record_read(root: &Path, path: &str, today: Date) -> Result<(), String> {
 }
 
 pub fn record_session(root: &Path, project: &str, today: Date) -> Result<(), String> {
-    update(root, |activity| {
+    update(root, today, |activity| {
         activity.projects.insert(project.to_string(), today);
     })
 }
@@ -181,6 +189,11 @@ mod tests {
             }
         );
         assert_eq!(activity.projects["app"], day(2));
+        assert_eq!(
+            activity.since,
+            Some(day(1)),
+            "set by the first count, kept after"
+        );
 
         relocate(tmp.path(), "Preferences/a", Some("Projects/p/a")).unwrap();
         relocate(tmp.path(), "Preferences/b", None).unwrap();
@@ -204,6 +217,7 @@ mod tests {
                 },
             )]),
             projects: BTreeMap::from([("app".to_string(), day(1))]),
+            since: Some(day(1)),
         };
         write(&tmp.path().join(DIR).join("other.json"), &other).unwrap();
 
@@ -216,6 +230,7 @@ mod tests {
             }
         );
         assert_eq!(total.projects["app"], day(3), "the latest day wins");
+        assert_eq!(total.since, Some(day(1)), "the first day counted anywhere");
 
         relocate(tmp.path(), "Preferences/a", Some("Topics/t/a")).unwrap();
         let moved = read(&tmp.path().join(DIR).join("other.json"));

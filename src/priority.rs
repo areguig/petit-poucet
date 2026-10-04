@@ -88,6 +88,7 @@ mod tests {
                 ("Projects/edited/x".to_string(), read(today)),
             ]),
             projects: BTreeMap::from([("loaded".to_string(), today - 1.days())]),
+            since: None,
         };
 
         let (always, then) = order(&folders, &changed, &activity, 30, today);

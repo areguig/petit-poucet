@@ -19,6 +19,7 @@ pub struct Review {
     pub full_review_max_notes: usize,
     pub review_max_pages: usize,
     pub active_days: i64,
+    pub unused_days: i64,
 }
 
 impl Config {
@@ -30,6 +31,7 @@ impl Config {
                 full_review_max_notes: 300,
                 review_max_pages: 10,
                 active_days: 30,
+                unused_days: 90,
             },
         }
     }
@@ -112,7 +114,12 @@ mod tests {
         let (text, added) = with_missing(old).unwrap();
         assert_eq!(
             added,
-            ["git_autocommit", "full_review_max_notes", "active_days"]
+            [
+                "git_autocommit",
+                "full_review_max_notes",
+                "active_days",
+                "unused_days"
+            ]
         );
         assert!(text.starts_with(old), "{text}");
         let config: Config = toml::from_str(&text).unwrap();
@@ -127,7 +134,7 @@ mod tests {
         let text = toml::to_string(&Config::new("/v".into())).unwrap();
         assert_eq!(
             text,
-            "vault = \"/v\"\ngit_autocommit = true\nfull_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\n"
+            "vault = \"/v\"\ngit_autocommit = true\nfull_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\n"
         );
     }
 }

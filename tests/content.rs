@@ -56,6 +56,7 @@ fn the_cleanup_agent_still_looks_for_every_kind_of_problem() {
         "contradictions",
         "stale facts",
         "unused notes",
+        "## unused",
         "wrong place",
         "too long",
         "several facts",
