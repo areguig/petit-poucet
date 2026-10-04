@@ -43,7 +43,7 @@ pub fn review(config: &Config, page: usize, agent: &str) -> Result<String, Strin
 
 // One (folder, line) per changed note, then ("check", finding) for the whole vault.
 fn items(vault: &Vault, changed: &[&Note]) -> Vec<(String, String)> {
-    let usage = usage::load(&vault.root);
+    let usage = usage::load(&vault.root).notes;
     let notes = changed.iter().map(|note| {
         let (folder, slug) = note.path.rsplit_once('/').unwrap_or(("", &note.path));
         (folder.to_string(), line(note, slug, usage.get(&note.path)))
