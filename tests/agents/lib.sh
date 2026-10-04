@@ -70,3 +70,20 @@ install_old_plugin() {
   "$1" plugin marketplace add "$HOME/old-plugin" >/dev/null
   "$1" plugin install petit-poucet@petit-poucet >/dev/null
 }
+
+# big_vault: a vault too large for one memory_review result (#77); the mock calls $REVIEW_TOOL on the prompt petit-poucet-review.
+big_vault() {
+  big="$HOME/agent-memory/Projects/big"
+  mkdir -p "$big"
+  i=0
+  while [ "$i" -lt 250 ]; do
+    printf -- '---\ntype: project\nscope: big\nsummary: fact %s of a large vault, worded like a real one-line summary\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Fact %s\n' "$i" "$i" > "$big/fact-$i.md"
+    i=$((i + 1))
+  done
+  : > "$calls"
+}
+
+# check_review: the review reached the model whole, not saved to a file or cut in the middle.
+check_review() {
+  grep -q 'page 1 of ' "$calls" || fail "memory_review didn't reach the model inline"
+}
