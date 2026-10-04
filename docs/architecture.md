@@ -17,14 +17,17 @@ Dot-files and dot-folders are skipped by the vault loader and by Obsidian.
 ## Usage
 Each machine writes only its own `.usage/<machine-id>.json`, so two machines never write the same file under Syncthing or git. It records:
 - per note: reads (`memory_read`) and the last read day;
-- per project: the last day a session loaded it.
+- per project: the last day a session loaded it;
+- the first day it counted (`since`).
 
-Readers sum every machine's file: reads add up, the latest days win. A read never makes a commit of its own; the usage files ride along with the next commit that happens (a save, a move, a delete, a cleanup). A move or a delete updates every machine's file.
+Readers sum every machine's file: reads add up, the latest days win, the earliest `since` wins. A read never makes a commit of its own; the usage files ride along with the next commit that happens (a save, a move, a delete, a cleanup). A move or a delete updates every machine's file.
 
 ## The cleanup review (`memory_review`)
 The `memory-cleanup` agent reads it page by page:
 1. the notes, one line each under their folder: `slug | type | created[/updated] | reads | summary`;
-2. the problems `check` finds in the whole vault, always, never cut.
+2. the problems found in the whole vault, always, never cut: what `check` finds, then the notes nobody opens (`## unused`).
+
+A note is unused when it wasn't read, written or updated in the last `unused_days` (90). `feedback` notes are never listed: they apply from their Index line without being read. Nothing is listed until usage has counted for `unused_days`, so an upgrade doesn't call every old note unused.
 
 Which notes:
 - **small vault** (at most `full_review_max_notes`, 300): every note, at every cleanup;
@@ -39,7 +42,7 @@ A folder comes whole so a note is judged next to its neighbours. Reading the las
 
 Why the limits: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. 10 pages of 200-character summaries hold about 300 notes, about 37k tokens of input per cleanup.
 
-The three limits live in `~/.config/petit-poucet/config.toml`. `init` writes them, `setup` adds any an older config lacks, and a config without them uses the defaults above.
+The limits live in `~/.config/petit-poucet/config.toml`. `init` writes every setting; reading a config written by an older version writes in the settings it lacks, keeping the user's own lines and comments, so the file always shows the values in effect.
 
 ## Near-duplicates (`check`)
 - **Words:** a note's title and summary, lowercased, split on anything that isn't a letter or digit (Unicode), words of 3+ characters. The body is not used.

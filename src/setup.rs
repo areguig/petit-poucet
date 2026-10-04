@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::agent::Agent;
-use crate::config::{self, Config};
+use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
 use crate::{antigravity, claude, codex, copilot, cursor, skills};
@@ -56,36 +56,17 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         let kept = format!("vault: kept at {}", config.vault.display());
         return Ok((vec![kept], true));
     }
-    let mut lines = match mode {
-        Mode::Setup => add_missing_settings()?.into_iter().collect(),
-        _ => Vec::new(),
-    };
-    let ok = match Vault::load(&config.vault) {
-        Ok(vault) => {
-            lines.push(format!(
+    Ok(match Vault::load(&config.vault) {
+        Ok(vault) => (
+            vec![format!(
                 "vault: {} ({} notes)",
                 config.vault.display(),
                 vault.notes.len()
-            ));
-            true
-        }
-        Err(e) => {
-            lines.push(format!("vault: {e}"));
-            false
-        }
-    };
-    Ok((lines, ok))
-}
-
-// A config file written by an older version gets the settings added since.
-fn add_missing_settings() -> Result<Option<String>, String> {
-    let path = Config::path()?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let added = config::add_missing(&path)?;
-    Ok((!added.is_empty())
-        .then(|| format!("config: added {} to {}", added.join(", "), path.display())))
+            )],
+            true,
+        ),
+        Err(e) => (vec![format!("vault: {e}")], false),
+    })
 }
 
 // An agent not on this machine is only mentioned when the user named it.

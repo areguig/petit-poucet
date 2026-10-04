@@ -33,6 +33,7 @@ mod setup;
 mod skills;
 mod state;
 mod stops;
+mod unused;
 mod update;
 mod usage;
 mod vault;

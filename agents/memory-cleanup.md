@@ -11,7 +11,7 @@ You review a petit-poucet memory vault and propose cleanups. You never change an
    - duplicates and near-duplicates: propose a merge and say which note keeps the text;
    - contradictions: say which note is right when dates or sources show it, otherwise leave it to the user;
    - stale facts: files, paths, repos or decisions that no longer exist or were reversed (verify when you can);
-   - unused notes: never read, or not read for a long time, and old: candidates only;
+   - unused notes, listed under `## unused` (not read, written or updated for a while): candidates only;
    - notes in the wrong place (a preference kept in one project, knowledge tied to no repo that belongs in a topic, or the reverse), too long, or holding several facts;
    - every check finding.
 4. Never propose deleting a `feedback` note because it looks unused: rules are applied from their Index line without being read. Any change to a `feedback` note is a proposal for the user.

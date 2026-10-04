@@ -624,6 +624,52 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
     assert!(child.wait().unwrap().success());
 }
 
+// Notes nobody opened for `unused_days` come with the review's problems, once usage has counted that long (#25).
+#[test]
+fn a_cleanup_lists_notes_nobody_opens() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let long_ago = jiff::Zoned::now().date() - jiff::Span::new().days(200);
+    for (slug, note_type) in [("old-fact", "user"), ("old-rule", "feedback")] {
+        std::fs::write(
+            vault.join(format!("Preferences/{slug}.md")),
+            format!("---\ntype: {note_type}\nscope: all repos\nsummary: {slug}\ncreated: {long_ago}\ntags: [agent-memory]\n---\nx\n"),
+        )
+        .unwrap();
+    }
+    // Another machine has counted usage since then.
+    std::fs::create_dir(vault.join(".usage")).unwrap();
+    std::fs::write(
+        vault.join(".usage/other.json"),
+        format!("{{\"since\": \"{long_ago}\"}}"),
+    )
+    .unwrap();
+    let (mut child, mut client, _) = start(home.path());
+
+    let (pages, _) = review_pages(&mut client, false);
+    let text = pages.concat();
+    assert!(
+        text.contains(&format!(
+            "## unused\n- Preferences/old-fact.md: never read, written {long_ago}\n"
+        )),
+        "{text}"
+    );
+    assert!(
+        !text.contains("old-rule.md: never read"),
+        "feedback notes apply unread: {text}"
+    );
+
+    client.call("memory_read", json!({"path": "Preferences/old-fact"}));
+    let (pages, _) = review_pages(&mut client, false);
+    assert!(!pages.concat().contains("## unused"), "{pages:?}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 // Usage lives in the vault: a read never commits alone, and every machine's reads add up (#88).
 #[test]
 fn usage_rides_with_the_next_commit_and_adds_up_across_machines() {
