@@ -35,8 +35,9 @@ Projects/beta/too-long.md: warning: longer than 1500 characters: one short fact 
 Projects/delta/_project.md: error: remote github.com/example/alpha is claimed by projects alpha, delta
 Projects/gamma/_project.md: error: missing
 Topics/homelab/wrong-scope.md: error: scope is `all repos`, expected `homelab`
+Topics/homelab/wrong-scope.md: warning: near-duplicate of [[Preferences/wrong-scope]]: merge them if they say the same
 scratch.md: error: not in Preferences/, Projects/<project>/ or Topics/<topic>/
-notes: 20, errors: 17, warnings: 1
+notes: 20, errors: 17, warnings: 2
 "
     );
 }
@@ -124,7 +125,7 @@ fn env_var_overrides_the_configured_vault() {
         .arg("check")
         .output()
         .unwrap();
-    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 1\n"));
+    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 2\n"));
 }
 
 #[test]

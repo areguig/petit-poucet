@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::note::{self, ALL_REPOS, Frontmatter, NoteType, REQUIRED_TAG};
 use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
-use crate::{change, git, search, secrets};
+use crate::{change, duplicates, git, secrets};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SaveRequest {
@@ -105,7 +105,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         change::finish(config, changed, &format!("{action}: {path} ({agent})"))?;
     let mut reply = vec![format!("saved {path}")];
     let others = vault.notes.iter().filter(|n| n.path != path);
-    let similar = search::similar(others, &req.title, &req.summary);
+    let similar = duplicates::similar(others, &req.title, &req.summary);
     if !similar.is_empty() {
         let list: Vec<String> = similar.iter().map(|n| format!("[[{}]]", n.path)).collect();
         reply.push(format!(
@@ -397,7 +397,8 @@ mod tests {
             .status()
             .unwrap();
 
-        for title in ["First fact", "Second fact"] {
+        // Unrelated titles: "First fact" and "Second fact" would be near-duplicates.
+        for title in ["Deploy steps", "Database host"] {
             let mut req = request(title);
             req.note_type = NoteType::Project;
             req.scope = None;
@@ -414,7 +415,7 @@ mod tests {
         assert_eq!(identity.folders, ["my-repo"]);
         assert_eq!(vault.notes.len(), 2);
         assert_eq!(
-            read(&config, "Projects/my-repo/first-fact")
+            read(&config, "Projects/my-repo/deploy-steps")
                 .frontmatter
                 .unwrap()
                 .scope,
