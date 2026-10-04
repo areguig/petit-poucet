@@ -141,8 +141,8 @@ mod tests {
         identity(&root, "migrated", "[]");
         identity(&root, "known", "[github.com/me/known]");
         let config = Config {
-            vault: root.clone(),
             git_autocommit: false,
+            ..Config::new(root.clone())
         };
         let vault = Vault::load(&root).unwrap();
 

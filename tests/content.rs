@@ -46,3 +46,24 @@ fn skills_and_agents_have_valid_frontmatter() {
         );
     }
 }
+
+// Each kind of cleanup finding stays named, so none disappears silently (#89).
+#[test]
+fn the_cleanup_agent_still_looks_for_every_kind_of_problem() {
+    let (_, body) = frontmatter_and_body("agents/memory-cleanup.md");
+    for item in [
+        "duplicates",
+        "contradictions",
+        "stale facts",
+        "unused notes",
+        "wrong place",
+        "too long",
+        "several facts",
+        "every check finding",
+        "`full: true`",
+    ] {
+        assert!(body.contains(item), "memory-cleanup lost {item:?}");
+    }
+    let (_, tidy) = frontmatter_and_body("skills/tidy-memory/SKILL.md");
+    assert!(tidy.contains("review their whole memory"), "{tidy}");
+}

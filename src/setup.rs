@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::agent::Agent;
-use crate::config::Config;
+use crate::config::{self, Config};
 use crate::init;
 use crate::vault::Vault;
 use crate::{antigravity, claude, codex, copilot, cursor, skills};
@@ -56,17 +56,33 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         let kept = format!("vault: kept at {}", config.vault.display());
         return Ok((vec![kept], true));
     }
-    Ok(match Vault::load(&config.vault) {
-        Ok(vault) => (
-            vec![format!(
+    let mut lines = Vec::new();
+    let path = Config::path()?;
+    if mode == Mode::Setup && path.exists() {
+        let added = config::add_missing(&path)?;
+        if !added.is_empty() {
+            lines.push(format!(
+                "config: added {} to {}",
+                added.join(", "),
+                path.display()
+            ));
+        }
+    }
+    let ok = match Vault::load(&config.vault) {
+        Ok(vault) => {
+            lines.push(format!(
                 "vault: {} ({} notes)",
                 config.vault.display(),
                 vault.notes.len()
-            )],
-            true,
-        ),
-        Err(e) => (vec![format!("vault: {e}")], false),
-    })
+            ));
+            true
+        }
+        Err(e) => {
+            lines.push(format!("vault: {e}"));
+            false
+        }
+    };
+    Ok((lines, ok))
 }
 
 // An agent not on this machine is only mentioned when the user named it.
