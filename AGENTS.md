@@ -9,6 +9,15 @@
 2. **Clean code**, then **YAGNI** (no speculative features), **KISS**, **SRP** (small, single-purpose modules). Prefer the standard crate or tool over custom code.
 - Comments only for a non-obvious "why", one line; no doc comments that restate names.
 
+## Before saying a pull request is ready
+Review the whole diff against this list and fix what it finds:
+- **One job each:** a function or module that both decides and renders, or reads and writes, is split.
+- **Explicit:** nothing relies on an accidental order, name or default; no code for a case that can't happen.
+- **Self-explanatory:** names say what; no comment that restates a name; no duplicated logic; no one-line wrappers.
+- **Standard first:** a maintained crate or tool was searched for before writing anything generic.
+- **Tested:** each new test was seen failing with its change undone.
+- **Clean history:** one commit per finished step. Fix your own unmerged branch by amending or rebasing, never with a "fix" commit on top; once merged, a fix is a new pull request.
+
 ## Workflow
 - Before each commit: `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test`.
 - Commit each finished step locally, conventional style (`feat: …`), one or two lines, no Co-Authored-By trailer.
