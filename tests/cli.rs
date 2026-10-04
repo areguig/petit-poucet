@@ -515,6 +515,36 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
 }
 
+// A config written before 0.4 gets the cleanup review's limits, the user's own lines kept (#89).
+#[test]
+fn setup_writes_in_the_settings_an_older_config_lacks() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    fs::create_dir_all(&vault).unwrap();
+    let old = format!(
+        "# mine\nvault = {}\ngit_autocommit = false\n",
+        toml::Value::from(vault.display().to_string())
+    );
+    write(home.path(), ".config/petit-poucet/config.toml", &old);
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    let config = home.path().join(".config/petit-poucet/config.toml");
+    assert!(
+        out.starts_with(&format!(
+            "config: added full_review_max_notes, review_max_pages, active_days to {}\n",
+            config.display()
+        )),
+        "{out}"
+    );
+    assert_eq!(
+        fs::read_to_string(&config).unwrap(),
+        format!("{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\n")
+    );
+    let (_, again) = setup(home.path(), &[]);
+    assert!(again.starts_with("vault: "), "{again}");
+}
+
 #[test]
 fn setup_check_fails_until_every_agent_found_is_set_up() {
     let home = TempDir::new().unwrap();

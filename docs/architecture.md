@@ -23,12 +23,23 @@ Readers sum every machine's file: reads add up, the latest days win. A read neve
 
 ## The cleanup review (`memory_review`)
 The `memory-cleanup` agent reads it page by page:
-1. the notes changed since `.last-cleanup` (every note at the first cleanup), one line each under their folder: `slug | type | created[/updated] | reads | summary`;
-2. the problems `check` finds in the whole vault.
+1. the notes, one line each under their folder: `slug | type | created[/updated] | reads | summary`;
+2. the problems `check` finds in the whole vault, always, never cut.
 
-Reading the last page records the cleanup in `.last-cleanup`. Pages hold at most 3 KiB: Antigravity CLI saves a tool result over about 4 KB to a file, the smallest limit of the supported agents. Each page names the next one.
+Which notes:
+- **small vault** (at most `full_review_max_notes`, 300): every note, at every cleanup;
+- **on demand** (`full: true`, when the user asks to review their whole memory): every note;
+- **bigger vault:** whole folders, in this order, until the review reaches `review_max_pages` (10):
+  1. `Preferences`, always: they load in every session;
+  2. every folder with a note changed since `.last-cleanup` (every folder at the first cleanup), always;
+  3. folders used in the last `active_days` (30), from reads and session loads in `.usage/`, most recent first;
+  4. the other folders, while pages last.
 
-Why not send every note every time: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. The review grows with activity, not with the vault.
+A folder comes whole so a note is judged next to its neighbours. Reading the last page records the cleanup in `.last-cleanup`. Pages hold at most 3 KiB: Antigravity CLI saves a tool result over about 4 KB to a file, the smallest limit of the supported agents. Each page names the next one.
+
+Why the limits: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. 10 pages of 200-character summaries hold about 300 notes, about 37k tokens of input per cleanup.
+
+The three limits live in `~/.config/petit-poucet/config.toml`. `init` writes them, `setup` adds any an older config lacks, and a config without them uses the defaults above.
 
 ## Near-duplicates (`check`)
 - **Words:** a note's title and summary, lowercased, split on anything that isn't a letter or digit (Unicode), words of 3+ characters. The body is not used.

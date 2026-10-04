@@ -1,12 +1,17 @@
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::fs;
 use std::time::SystemTime;
 
-use crate::config::Config;
+use jiff::ToSpan;
+use jiff::civil::Date;
+
+use crate::config::{Config, Review};
 use crate::index::NO_SUMMARY;
 use crate::note::Note;
-use crate::usage::{self, Usage};
-use crate::vault::Vault;
+use crate::usage::{self, Activity, Usage};
+use crate::vault::{PREFERENCES, PROJECTS, Vault};
 use crate::{check, cleanup};
 
 // Antigravity CLI saves a tool result over about 4 KB to a file: the smallest limit of the supported agents.
@@ -14,52 +19,149 @@ pub const PAGE_BYTES: usize = 3 * 1024;
 
 const LEGEND: &str = "slug | type | created[/updated] | reads and last read | summary";
 
-// Notes changed since the last cleanup (all the first time), then the whole vault's problems: sized by activity.
-pub fn review(config: &Config, page: usize, agent: &str) -> Result<String, String> {
+type Item = (String, String);
+
+// Every note in a small vault or on demand, else folders by priority; then the whole vault's problems, never cut.
+pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<String, String> {
     let started = SystemTime::now();
     let vault = Vault::load(&config.vault)?;
     let since = cleanup::last(&vault.root);
     let changed = changed_since(&vault, since);
-    let pages = paginate(&items(&vault, &changed));
+    let activity = usage::load(&vault.root);
+    let findings: Vec<Item> = check::check(&vault)
+        .into_iter()
+        .map(|issue| ("check".to_string(), format!("- {issue}")))
+        .collect();
+    let limits = &config.review;
+    let mut items = match full || vault.notes.len() <= limits.full_review_max_notes {
+        true => vault.notes.iter().map(|n| item(n, &activity)).collect(),
+        false => by_priority(
+            &vault,
+            &changed,
+            &activity,
+            limits,
+            jiff::Zoned::now().date(),
+            &findings,
+        ),
+    };
+    let shown = items.len();
+    items.extend(findings);
+    let pages = paginate(&items);
     let Some(body) = pages.get(page.wrapping_sub(1)) else {
         return Err(format!(
             "no page {page}: the review has {} pages",
             pages.len()
         ));
     };
+    let scope = scope(since, changed.len(), shown, vault.notes.len(), limits);
     let mut out = format!(
-        "vault: {}\n{}, then the problems found in the whole vault\npage {page} of {} ({LEGEND})\n{body}",
+        "vault: {}\n{scope}, then the problems found in the whole vault\npage {page} of {} ({LEGEND})\n{body}",
         vault.root.display(),
-        scope(since, changed.len(), vault.notes.len()),
         pages.len()
     );
     if page < pages.len() {
-        writeln!(out, "more: call memory_review with page={}", page + 1).unwrap();
+        let full = if full { " and full=true" } else { "" };
+        writeln!(out, "more: call memory_review with page={}{full}", page + 1).unwrap();
     } else {
         cleanup::record(config, started, agent)?;
     }
     Ok(out)
 }
 
-// One (folder, line) per changed note, then ("check", finding) for the whole vault.
-fn items(vault: &Vault, changed: &[&Note]) -> Vec<(String, String)> {
-    let usage = usage::load(&vault.root).notes;
-    let notes = changed.iter().map(|note| {
-        let (folder, slug) = note.path.rsplit_once('/').unwrap_or(("", &note.path));
-        (folder.to_string(), line(note, slug, usage.get(&note.path)))
-    });
-    let findings = check::check(vault)
-        .into_iter()
-        .map(|issue| ("check".to_string(), format!("- {issue}")));
-    notes.chain(findings).collect()
+fn folder(path: &str) -> &str {
+    path.rsplit_once('/').map_or("", |(folder, _)| folder)
 }
 
-fn scope(since: Option<SystemTime>, changed: usize, total: usize) -> String {
-    match since.and_then(|t| jiff::Timestamp::try_from(t).ok()) {
-        None => format!("first cleanup: all {total} notes"),
-        Some(t) => format!(
-            "{changed} of {total} notes changed since the last cleanup ({})",
-            t.strftime("%Y-%m-%d")
+// Whole folders: preferences and changed folders always, then folders by most recent use, the rest while pages last.
+fn by_priority(
+    vault: &Vault,
+    changed: &[&Note],
+    activity: &Activity,
+    limits: &Review,
+    today: Date,
+    findings: &[Item],
+) -> Vec<Item> {
+    let mut folders: BTreeMap<&str, Vec<&Note>> = BTreeMap::new();
+    for note in &vault.notes {
+        folders.entry(folder(&note.path)).or_default().push(note);
+    }
+    // Sorted, so Preferences comes first.
+    let always: BTreeSet<&str> = changed
+        .iter()
+        .map(|n| folder(&n.path))
+        .chain([PREFERENCES])
+        .collect();
+    let used = last_used(activity);
+    let since = today.saturating_sub(limits.active_days.days());
+    let mut active: Vec<&str> = folders
+        .keys()
+        .copied()
+        .filter(|f| !always.contains(f) && used.get(*f).is_some_and(|day| *day >= since))
+        .collect();
+    active.sort_by_key(|f| (Reverse(used[*f]), *f));
+    let rest = folders
+        .keys()
+        .copied()
+        .filter(|f| !always.contains(f) && !active.contains(f));
+    let lines = |f: &str| -> Vec<Item> {
+        folders
+            .get(f)
+            .into_iter()
+            .flatten()
+            .map(|n| item(n, activity))
+            .collect()
+    };
+
+    let mut items: Vec<Item> = always.iter().flat_map(|f| lines(f)).collect();
+    for f in active.iter().copied().chain(rest) {
+        let before = items.len();
+        items.extend(lines(f));
+        let with_findings: Vec<Item> = items.iter().chain(findings).cloned().collect();
+        if paginate(&with_findings).len() > limits.review_max_pages {
+            items.truncate(before);
+            break;
+        }
+    }
+    items
+}
+
+// The last day each folder was used: a note read in it, or a session loading its project.
+fn last_used(activity: &Activity) -> BTreeMap<String, Date> {
+    let reads = activity
+        .notes
+        .iter()
+        .map(|(path, u)| (folder(path).to_string(), u.last_read));
+    let sessions = activity
+        .projects
+        .iter()
+        .map(|(key, day)| (format!("{PROJECTS}/{key}"), *day));
+    let mut used = BTreeMap::new();
+    for (folder, day) in reads.chain(sessions) {
+        let last = used.entry(folder).or_insert(day);
+        *last = (*last).max(day);
+    }
+    used
+}
+
+fn scope(
+    since: Option<SystemTime>,
+    changed: usize,
+    shown: usize,
+    total: usize,
+    limits: &Review,
+) -> String {
+    let date = since
+        .and_then(|t| jiff::Timestamp::try_from(t).ok())
+        .map(|t| t.strftime("%Y-%m-%d").to_string());
+    match (shown == total, date) {
+        (true, None) => format!("first cleanup: all {total} notes"),
+        (true, Some(date)) => {
+            format!("all {total} notes, {changed} changed since the last cleanup ({date})")
+        }
+        (false, date) => format!(
+            "{shown} of {total} notes: preferences, folders changed since {}, then folders by recent use, up to {} pages (full=true for every note)",
+            date.unwrap_or_default(),
+            limits.review_max_pages
         ),
     }
 }
@@ -79,7 +181,7 @@ fn changed_since(vault: &Vault, since: Option<SystemTime>) -> Vec<&Note> {
 }
 
 // Items are (section, line); a page that continues a section repeats its heading.
-fn paginate(items: &[(String, String)]) -> Vec<String> {
+fn paginate(items: &[Item]) -> Vec<String> {
     let mut pages = vec![String::new()];
     let mut heading = "";
     for (section, line) in items {
@@ -97,6 +199,15 @@ fn paginate(items: &[(String, String)]) -> Vec<String> {
         writeln!(page, "{line}").unwrap();
     }
     pages
+}
+
+// One (folder, line) per note.
+fn item(note: &Note, activity: &Activity) -> Item {
+    let (folder, slug) = note.path.rsplit_once('/').unwrap_or(("", &note.path));
+    (
+        folder.to_string(),
+        line(note, slug, activity.notes.get(&note.path)),
+    )
 }
 
 fn line(note: &Note, slug: &str, usage: Option<&Usage>) -> String {
@@ -146,11 +257,11 @@ mod tests {
         )
         .unwrap();
         let config = Config {
-            vault: tmp.path().to_path_buf(),
             git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
         };
 
-        let text = review(&config, 1, "test").unwrap();
+        let text = review(&config, 1, false, "test").unwrap();
         assert!(
             text.contains("\nfirst cleanup: all 3 notes, then the problems"),
             "{text}"
@@ -173,60 +284,153 @@ mod tests {
         );
         assert!(!text.contains("more:"), "{text}");
         assert_eq!(
-            review(&config, 2, "test").unwrap_err(),
+            review(&config, 2, false, "test").unwrap_err(),
             "no page 2: the review has 1 pages"
         );
-        assert!(review(&config, 0, "test").is_err());
+        assert!(review(&config, 0, false, "test").is_err());
     }
 
-    #[test]
-    fn after_a_cleanup_only_notes_changed_since_come_back_with_every_problem() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir(tmp.path().join("Preferences")).unwrap();
-        for name in ["kept", "edited", "broken"] {
+    // A valid note, so the vault's only problem is its missing Index.
+    fn write(root: &std::path::Path, path: &str) {
+        let file = root.join(format!("{path}.md"));
+        let dir = file.parent().unwrap();
+        fs::create_dir_all(dir).unwrap();
+        let scope = match path.split('/').collect::<Vec<_>>()[..] {
+            [_, key, _] => key,
+            _ => "all repos",
+        };
+        if path.starts_with("Projects/") {
             fs::write(
-                tmp.path().join(format!("Preferences/{name}.md")),
-                note("all repos", ""),
+                dir.join("_project.md"),
+                format!("---\ntype: project-identity\nremotes: []\nfolders: [{scope}]\n---\n"),
             )
             .unwrap();
         }
-        let config = Config {
-            vault: tmp.path().to_path_buf(),
+        fs::write(file, note(scope, "")).unwrap();
+    }
+
+    fn touch(root: &std::path::Path, path: &str, at: SystemTime) {
+        fs::File::options()
+            .write(true)
+            .open(root.join(format!("{path}.md")))
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    }
+
+    fn limited(
+        root: &std::path::Path,
+        full_review_max_notes: usize,
+        review_max_pages: usize,
+    ) -> Config {
+        Config {
             git_autocommit: false,
-        };
+            review: Review {
+                full_review_max_notes,
+                review_max_pages,
+                ..Review::default()
+            },
+            ..Config::new(root.to_path_buf())
+        }
+    }
+
+    fn every_page(config: &Config, full: bool) -> String {
+        let mut text = String::new();
+        for page in 1.. {
+            let next = review(config, page, full, "test").unwrap();
+            text.push_str(&next);
+            if !next.contains("more:") {
+                return text;
+            }
+        }
+        unreachable!()
+    }
+
+    #[test]
+    fn a_big_vault_sends_whole_folders_by_priority_until_the_pages_run_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mut paths = vec![
+            "Preferences/rule".to_string(),
+            "Projects/edited/x".to_string(),
+            "Projects/edited/neighbour".to_string(),
+            "Projects/read/x".to_string(),
+            "Projects/loaded/x".to_string(),
+            "Projects/a-stale/x".to_string(),
+        ];
+        paths.extend((0..200).map(|i| format!("Topics/big/n-{i}")));
         let day = std::time::Duration::from_secs(86_400);
         let cleanup = SystemTime::now() - 10 * day;
+        for path in &paths {
+            write(root, path);
+            touch(root, path, cleanup - day);
+        }
+        touch(root, "Projects/edited/x", cleanup + day);
+        let today = jiff::Zoned::now().date();
+        usage::record_read(root, "Projects/read/x", today - 2.days()).unwrap();
+        usage::record_read(root, "Projects/a-stale/x", today - 60.days()).unwrap();
+        usage::record_session(root, "loaded", today - 1.days()).unwrap();
+        let config = limited(root, 205, 2);
         cleanup::record(&config, cleanup, "test").unwrap();
-        let touch = |name: &str, at: SystemTime| {
-            fs::File::options()
-                .write(true)
-                .open(tmp.path().join(format!("Preferences/{name}.md")))
-                .unwrap()
-                .set_modified(at)
-                .unwrap();
-        };
-        touch("kept", cleanup - day);
-        touch("broken", cleanup - day);
-        touch("edited", cleanup + day);
 
-        let text = review(&config, 1, "test").unwrap();
+        let text = every_page(&config, false);
         assert!(
-            text.contains("\n1 of 3 notes changed since the last cleanup ("),
+            text.contains("\n6 of 206 notes: preferences, folders changed since 20"),
             "{text}"
         );
-        assert!(text.contains("## Preferences\n- edited | "), "{text}");
         assert!(
-            !text.contains("- kept |") && !text.contains("- broken |"),
+            text.contains("up to 2 pages (full=true for every note), then the problems"),
             "{text}"
         );
-        // Problems come from the whole vault, changed or not; the cleanup's own file is none of them.
+        let at = |heading: &str| {
+            text.find(&format!("## {heading}\n"))
+                .unwrap_or_else(|| panic!("{heading}: {text}"))
+        };
+        // Changed folders come whole; folders used lately come next, most recent first; the rest while pages last.
+        assert!(text.contains("- neighbour | "), "{text}");
+        assert!(at("Preferences") < at("Projects/edited"));
+        assert!(at("Projects/edited") < at("Projects/loaded"));
+        assert!(at("Projects/loaded") < at("Projects/read"));
+        assert!(at("Projects/read") < at("Projects/a-stale"));
+        assert!(!text.contains("## Topics/big"), "{text}");
+        // Problems come from the whole vault, the folders left out included.
+        assert!(text.contains("## check\n"), "{text}");
         assert!(text.contains("- Index.md: error: missing\n"), "{text}");
         assert!(!text.contains(cleanup::FILE), "{text}");
-        let recorded = cleanup::last(tmp.path()).unwrap();
         assert!(
-            recorded > cleanup + day,
+            cleanup::last(root).unwrap() > cleanup + day,
             "the review read to its end is the new cleanup"
         );
+    }
+
+    #[test]
+    fn up_to_the_threshold_or_on_demand_every_note_comes_whatever_the_pages() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(root, "Preferences/rule");
+        for i in 0..200 {
+            write(root, &format!("Topics/big/n-{i}"));
+        }
+        cleanup::record(&limited(root, 201, 1), SystemTime::now(), "test").unwrap();
+
+        let at_threshold = every_page(&limited(root, 201, 1), false);
+        assert!(
+            at_threshold.contains("\nall 201 notes, 0 changed since the last cleanup ("),
+            "{at_threshold}"
+        );
+        assert!(at_threshold.contains("- n-199 | "), "{at_threshold}");
+
+        let over = every_page(&limited(root, 200, 1), false);
+        assert!(over.contains("\n1 of 201 notes: "), "{over}");
+        assert!(!over.contains("- n-0 | "), "{over}");
+
+        let full = every_page(&limited(root, 200, 1), true);
+        assert!(full.contains("\nall 201 notes, "), "{full}");
+        assert!(
+            full.contains("more: call memory_review with page=2 and full=true\n"),
+            "{full}"
+        );
+        assert!(full.contains("- n-199 | "), "{full}");
     }
 
     #[test]
@@ -241,18 +445,21 @@ mod tests {
             .unwrap();
         }
         let config = Config {
-            vault: tmp.path().to_path_buf(),
             git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
         };
 
-        let first = review(&config, 1, "test").unwrap();
+        let first = review(&config, 1, false, "test").unwrap();
         assert!(
             first.contains("more: call memory_review with page=2"),
             "{first}"
         );
         assert_eq!(cleanup::last(tmp.path()), None);
         let mut page = 2;
-        while review(&config, page, "test").unwrap().contains("more:") {
+        while review(&config, page, false, "test")
+            .unwrap()
+            .contains("more:")
+        {
             page += 1;
         }
         assert!(cleanup::last(tmp.path()).is_some());
