@@ -24,7 +24,8 @@ jobs:
             install: curl https://cursor.com/install -fsS | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
             install-windows: irm 'https://cursor.com/install?win32=true' | iex
           - agent: antigravity
-            install: curl -fsSL https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            # Its server sometimes sends the script gzip-compressed (seen 2026-10-04): --compressed decodes it.
+            install: curl -fsSL --compressed --retry 3 https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
             install-windows: irm https://antigravity.google/cli/install.ps1 | iex
     name: ${{ matrix.agent }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
