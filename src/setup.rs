@@ -56,18 +56,10 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         let kept = format!("vault: kept at {}", config.vault.display());
         return Ok((vec![kept], true));
     }
-    let mut lines = Vec::new();
-    let path = Config::path()?;
-    if mode == Mode::Setup && path.exists() {
-        let added = config::add_missing(&path)?;
-        if !added.is_empty() {
-            lines.push(format!(
-                "config: added {} to {}",
-                added.join(", "),
-                path.display()
-            ));
-        }
-    }
+    let mut lines = match mode {
+        Mode::Setup => add_missing_settings()?.into_iter().collect(),
+        _ => Vec::new(),
+    };
     let ok = match Vault::load(&config.vault) {
         Ok(vault) => {
             lines.push(format!(
@@ -83,6 +75,17 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         }
     };
     Ok((lines, ok))
+}
+
+// A config file written by an older version gets the settings added since.
+fn add_missing_settings() -> Result<Option<String>, String> {
+    let path = Config::path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let added = config::add_missing(&path)?;
+    Ok((!added.is_empty())
+        .then(|| format!("config: added {} to {}", added.join(", "), path.display())))
 }
 
 // An agent not on this machine is only mentioned when the user named it.
