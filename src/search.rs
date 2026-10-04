@@ -10,7 +10,7 @@ const FILLERS: [&str; 20] = [
     "or", "so", "to", "we",
 ];
 
-fn words(text: &str, min_chars: usize) -> BTreeSet<String> {
+pub fn words(text: &str, min_chars: usize) -> BTreeSet<String> {
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| w.chars().count() >= min_chars)
@@ -54,25 +54,6 @@ pub fn search<'a>(notes: impl Iterator<Item = &'a Note>, query: &str) -> Vec<&'a
         .into_iter()
         .take(MAX_RESULTS)
         .map(|(_, n)| n)
-        .collect()
-}
-
-// Near-duplicate: at least two shared words, covering half of the shorter title + summary.
-pub fn similar<'a>(
-    notes: impl Iterator<Item = &'a Note>,
-    title: &str,
-    summary: &str,
-) -> Vec<&'a Note> {
-    let new = words(&format!("{title} {summary}"), 3);
-    notes
-        .filter(|note| {
-            let old = words(
-                &format!("{} {}", note.title(), note.summary().unwrap_or_default()),
-                3,
-            );
-            let shared = new.intersection(&old).count();
-            shared >= 2 && 2 * shared >= new.len().min(old.len())
-        })
         .collect()
 }
 
@@ -121,28 +102,5 @@ mod tests {
         assert_eq!(found("DB"), ["c"], "not the db in feedback");
         assert_eq!(found("how to upgrade go"), ["c"], "`to` matches nothing");
         assert!(found("to").is_empty());
-    }
-
-    #[test]
-    fn finds_near_duplicates_only() {
-        let notes = [
-            note(
-                "a",
-                "Commit rules",
-                "commit locally per step, never push",
-                "x",
-            ),
-            note("b", "Secrets", "never print secret values", "x"),
-        ];
-        let found = similar(
-            notes.iter(),
-            "Commit locally",
-            "commit each step locally, no push",
-        );
-        assert_eq!(
-            found.iter().map(|n| n.path.as_str()).collect::<Vec<_>>(),
-            ["a"]
-        );
-        assert!(similar(notes.iter(), "Database", "keep local data").is_empty());
     }
 }

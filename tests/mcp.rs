@@ -484,7 +484,7 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
         for i in 0..100 {
             std::fs::write(
                 dir.join(format!("fact-{i}.md")),
-                format!("---\ntype: project\nscope: {project}\nsummary: fact {i} of {project}, worded like a real summary of about one line\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Fact {i}\n\n**Why:** test.\n"),
+                format!("---\ntype: project\nscope: {project}\nsummary: fact {project}{i} detail{i}{project}\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Fact {i}\n\n**Why:** test.\n"),
             )
             .unwrap();
         }
@@ -575,6 +575,26 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
 
     let (is_error, _) = client.call("memory_review", json!({"page": 2}));
     assert!(is_error);
+
+    // An agent saves what an old note already says: the review names the pair once (#36).
+    let (_, saved) = client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "API fact", "summary": "fact api7 detail7api again",
+               "fact": "Again.", "source": "the user on 2026-10-04", "how_to_apply": "Never."}),
+    );
+    assert!(saved.starts_with("saved Preferences/api-fact"), "{saved}");
+    let (third, _) = review_pages(&mut client);
+    assert_eq!(third.len(), 1, "{third:?}");
+    assert_eq!(
+        third[0]
+            .matches(
+                "- Projects/api/fact-7.md: warning: near-duplicate of [[Preferences/api-fact]]"
+            )
+            .count(),
+        1,
+        "{}",
+        third[0]
+    );
     drop(client);
     assert!(child.wait().unwrap().success());
 }
