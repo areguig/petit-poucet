@@ -107,7 +107,7 @@ Commit each finished step locally; never push.
 | `memory_save` | Create or update a note; the Index and a git commit follow |
 | `memory_move` | Rename or re-scope a note, rewriting every link to it |
 | `memory_delete` | Delete a note (with a reason) and unlink it everywhere |
-| `memory_review` | One line per note with dates and read counts, for the cleanup agent |
+| `memory_review` | For the cleanup agent: the notes changed since the last cleanup (all of them the first time) and the problems found in the whole vault, in pages small enough for every agent |
 
 ### Skills
 
