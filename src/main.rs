@@ -9,6 +9,7 @@ mod config;
 mod copilot;
 mod cursor;
 mod delete;
+mod duplicates;
 mod edit;
 mod git;
 mod guard;

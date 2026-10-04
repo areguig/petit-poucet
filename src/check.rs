@@ -5,7 +5,7 @@ use std::fs;
 use crate::note::{self, REQUIRED_TAG};
 use crate::project::IDENTITY_FILE;
 use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, TOPICS, Vault};
-use crate::{index, secrets};
+use crate::{duplicates, index, secrets};
 
 // A note is one short fact; past this the body is probably several facts or history.
 pub const MAX_BODY_CHARS: usize = 1500;
@@ -89,6 +89,20 @@ pub fn check(vault: &Vault) -> Vec<Issue> {
                 level: Level::Warning,
                 message: format!(
                     "longer than {MAX_BODY_CHARS} characters: one short fact per note"
+                ),
+            });
+        }
+    }
+
+    // One short line per note after its group's first: a big group never makes a line too long for a review page.
+    for group in duplicates::groups(&vault.notes) {
+        for note in &group[1..] {
+            issues.push(Issue {
+                file: format!("{}.md", note.path),
+                level: Level::Warning,
+                message: format!(
+                    "near-duplicate of [[{}]]: merge them if they say the same",
+                    group[0].path
                 ),
             });
         }
@@ -213,6 +227,42 @@ mod tests {
             issues
                 .iter()
                 .any(|i| i.message == "looks like a secret (AWS access key)")
+        );
+    }
+
+    #[test]
+    fn each_near_duplicate_after_the_first_names_it_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join(PREFERENCES)).unwrap();
+        let note = |summary: &str| {
+            format!(
+                "---\ntype: user\nscope: all repos\nsummary: {summary}\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Commits\n\n**Why:** x\n"
+            )
+        };
+        for (name, summary) in [
+            ("a", "commit locally per step, never push"),
+            ("b", "commit each step locally, no push"),
+            ("c", "commit each step locally"),
+            ("d", "the staging database runs on port 5433"),
+        ] {
+            fs::write(
+                tmp.path().join(format!("{PREFERENCES}/{name}.md")),
+                note(summary),
+            )
+            .unwrap();
+        }
+        let vault = Vault::load(tmp.path()).unwrap();
+        let found: Vec<String> = check(&vault)
+            .iter()
+            .filter(|i| i.message.starts_with("near-duplicate"))
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "Preferences/b.md: warning: near-duplicate of [[Preferences/a]]: merge them if they say the same",
+                "Preferences/c.md: warning: near-duplicate of [[Preferences/a]]: merge them if they say the same",
+            ]
         );
     }
 
