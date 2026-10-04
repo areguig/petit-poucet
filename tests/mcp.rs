@@ -477,10 +477,6 @@ fn set_review_max_pages(home: &Path, pages: usize) {
     std::fs::write(&path, text).unwrap();
 }
 
-fn joined(pages: &[String]) -> String {
-    pages.concat()
-}
-
 // Over 300 notes, a later cleanup sends preferences, changed and recently used folders whole, then the rest while pages last (#89).
 #[test]
 fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
@@ -553,7 +549,7 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
     .unwrap();
     let (mut other_child, mut other_client, _) = start(other.path());
     let (there, notes) = review_pages(&mut other_client, false);
-    let text = joined(&there);
+    let text = there.concat();
     assert!(text.contains("\n101 of 301 notes: preferences, "), "{text}");
     assert_eq!(notes, 100, "the changed note's whole folder");
     assert!(text.contains("## Preferences\n- tabs | "), "{text}");
@@ -566,7 +562,7 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
     // A read makes its folder one of the recently used ones.
     other_client.call("memory_read", json!({"path": "Projects/web/fact-1"}));
     let (next, notes) = review_pages(&mut other_client, false);
-    let text = joined(&next);
+    let text = next.concat();
     assert_eq!(notes, 100);
     assert!(text.contains("## Projects/web\n"), "{text}");
     assert!(
@@ -615,7 +611,8 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
     assert!(saved.starts_with("saved Preferences/api-fact"), "{saved}");
     let (third, _) = review_pages(&mut client, false);
     assert_eq!(
-        joined(&third)
+        third
+            .concat()
             .matches(
                 "- Projects/api/fact-7.md: warning: near-duplicate of [[Preferences/api-fact]]"
             )

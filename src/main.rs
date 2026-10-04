@@ -22,6 +22,7 @@ mod lock;
 mod migrate;
 mod move_note;
 mod note;
+mod priority;
 mod project;
 mod review;
 mod save;
