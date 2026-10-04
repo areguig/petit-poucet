@@ -229,17 +229,23 @@ How it was built, and what changed on the way (owner's decisions, 2026-10-01):
 - **Update notice** (#69): once a day, session start checks the latest release in a detached process (`curl`, no TLS in the binary) and the next session tells the user; `PETIT_POUCET_NO_UPDATE_CHECK` turns it off. `update-informer` was considered and left out: its check is synchronous and its URL can't be pointed at a test server.
 - Bugs found on the way: a resumed Codex session reloaded its memory (#65); a Copilot plugin installed from a local folder went unseen (#54); `init` and `setup` failed without a git identity (#49).
 
-### 0.4: OpenCode, then memory quality over time
-- OpenCode (#10), moved from 0.3.
+### 0.4: memory that stays good (decided 2026-10-04)
+Memory quality before new reach: checks that are deterministic, so the `memory-cleanup` agent no longer has to find problems by reading every note, and migration from every agent `setup` supports. One PR per issue into `v0.4`:
+- #77 `memory_review` fits in one tool result in every agent (compact lines, a `scope` argument); #14 a size budget for the session-start Index.
+- #36 near-duplicate pairs across the vault; #35 file names that no longer match their title; #23 notes naming paths that no longer exist (report only, never an automatic fix).
+- #24 facts that expire: an optional re-check date that `check`, `memory_review` and `tidy-memory` bring up once passed.
+- #25 usage-driven cleanup: `tidy-memory` proposes notes nobody opens (`feedback` notes excluded: they apply from the Index without being read).
+- #22 `migrate-memory` covers every supported agent's instruction files and own memory (Codex memories, VS Code's memory tool, Cursor Memories, Antigravity rules and knowledge).
 
-Feature issues waiting for triage (#13–#25, #35, #36), among them:
-- Usage-driven cleanup: after a few weeks of read counts, `tidy-memory` proposes notes nobody opens (`feedback` notes excluded: they are applied from the Index without being read).
-- Stale facts: `check` reports notes naming a file or path that no longer exists; report only, never an automatic fix.
-- Facts that expire: an optional "re-check by" date (versions, MR status, deploy targets) that tidy brings up when it passes.
+### 0.5: one vault on several machines, then OpenCode
+Two sync routes, because users have different needs; petit-poucet itself never runs a sync service, and cloud sync services stay out of scope:
+- #81 Syncthing, peer to peer, plus the shared base: `Index.md` per machine (out of git), session start commits changes made outside petit-poucet under the vault lock, sync conflicts reported by `check` and session start.
+- #19 a git remote the user owns (opt-in `git_sync`): fetch outside the vault lock, push in the background; also the route for cloud agents.
+- OpenCode (#10), delayed from 0.4.
 
 ### Later, only when needed
 - Homebrew tap and `cargo install`, once the install script has users.
 - Search that scales: better ranking (stems, BM25) once vaults reach several hundred notes; semantic search stays optional behind `memory_search`.
 
 ### Out of scope
-Team or shared vaults, sharing or exporting notes between vaults, cloud sync, automatic capture from transcripts, and a GUI of our own. (Codex was out of scope until 2026-10-01.)
+Team or shared vaults, sharing or exporting notes between vaults, cloud sync services (syncing through Syncthing or the user's own git remote is planned for 0.5), automatic capture from transcripts, and a GUI of our own. (Codex was out of scope until 2026-10-01.)
