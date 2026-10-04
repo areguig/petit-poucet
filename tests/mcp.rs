@@ -599,6 +599,65 @@ fn a_cleanup_reviews_the_whole_vault_once_then_only_what_changed() {
     assert!(child.wait().unwrap().success());
 }
 
+// Usage lives in the vault: a read never commits alone, and every machine's reads add up (#88).
+#[test]
+fn usage_rides_with_the_next_commit_and_adds_up_across_machines() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = |title: &str| {
+        json!({"type": "user", "scope": "all repos", "title": title, "summary": format!("about {title}"),
+               "fact": "A fact.", "source": "test on 2026-10-04", "how_to_apply": "Test."})
+    };
+    let (mut child, mut client, _) = start(home.path());
+    client.call("memory_save", note("tabs"));
+    let commits = git_log(&vault).lines().count();
+    client.call("memory_read", json!({"path": "Preferences/tabs"}));
+    client.call("memory_read", json!({"path": "Preferences/tabs"}));
+    assert_eq!(
+        git_log(&vault).lines().count(),
+        commits,
+        "a read never commits"
+    );
+    client.call("memory_save", note("spaces"));
+    let files = std::process::Command::new("git")
+        .args(["show", "--name-only", "--format=", "HEAD"])
+        .current_dir(&vault)
+        .output()
+        .unwrap();
+    let files = String::from_utf8_lossy(&files.stdout).into_owned();
+    assert!(
+        files.contains(".usage/"),
+        "usage rides with the save: {files}"
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+
+    // Another machine gets the vault by sync, reads the note once, and sees every machine's reads.
+    let other = TempDir::new().unwrap();
+    let synced = other.path().join("vault");
+    sync(&vault, &synced);
+    petit_poucet(other.path())
+        .args(["init", synced.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut other_child, mut other_client, _) = start(other.path());
+    other_client.call("memory_read", json!({"path": "Preferences/tabs"}));
+    let (pages, _) = review_pages(&mut other_client);
+    assert!(pages[0].contains("- tabs | user | 2026-"), "{}", pages[0]);
+    assert!(
+        pages[0].contains(" | 3r "),
+        "2 reads there + 1 here: {}",
+        pages[0]
+    );
+    assert_eq!(std::fs::read_dir(synced.join(".usage")).unwrap().count(), 2);
+    drop(other_client);
+    assert!(other_child.wait().unwrap().success());
+}
+
 #[test]
 fn two_agents_writing_at_once_lose_nothing() {
     const EACH: usize = 15;
@@ -646,15 +705,24 @@ fn two_agents_writing_at_once_lose_nothing() {
     assert_eq!(git_log(&vault).lines().count(), 2 + 2 * EACH);
     let index = std::fs::read_to_string(vault.join("Index.md")).unwrap();
     assert_eq!(index.matches("- [[Preferences/").count(), 1 + 2 * EACH);
-    let usage = std::fs::read_to_string(vault.join(".petit-poucet/usage.json")).unwrap();
+    // One machine, so one usage file in the vault.
+    let files: Vec<_> = std::fs::read_dir(vault.join(".usage")).unwrap().collect();
+    assert_eq!(files.len(), 1);
+    let usage = std::fs::read_to_string(files[0].as_ref().unwrap().path()).unwrap();
     let usage: Value = serde_json::from_str(&usage).unwrap();
-    assert_eq!(usage["Preferences/shared"]["reads"], 2 * EACH);
+    assert_eq!(usage["notes"]["Preferences/shared"]["reads"], 2 * EACH);
     let status = std::process::Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(&vault)
         .output()
         .unwrap();
-    assert_eq!(String::from_utf8_lossy(&status.stdout), "", "all committed");
+    // A read never commits on its own: only the last reads' usage may wait for the next commit.
+    let pending: Vec<String> = String::from_utf8_lossy(&status.stdout)
+        .lines()
+        .filter(|l| !l.contains(".usage/"))
+        .map(str::to_string)
+        .collect();
+    assert!(pending.is_empty(), "all committed: {pending:?}");
 }
 
 #[test]
