@@ -11,15 +11,17 @@ pub struct Config {
     pub vault: PathBuf,
     pub git_autocommit: bool,
     #[serde(flatten)]
-    pub review: Review,
+    pub limits: Limits,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct Review {
+pub struct Limits {
     pub full_review_max_notes: usize,
     pub review_max_pages: usize,
     pub active_days: i64,
     pub unused_days: i64,
+    pub summary_max_chars: usize,
+    pub index_max_notes: usize,
 }
 
 impl Config {
@@ -27,11 +29,13 @@ impl Config {
         Config {
             vault,
             git_autocommit: true,
-            review: Review {
+            limits: Limits {
                 full_review_max_notes: 300,
                 review_max_pages: 10,
                 active_days: 30,
                 unused_days: 90,
+                summary_max_chars: 200,
+                index_max_notes: 100,
             },
         }
     }
@@ -118,13 +122,15 @@ mod tests {
                 "git_autocommit",
                 "full_review_max_notes",
                 "active_days",
-                "unused_days"
+                "unused_days",
+                "summary_max_chars",
+                "index_max_notes"
             ]
         );
         assert!(text.starts_with(old), "{text}");
         let config: Config = toml::from_str(&text).unwrap();
-        assert_eq!(config.review.review_max_pages, 4);
-        assert_eq!(config.review.active_days, 30);
+        assert_eq!(config.limits.review_max_pages, 4);
+        assert_eq!(config.limits.active_days, 30);
         assert!(config.git_autocommit);
         assert_eq!(with_missing(&text).unwrap(), (text.clone(), vec![]));
     }
@@ -134,7 +140,7 @@ mod tests {
         let text = toml::to_string(&Config::new("/v".into())).unwrap();
         assert_eq!(
             text,
-            "vault = \"/v\"\ngit_autocommit = true\nfull_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\n"
+            "vault = \"/v\"\ngit_autocommit = true\nfull_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\nsummary_max_chars = 200\nindex_max_notes = 100\n"
         );
     }
 }

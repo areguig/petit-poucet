@@ -1,5 +1,6 @@
 mod agent;
 mod antigravity;
+mod budget;
 mod change;
 mod check;
 mod checkouts;
@@ -158,8 +159,9 @@ fn run_setup(agent: Option<agent::Agent>, check: bool, uninstall: bool) -> Resul
 }
 
 fn run_check() -> Result<bool, String> {
-    let vault = Vault::load(&Config::load()?.vault)?;
-    let issues = check::check(&vault);
+    let config = Config::load()?;
+    let vault = Vault::load(&config.vault)?;
+    let issues = check::check(&vault, &config.limits);
     for issue in &issues {
         println!("{issue}");
     }

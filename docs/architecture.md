@@ -42,6 +42,12 @@ A folder comes whole so a note is judged next to its neighbours. Reading the las
 
 Why the limits: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. 10 pages of 200-character summaries hold about 300 notes, about 37k tokens of input per cleanup.
 
+## Index budget and summary length (`check`)
+Every session loads the preferences and its project's notes, one Index line each, so their count is a cost paid in every session.
+- `check` warns when the preferences alone, or the preferences plus one project, exceed `index_max_notes` (100); the session-start line tells the user to ask for a tidy-up.
+- `check` warns about a summary over `summary_max_chars` (200 characters): one short fact per note keeps the Index and the review small.
+
+## Settings
 The limits live in `~/.config/petit-poucet/config.toml`. `init` writes every setting; reading a config written by an older version writes in the settings it lacks, keeping the user's own lines and comments, so the file always shows the values in effect.
 
 ## Paths gone from the checkout (`check`)
