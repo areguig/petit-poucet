@@ -55,11 +55,11 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
             format!("{PEBBLE} memory unavailable: {e}"),
         ),
     };
-    if let Some(version) = update::newer() {
+    if let Some(notice) = update::newer().map(|version| update::notice(&version)) {
         match agent.shows_hook_messages() {
-            true => message.push_str(&format!("\n{PEBBLE} {}", update::notice(&version))),
+            true => message.push_str(&format!("\n{PEBBLE} {notice}")),
             false => context.push_str(&format!(
-                "\n\npetit-poucet {version} is out: tell the user once, in one line, to run its installer again."
+                "\n\nTell the user once, in one line: petit-poucet: {notice}."
             )),
         }
     }

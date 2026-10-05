@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
-use std::fs;
 use std::time::SystemTime;
 
 use jiff::civil::Date;
@@ -24,7 +23,7 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
     let started = SystemTime::now();
     let vault = Vault::load(&config.vault)?;
     let since = cleanup::last(&vault.root);
-    let changed = changed_since(&vault, since);
+    let changed = cleanup::changed_since(&vault, since);
     let activity = usage::load(&vault.root);
     let today = jiff::Zoned::now().date();
     let unused = unused::find(&vault, &activity, config.limits.unused_days, today);
@@ -128,20 +127,6 @@ fn scope(
             t.strftime("%Y-%m-%d")
         ),
     }
-}
-
-// Every note before the first cleanup; a note whose file time can't be read counts as changed.
-fn changed_since(vault: &Vault, since: Option<SystemTime>) -> Vec<&Note> {
-    let modified = |note: &Note| {
-        fs::metadata(vault.root.join(format!("{}.md", note.path)))
-            .and_then(|m| m.modified())
-            .ok()
-    };
-    vault
-        .notes
-        .iter()
-        .filter(|note| since.is_none_or(|since| modified(note).is_none_or(|m| m > since)))
-        .collect()
 }
 
 // Items are (section, line); a page that continues a section repeats its heading.

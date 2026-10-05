@@ -87,7 +87,9 @@ fn session_start_tells_of_a_newer_release_found_in_the_background() {
     let cursor = session_start(&mut command(home.path(), &url), "cursor");
     let context = cursor["additional_context"].as_str().unwrap();
     assert!(
-        context.ends_with("petit-poucet 99.0.0 is out: tell the user once, in one line, to run its installer again."),
+        context.ends_with(
+            "Tell the user once, in one line: petit-poucet: 99.0.0 is out: run the installer again."
+        ),
         "{context}"
     );
 }

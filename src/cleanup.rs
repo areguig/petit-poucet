@@ -5,7 +5,8 @@ use std::time::SystemTime;
 use jiff::Timestamp;
 
 use crate::config::Config;
-use crate::vault::write_atomic;
+use crate::note::Note;
+use crate::vault::{Vault, write_atomic};
 use crate::{git, lock, usage};
 
 // In the vault (a dot-file the loader and Obsidian skip), synced and committed: a cleanup counts on every machine.
@@ -31,6 +32,20 @@ pub fn record(config: &Config, at: SystemTime, agent: &str) -> Result<(), String
         git::commit(root, &paths, &format!("cleanup: memory reviewed ({agent})"))?;
     }
     Ok(())
+}
+
+// Every note before the first cleanup; a note whose file time can't be read counts as changed.
+pub fn changed_since(vault: &Vault, since: Option<SystemTime>) -> Vec<&Note> {
+    let modified = |note: &Note| {
+        fs::metadata(vault.root.join(format!("{}.md", note.path)))
+            .and_then(|m| m.modified())
+            .ok()
+    };
+    vault
+        .notes
+        .iter()
+        .filter(|note| since.is_none_or(|since| modified(note).is_none_or(|m| m > since)))
+        .collect()
 }
 
 #[cfg(test)]
