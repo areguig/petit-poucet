@@ -245,6 +245,8 @@ Memory quality before new reach: checks that are deterministic, so the `memory-c
 
 **Release gate (owner's decision 2026-10-04):** #77 alone made later cleanups weaker than 0.3, which re-read every summary each time. 0.4 ships only once #88, #89, #25, #23, #14 (summary length) and #84 are merged, and the owner's test session confirms, on a copy of the real vault, that 0.4 finds at least everything 0.3 finds.
 
+**Status 2026-10-05:** every 0.4 issue is merged into `v0.4`: #77, #36, #88, #89, #25, #23, #14, #84, #22, plus the Windows write fix #101 found on the way (a file another process was reading couldn't be replaced, which lost the update check's write). #35 and #24 moved to triage. What remains before the release is the owner's test session, from the checklist compiled from every PR's manual check, starting with the 0.3 vs 0.4 cleanup comparison.
+
 ### 0.5: one vault on several machines, then OpenCode
 Two sync routes, because users have different needs; petit-poucet itself never runs a sync service, and cloud sync services stay out of scope:
 - #81 Syncthing, peer to peer, plus the shared base: `Index.md` per machine (out of git), session start commits changes made outside petit-poucet under the vault lock, sync conflicts reported by `check` and session start.
