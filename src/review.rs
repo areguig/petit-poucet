@@ -28,7 +28,7 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
     let activity = usage::load(&vault.root);
     let today = jiff::Zoned::now().date();
     let unused = unused::find(&vault, &activity, config.limits.unused_days, today);
-    let findings: Vec<Item> = check::check(&vault)
+    let findings: Vec<Item> = check::check(&vault, &config.limits)
         .into_iter()
         .map(|issue| ("check".to_string(), format!("- {issue}")))
         .chain(

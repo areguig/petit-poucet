@@ -32,12 +32,13 @@ Projects/beta/bad-yaml.md: error: frontmatter: line 3 column 10: expected string
 Projects/beta/no-frontmatter.md: error: frontmatter: no frontmatter
 Projects/beta/secret.md: error: looks like a secret (AWS access key)
 Projects/beta/too-long.md: warning: longer than 1500 characters: one short fact per note
+Projects/beta/too-long.md: warning: summary over 200 characters: one short fact per note, split or shorten it
 Projects/delta/_project.md: error: remote github.com/example/alpha is claimed by projects alpha, delta
 Projects/gamma/_project.md: error: missing
 Topics/homelab/wrong-scope.md: error: scope is `all repos`, expected `homelab`
 Topics/homelab/wrong-scope.md: warning: near-duplicate of [[Preferences/wrong-scope]]: merge them if they say the same
 scratch.md: error: not in Preferences/, Projects/<project>/ or Topics/<topic>/
-notes: 20, errors: 17, warnings: 2
+notes: 20, errors: 17, warnings: 3
 "
     );
 }
@@ -125,7 +126,7 @@ fn env_var_overrides_the_configured_vault() {
         .arg("check")
         .output()
         .unwrap();
-    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 2\n"));
+    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 3\n"));
 }
 
 #[test]
@@ -299,6 +300,25 @@ fn session_start_injects_rules_and_the_project_index() {
     assert!(
         copilot.get("systemMessage").is_none(),
         "Copilot has no user message"
+    );
+
+    // Past the Index budget, the user is told how to shrink it (#14).
+    let config = home.path().join(".config/petit-poucet/config.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    fs::write(
+        &config,
+        text.replace("index_max_notes = 100", "index_max_notes = 5"),
+    )
+    .unwrap();
+    let claude: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        &event,
+    ))
+    .unwrap();
+    assert_eq!(
+        claude["systemMessage"],
+        "🪨 petit-poucet · 10 notes loaded (preferences + alpha), over 5: ask your agent to tidy your memory"
     );
 }
 
@@ -543,7 +563,7 @@ fn an_older_config_gets_the_new_settings_written_in() {
     assert_eq!(
         fs::read_to_string(&config).unwrap(),
         format!(
-            "{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\n"
+            "{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\nsummary_max_chars = 200\nindex_max_notes = 100\n"
         )
     );
 }

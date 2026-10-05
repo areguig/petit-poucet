@@ -2,10 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
 
+use crate::config::Limits;
 use crate::note::{self, REQUIRED_TAG};
 use crate::project::IDENTITY_FILE;
 use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, TOPICS, Vault};
-use crate::{checkouts, duplicates, index, secrets, stale_paths};
+use crate::{budget, checkouts, duplicates, index, secrets, stale_paths};
 
 // A note is one short fact; past this the body is probably several facts or history.
 pub const MAX_BODY_CHARS: usize = 1500;
@@ -43,7 +44,7 @@ impl fmt::Display for Issue {
     }
 }
 
-pub fn check(vault: &Vault) -> Vec<Issue> {
+pub fn check(vault: &Vault, limits: &Limits) -> Vec<Issue> {
     let mut issues = Vec::new();
 
     for note in &vault.notes {
@@ -83,6 +84,16 @@ pub fn check(vault: &Vault) -> Vec<Issue> {
         if let Some(kind) = secrets::find(&note.body).or_else(|| secrets::find(note.summary()?)) {
             error(format!("looks like a secret ({kind})"));
         }
+        let max = limits.summary_max_chars;
+        if note.summary().is_some_and(|s| s.chars().count() > max) {
+            issues.push(Issue {
+                file: file.clone(),
+                level: Level::Warning,
+                message: format!(
+                    "summary over {max} characters: one short fact per note, split or shorten it"
+                ),
+            });
+        }
         if note.body.chars().count() > MAX_BODY_CHARS {
             issues.push(Issue {
                 file,
@@ -99,6 +110,14 @@ pub fn check(vault: &Vault) -> Vec<Issue> {
             file: format!("{}.md", note.path),
             level: Level::Warning,
             message: format!("names `{path}`, missing from {}", checkout.display()),
+        });
+    }
+
+    for (file, message) in budget::over(vault, limits.index_max_notes) {
+        issues.push(Issue {
+            file,
+            level: Level::Warning,
+            message,
         });
     }
 
@@ -196,8 +215,61 @@ mod tests {
 
     use super::*;
 
+    fn limits() -> Limits {
+        crate::config::Config::new(std::path::PathBuf::new()).limits
+    }
+
+    #[test]
+    fn a_session_index_over_its_budget_is_reported() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join(PREFERENCES)).unwrap();
+        for slug in ["a", "b"] {
+            fs::write(tmp.path().join(format!("{PREFERENCES}/{slug}.md")), "x").unwrap();
+        }
+        let limits = Limits {
+            index_max_notes: 1,
+            ..limits()
+        };
+        let issues: Vec<String> = check(&Vault::load(tmp.path()).unwrap(), &limits)
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            issues.contains(&"Preferences: warning: every session loads its 2 notes, over 1: merge or move some".to_string()),
+            "{issues:?}"
+        );
+    }
+
+    #[test]
+    fn a_summary_over_the_limit_is_one_warning() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join(PREFERENCES)).unwrap();
+        for (slug, length) in [("at-limit", 200), ("over", 201)] {
+            fs::write(
+                tmp.path().join(format!("{PREFERENCES}/{slug}.md")),
+                format!(
+                    "---\ntype: user\nscope: all repos\nsummary: {}\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n**Why:** x\n",
+                    "é".repeat(length)
+                ),
+            )
+            .unwrap();
+        }
+        let warnings: Vec<String> = check(&Vault::load(tmp.path()).unwrap(), &limits())
+            .iter()
+            .filter(|i| i.level == Level::Warning)
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            warnings,
+            [
+                "Preferences/over.md: warning: summary over 200 characters: one short fact per note, split or shorten it"
+            ],
+            "counted in characters, not bytes"
+        );
+    }
+
     fn index_issues(vault_root: &std::path::Path) -> Vec<String> {
-        check(&Vault::load(vault_root).unwrap())
+        check(&Vault::load(vault_root).unwrap(), &limits())
             .iter()
             .filter(|i| i.file == INDEX_FILE)
             .map(|i| i.message.clone())
@@ -214,7 +286,7 @@ mod tests {
 
         let vault = Vault::load(tmp.path()).unwrap();
         fs::write(tmp.path().join(INDEX_FILE), index::generate(&vault)).unwrap();
-        assert!(check(&vault).is_empty());
+        assert!(check(&vault, &limits()).is_empty());
 
         fs::write(
             &note,
@@ -230,7 +302,7 @@ mod tests {
         let note = tmp.path().join("Preferences/a.md");
         fs::create_dir(note.parent().unwrap()).unwrap();
         fs::write(&note, "---\ntype: user\nscope: all repos\nsummary: key AKIAIOSFODNN7EXAMPLE\ncreated: 2026-09-24\ntags: [agent-memory]\n---\n**Why:** test\n").unwrap();
-        let issues = check(&Vault::load(tmp.path()).unwrap());
+        let issues = check(&Vault::load(tmp.path()).unwrap(), &limits());
         assert!(
             issues
                 .iter()
@@ -260,7 +332,7 @@ mod tests {
             .unwrap();
         }
         let vault = Vault::load(tmp.path()).unwrap();
-        let found: Vec<String> = check(&vault)
+        let found: Vec<String> = check(&vault, &limits())
             .iter()
             .filter(|i| i.message.starts_with("near-duplicate"))
             .map(ToString::to_string)
@@ -280,7 +352,7 @@ mod tests {
         let note = tmp.path().join("Preferences/a.md");
         fs::create_dir(note.parent().unwrap()).unwrap();
         fs::write(&note, "---\ntype: user\nscope: all repos\nsummary: |\n  two\n  lines\ncreated: 2026-09-24\ntags: [agent-memory]\n---\n**Why:** test\n").unwrap();
-        let issues = check(&Vault::load(tmp.path()).unwrap());
+        let issues = check(&Vault::load(tmp.path()).unwrap(), &limits());
         assert!(
             issues
                 .iter()

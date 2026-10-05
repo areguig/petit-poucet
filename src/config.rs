@@ -20,6 +20,8 @@ pub struct Limits {
     pub review_max_pages: usize,
     pub active_days: i64,
     pub unused_days: i64,
+    pub summary_max_chars: usize,
+    pub index_max_notes: usize,
 }
 
 impl Config {
@@ -32,6 +34,8 @@ impl Config {
                 review_max_pages: 10,
                 active_days: 30,
                 unused_days: 90,
+                summary_max_chars: 200,
+                index_max_notes: 100,
             },
         }
     }
@@ -118,7 +122,9 @@ mod tests {
                 "git_autocommit",
                 "full_review_max_notes",
                 "active_days",
-                "unused_days"
+                "unused_days",
+                "summary_max_chars",
+                "index_max_notes"
             ]
         );
         assert!(text.starts_with(old), "{text}");
@@ -134,7 +140,7 @@ mod tests {
         let text = toml::to_string(&Config::new("/v".into())).unwrap();
         assert_eq!(
             text,
-            "vault = \"/v\"\ngit_autocommit = true\nfull_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\n"
+            "vault = \"/v\"\ngit_autocommit = true\nfull_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\nsummary_max_chars = 200\nindex_max_notes = 100\n"
         );
     }
 }

@@ -150,7 +150,7 @@ The script installs the latest release in `~/.local/bin` after checking its SHA-
 
 Coming from the 0.2 plugin for Claude Code or Copilot? `petit-poucet setup` removes it with the agent's own command, so its hooks don't run twice.
 
-Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it), with the cleanup review's limits: `full_review_max_notes`, `review_max_pages`, `active_days` and `unused_days`. Nothing is ever pushed from the vault. Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
+Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it), with the limits `check` and the cleanup review apply: `full_review_max_notes`, `review_max_pages`, `active_days`, `unused_days`, `summary_max_chars` and `index_max_notes`. Nothing is ever pushed from the vault. Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
 
 ## Browse your memory in Obsidian
 
@@ -163,7 +163,7 @@ The same binary has a few commands for you (install it with the [install script]
 | Command | What it does |
 |---|---|
 | `petit-poucet setup` | Set up memory for every agent on this machine and create the vault if there's none; `--check` reports what's missing, `--uninstall` removes petit-poucet from the agents (never the vault), `--agent <name>` limits it to one |
-| `petit-poucet check` | Validate the vault: frontmatter, summaries, scopes, links, secrets, near-duplicates, paths gone from a project's checkout, Index; and report the latest release |
+| `petit-poucet check` | Validate the vault: frontmatter, summaries and their length, scopes, links, secrets, near-duplicates, paths gone from a project's checkout, the Index and its size per session; and report the latest release |
 | `petit-poucet init [path]` | Create a vault (default `~/agent-memory`) and the config file |
 | `petit-poucet migrate` | Upgrade a hand-maintained vault: summaries from its old Index, full-path links, project identities, git |
 

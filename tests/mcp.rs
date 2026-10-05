@@ -504,15 +504,15 @@ fn review_pages(client: &mut Client, full: bool) -> (Vec<String>, usize) {
     }
 }
 
-// Lowers a limit in a config `init` wrote.
-fn set_review_max_pages(home: &Path, pages: usize) {
+// Changes a limit in a config `init` wrote.
+fn set_limit(home: &Path, key: &str, value: usize) {
     let path = home.join(".config/petit-poucet/config.toml");
     let text = std::fs::read_to_string(&path).unwrap();
-    assert!(text.contains("review_max_pages = 10\n"), "{text}");
-    let text = text.replace(
-        "review_max_pages = 10\n",
-        &format!("review_max_pages = {pages}\n"),
-    );
+    let line = text
+        .lines()
+        .find(|l| l.starts_with(&format!("{key} = ")))
+        .unwrap_or_else(|| panic!("{key} not in {text}"));
+    let text = text.replace(line, &format!("{key} = {value}"));
     std::fs::write(&path, text).unwrap();
 }
 
@@ -525,6 +525,8 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
         .args(["init", vault.to_str().unwrap()])
         .assert()
         .success();
+    // A session loads a project's 100 notes: over the Index budget, a problem this test isn't about.
+    set_limit(home.path(), "index_max_notes", 200);
     for project in ["api", "web", "infra"] {
         let dir = vault.join("Projects").join(project);
         std::fs::create_dir_all(&dir).unwrap();
@@ -578,7 +580,8 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
         .args(["init", synced.to_str().unwrap()])
         .assert()
         .success();
-    set_review_max_pages(other.path(), 3);
+    set_limit(other.path(), "review_max_pages", 3);
+    set_limit(other.path(), "index_max_notes", 200);
     let note = synced.join("Projects/infra/fact-3.md");
     let text = std::fs::read_to_string(&note).unwrap();
     std::fs::write(

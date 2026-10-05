@@ -267,7 +267,13 @@ mod tests {
             "# Commit rules\n\nThe fact.\n\n**Why:** the user said so on 2026-09-24\n**How to apply:** Always.\n"
         );
         let vault = Vault::load(&config.vault).unwrap();
-        assert!(crate::check::check(&vault).is_empty());
+        assert!(
+            crate::check::check(
+                &vault,
+                &crate::config::Config::new(Default::default()).limits
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -421,7 +427,13 @@ mod tests {
                 .scope,
             "my-repo"
         );
-        assert!(crate::check::check(&vault).is_empty());
+        assert!(
+            crate::check::check(
+                &vault,
+                &crate::config::Config::new(Default::default()).limits
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -463,7 +475,13 @@ mod tests {
             "saved Projects/someone-else-api/deploy",
             "the new project is then found by its remote"
         );
-        assert!(crate::check::check(&Vault::load(&config.vault).unwrap()).is_empty());
+        assert!(
+            crate::check::check(
+                &Vault::load(&config.vault).unwrap(),
+                &crate::config::Config::new(Default::default()).limits
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -497,7 +515,13 @@ mod tests {
         );
         let note = read(&config, "Topics/home-lab/nas-backups");
         assert_eq!(note.frontmatter.unwrap().scope, "home-lab");
-        assert!(crate::check::check(&Vault::load(&config.vault).unwrap()).is_empty());
+        assert!(
+            crate::check::check(
+                &Vault::load(&config.vault).unwrap(),
+                &crate::config::Config::new(Default::default()).limits
+            )
+            .is_empty()
+        );
 
         let mut nameless = request("x");
         nameless.topic = Some("  ".into());

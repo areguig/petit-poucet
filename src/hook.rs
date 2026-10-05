@@ -101,9 +101,14 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), Strin
         .filter(|n| index::in_session(n.place(), project))
         .count();
     let scope = project.map_or("preferences".to_string(), |p| format!("preferences + {p}"));
+    let max = config.limits.index_max_notes;
+    let over = match loaded > max {
+        true => format!(", over {max}: ask your agent to tidy your memory"),
+        false => String::new(),
+    };
     Ok((
         format!("{RULES}\n{}", index::for_project(&vault, project)),
-        format!("{PEBBLE} {loaded} notes loaded ({scope})"),
+        format!("{PEBBLE} {loaded} notes loaded ({scope}){over}"),
     ))
 }
 
