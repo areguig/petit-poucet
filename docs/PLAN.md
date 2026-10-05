@@ -241,7 +241,7 @@ Memory quality before new reach: checks that are deterministic, so the `memory-c
 - #23 notes naming paths that no longer exist (report only, never an automatic fix): identifying a project records its checkout on this machine (`.petit-poucet/checkouts.json`, never synced), and `check` warns about relative paths in backticks missing from it. **Built 2026-10-04.**
 - Moved out of 0.4 to triage (owner's decision 2026-10-04): #35 file names that no longer match their title (the full review shows title and slug side by side), #24 facts that expire (a new frontmatter field agents must set).
 - #25 usage-driven cleanup: the review lists notes not read, written or updated for `unused_days` (90), once usage has counted that long (`since` in the usage files); `feedback` notes excluded: they apply from the Index without being read. **Built 2026-10-04.**
-- #22 `migrate-memory` covers every supported agent's instruction files and own memory (Codex memories, VS Code's memory tool, Cursor Memories, Antigravity rules and knowledge).
+- #22 `migrate-memory` covers every supported agent's instruction files and own memory (Codex memories, VS Code's memory tool, Cursor Memories, Antigravity rules and knowledge). **Built 2026-10-05**; a unit test fails when an agent in `Agent::ALL` has no sources in the skill, and `tests/fixtures/migrate-home` is a home for trying it by hand.
 
 **Release gate (owner's decision 2026-10-04):** #77 alone made later cleanups weaker than 0.3, which re-read every summary each time. 0.4 ships only once #88, #89, #25, #23, #14 (summary length) and #84 are merged, and the owner's test session confirms, on a copy of the real vault, that 0.4 finds at least everything 0.3 finds.
 
