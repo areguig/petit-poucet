@@ -369,6 +369,70 @@ fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
     );
 }
 
+// A cleanup that is due is announced at session start, to the user or through the agent, until one is done (#84).
+#[test]
+fn session_start_reminds_of_a_due_cleanup() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let config = home.path().join(".config/petit-poucet/config.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    fs::write(
+        &config,
+        text.replace("cleanup_reminder_notes = 30", "cleanup_reminder_notes = 5"),
+    )
+    .unwrap();
+    let start = |agent: &str| -> serde_json::Value {
+        serde_json::from_str(&hook(
+            home.path(),
+            &["session-start", "--agent", agent],
+            "{}",
+        ))
+        .unwrap()
+    };
+    let due = "a memory cleanup is due (20 notes, never cleaned up): ask to tidy your memory";
+
+    let claude = start("claude");
+    assert!(
+        claude["systemMessage"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("\n🪨 petit-poucet · {due}")),
+        "{claude}"
+    );
+    let copilot = start("copilot");
+    let context = copilot["additionalContext"].as_str().unwrap();
+    assert!(
+        context.contains("or looks wrong or outdated: fix it now (memory_save or memory_delete)"),
+        "the clean-as-you-go rule: {context}"
+    );
+    assert!(
+        copilot["additionalContext"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!(
+                "Tell the user once, in one line: petit-poucet: {due}."
+            )),
+        "{copilot}"
+    );
+
+    // A cleanup read to its end records its time; nothing has changed since.
+    let now = jiff::Timestamp::now();
+    fs::write(vault.join(".last-cleanup"), format!("{now:.9}\n")).unwrap();
+    let claude = start("claude");
+    assert!(
+        !claude["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("cleanup is due"),
+        "{claude}"
+    );
+}
+
 #[test]
 fn session_start_says_when_memory_is_unavailable() {
     let home = TempDir::new().unwrap();
@@ -563,7 +627,7 @@ fn an_older_config_gets_the_new_settings_written_in() {
     assert_eq!(
         fs::read_to_string(&config).unwrap(),
         format!(
-            "{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\nsummary_max_chars = 200\nindex_max_notes = 100\n"
+            "{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\nsummary_max_chars = 200\nindex_max_notes = 100\ncleanup_reminder_notes = 30\ncleanup_reminder_days = 30\n"
         )
     );
 }
