@@ -32,11 +32,13 @@ Projects/beta/bad-yaml.md: error: frontmatter: line 3 column 10: expected string
 Projects/beta/no-frontmatter.md: error: frontmatter: no frontmatter
 Projects/beta/secret.md: error: looks like a secret (AWS access key)
 Projects/beta/too-long.md: warning: longer than 1500 characters: one short fact per note
+Projects/beta/too-long.md: warning: summary over 200 characters: one short fact per note, split or shorten it
 Projects/delta/_project.md: error: remote github.com/example/alpha is claimed by projects alpha, delta
 Projects/gamma/_project.md: error: missing
 Topics/homelab/wrong-scope.md: error: scope is `all repos`, expected `homelab`
+Topics/homelab/wrong-scope.md: warning: near-duplicate of [[Preferences/wrong-scope]]: merge them if they say the same
 scratch.md: error: not in Preferences/, Projects/<project>/ or Topics/<topic>/
-notes: 20, errors: 17, warnings: 1
+notes: 20, errors: 17, warnings: 3
 "
     );
 }
@@ -124,7 +126,7 @@ fn env_var_overrides_the_configured_vault() {
         .arg("check")
         .output()
         .unwrap();
-    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 1\n"));
+    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 3\n"));
 }
 
 #[test]
@@ -260,6 +262,25 @@ fn session_start_injects_rules_and_the_project_index() {
     assert!(context.contains("[[Projects/alpha/plugin-design]]"));
     assert!(!context.contains("Projects/beta"));
     assert!(!context.contains("[[Topics/"), "topic notes are not loaded");
+    // The session counts as a use of its project, in this machine's usage file in the vault (#88).
+    let usage = fs::read_dir(vault.join(".usage"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap();
+    let usage: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(usage.path()).unwrap()).unwrap();
+    assert!(usage["projects"]["alpha"].is_string(), "{usage}");
+    // And it records where the project is checked out on this machine, outside the synced vault (#23).
+    let checkouts: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(vault.join(".petit-poucet/checkouts.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        checkouts["alpha"],
+        alpha_checkout.to_str().unwrap(),
+        "{checkouts}"
+    );
     assert!(
         context.ends_with("memory_index with `topic` lists one): homelab (2)\n"),
         "{context}"
@@ -279,6 +300,25 @@ fn session_start_injects_rules_and_the_project_index() {
     assert!(
         copilot.get("systemMessage").is_none(),
         "Copilot has no user message"
+    );
+
+    // Past the Index budget, the user is told how to shrink it (#14).
+    let config = home.path().join(".config/petit-poucet/config.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    fs::write(
+        &config,
+        text.replace("index_max_notes = 100", "index_max_notes = 5"),
+    )
+    .unwrap();
+    let claude: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        &event,
+    ))
+    .unwrap();
+    assert_eq!(
+        claude["systemMessage"],
+        "🪨 petit-poucet · 10 notes loaded (preferences + alpha), over 5: ask your agent to tidy your memory"
     );
 }
 
@@ -326,6 +366,70 @@ fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
             .as_str()
             .unwrap()
             .ends_with("(preferences)")
+    );
+}
+
+// A cleanup that is due is announced at session start, to the user or through the agent, until one is done (#84).
+#[test]
+fn session_start_reminds_of_a_due_cleanup() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let config = home.path().join(".config/petit-poucet/config.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    fs::write(
+        &config,
+        text.replace("cleanup_reminder_notes = 30", "cleanup_reminder_notes = 5"),
+    )
+    .unwrap();
+    let start = |agent: &str| -> serde_json::Value {
+        serde_json::from_str(&hook(
+            home.path(),
+            &["session-start", "--agent", agent],
+            "{}",
+        ))
+        .unwrap()
+    };
+    let due = "a memory cleanup is due (20 notes, never cleaned up): ask to tidy your memory";
+
+    let claude = start("claude");
+    assert!(
+        claude["systemMessage"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("\n🪨 petit-poucet · {due}")),
+        "{claude}"
+    );
+    let copilot = start("copilot");
+    let context = copilot["additionalContext"].as_str().unwrap();
+    assert!(
+        context.contains("or looks wrong or outdated: fix it now (memory_save or memory_delete)"),
+        "the clean-as-you-go rule: {context}"
+    );
+    assert!(
+        copilot["additionalContext"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!(
+                "Tell the user once, in one line: petit-poucet: {due}."
+            )),
+        "{copilot}"
+    );
+
+    // A cleanup read to its end records its time; nothing has changed since.
+    let now = jiff::Timestamp::now();
+    fs::write(vault.join(".last-cleanup"), format!("{now:.9}\n")).unwrap();
+    let claude = start("claude");
+    assert!(
+        !claude["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("cleanup is due"),
+        "{claude}"
     );
 }
 
@@ -502,6 +606,29 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
         git_log(&vault),
         "init: vault\n",
         "the vault is created once"
+    );
+}
+
+// A config written by an older version gets the settings added since, the user's own lines kept, as soon as it is read.
+#[test]
+fn an_older_config_gets_the_new_settings_written_in() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    fs::create_dir_all(&vault).unwrap();
+    let old = format!(
+        "# mine\nvault = {}\ngit_autocommit = false\n",
+        toml::Value::from(vault.display().to_string())
+    );
+    write(home.path(), ".config/petit-poucet/config.toml", &old);
+
+    let (ok, out) = setup(home.path(), &["--check"]);
+    assert!(ok && out.starts_with("vault: "), "{out}");
+    let config = home.path().join(".config/petit-poucet/config.toml");
+    assert_eq!(
+        fs::read_to_string(&config).unwrap(),
+        format!(
+            "{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\nsummary_max_chars = 200\nindex_max_notes = 100\ncleanup_reminder_notes = 30\ncleanup_reminder_days = 30\n"
+        )
     );
 }
 

@@ -21,7 +21,7 @@ Review the whole diff against this list and fix what it finds:
 ## Workflow
 - Before each commit: `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test`.
 - Commit each finished step locally, conventional style (`feat: …`), one or two lines, no Co-Authored-By trailer.
-- Work on the branch of the version in progress (e.g. `v0.3`, cut from `main`), one pull request per issue targeting it; `main` holds released versions only, because users install from it (the install script and the site come from `main`). Merging to `main`, tagging and releasing happen only after the owner tried the local build and asked for the release (see README, "Developing").
+- Work on the branch of the version in progress (e.g. `v0.3`, cut from `main`), one pull request per issue targeting it; `main` holds released versions only, because users install from it (the install script and the site come from `main`). Merging to `main`, tagging and releasing happen only after the owner tried the local build and asked for the release (see CONTRIBUTING.md).
 - Documentation-only changes (README, `site/`, `docs/`, this file) go to `main` directly, each in its own pull request, as long as they describe the released version: they change nothing users run, and the site deploys from `main`.
 - One pull request at a time: the next one starts only when the current one is green on every OS runner and handed to the owner.
 - Keep your own branches up to date by rebasing onto the base and pushing with `--force-with-lease`; never merge the base into them.

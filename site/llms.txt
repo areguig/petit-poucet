@@ -9,7 +9,11 @@
 
 ## Docs
 
-- [README](https://github.com/areguig/petit-poucet/blob/main/README.md): how it works, tools, skills, install, agents, command line
+- [How it works](https://areguig.github.io/petit-poucet/how-it-works.html): a session step by step, the note format, the checks, the cleanup review, the settings
+- [Install and set up](https://github.com/areguig/petit-poucet/blob/main/docs/setup.md): install options, what `setup` writes for each agent, settings, Obsidian, migrating
+- [Reference](https://github.com/areguig/petit-poucet/blob/main/docs/reference.md): the vault, the note format, tools, skills, commands, rules enforced in code
+- [Architecture](https://github.com/areguig/petit-poucet/blob/main/docs/architecture.md): files in the vault, usage across machines, the cleanup review, near-duplicates
+- [Compared with built-in memory](https://github.com/areguig/petit-poucet/blob/main/docs/comparison.md)
 - [Latest release and notes](https://github.com/areguig/petit-poucet/releases/latest)
 
 ## Optional

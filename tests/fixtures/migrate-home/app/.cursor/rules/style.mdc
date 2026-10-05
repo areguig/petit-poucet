@@ -1,0 +1,5 @@
+---
+description: style
+alwaysApply: true
+---
+In app, prefer small modules over big files.

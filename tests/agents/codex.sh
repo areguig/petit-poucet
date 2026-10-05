@@ -3,6 +3,7 @@
 # its hooks, MCP server and skills all reach the model.
 . "$(dirname "$0")/lib.sh"
 
+export REVIEW_TOOL=memory_review REVIEW_NAMESPACE=mcp__petit_poucet
 start_model
 # The mock as Codex's model provider; top-level keys go before the tables `setup` adds.
 mkdir -p "$HOME/.codex"
@@ -31,6 +32,15 @@ cd "$repo"
 # Codex offers MCP tools through its tool search, which lists each server with its instructions.
 check_calls "petit-poucet holds the user's memory"
 check_update
+
+big_vault
+# codex exec can't ask for approval, and MCP calls need it: approve this one tool, as a user would.
+printf '\n[mcp_servers.petit-poucet.tools.memory_review]\napproval_mode = "approve"\n' >> "$HOME/.codex/config.toml"
+cd "$(mktemp -d)"
+MOCK_API_KEY=dummy $codex petit-poucet-review </dev/null >/dev/null
+cd "$repo"
+check_review
+
 has "$("$pp" setup --check)" '^Codex: set up'
 
 has "$("$pp" setup --uninstall)" '^Codex: removed'

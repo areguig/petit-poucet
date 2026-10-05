@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdout, Stdio};
 
-use common::{command, git_log, petit_poucet};
+use common::{command, git_log, petit_poucet, stdout};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -151,8 +151,8 @@ fn an_agent_saves_finds_and_reads_a_note() {
     );
     let (_, review) = client.call("memory_review", json!({}));
     assert!(
-        review.contains("- Preferences/commit-rules | feedback | ")
-            && review.contains(" | 1 reads, last "),
+        review.contains("## Preferences\n- commit-rules | feedback | ")
+            && review.contains(" | 1r "),
         "{review}"
     );
     let (is_error, _) = client.call("memory_read", json!({"path": "../../etc/passwd"}));
@@ -249,6 +249,7 @@ fn an_agent_saves_finds_and_reads_a_note() {
          delete: Preferences/commit-rules (test-agent)\n\
          move: Projects/my-repo/deploy-steps -> Projects/my-repo/release (test-agent)\n\
          create: Projects/my-repo/deploy-steps (test-agent)\n\
+         cleanup: memory reviewed (test-agent)\n\
          create: Preferences/commit-rules (test-agent)\n\
          init: vault\n"
     );
@@ -421,6 +422,364 @@ fn repos_sharing_a_folder_name_keep_separate_projects() {
     assert!(child.wait().unwrap().success());
 }
 
+// A note naming a file its project's checkout no longer has is reported, by the review and by `check` (#23).
+#[test]
+fn notes_naming_paths_gone_from_the_checkout_are_reported() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let app = home.path().join("src/app");
+    checkout(&app, "git@github.com:me/app.git");
+    std::fs::create_dir(app.join("scripts")).unwrap();
+    std::fs::write(app.join("scripts/build.sh"), "").unwrap();
+    let (mut child, mut client, _) = start(home.path());
+    let (_, saved) = client.call(
+        "memory_save",
+        json!({"type": "project", "project_dir": app, "title": "Release",
+               "summary": "how to release", "fact": "Run `scripts/build.sh`, then `scripts/release.sh`.",
+               "source": "test on 2026-10-04", "how_to_apply": "When releasing."}),
+    );
+    assert_eq!(saved, "saved Projects/app/release");
+    // The next task starts by loading the project, which records where it is checked out.
+    client.call("memory_index", json!({"project_dir": app}));
+    let warning = "Projects/app/release.md: warning: names `scripts/release.sh`, missing from ";
+
+    let (pages, _) = review_pages(&mut client, false);
+    let text = pages.concat();
+    assert!(text.contains(warning), "{text}");
+    assert!(!text.contains("`scripts/build.sh`, missing"), "{text}");
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(stdout(&check).contains(warning), "{}", stdout(&check));
+
+    std::fs::write(app.join("scripts/release.sh"), "").unwrap();
+    let (pages, _) = review_pages(&mut client, false);
+    assert!(!pages.concat().contains("missing from"), "{pages:?}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// What Syncthing would bring to another machine: the files with their times, not git or petit-poucet's own state.
+fn sync(from: &Path, to: &Path) {
+    let entries = walkdir::WalkDir::new(from)
+        .into_iter()
+        .filter_entry(|e| ![".git", ".petit-poucet"].contains(&e.file_name().to_str().unwrap()));
+    for entry in entries {
+        let entry = entry.unwrap();
+        let target = to.join(entry.path().strip_prefix(from).unwrap());
+        if entry.file_type().is_dir() {
+            std::fs::create_dir_all(&target).unwrap();
+        } else {
+            std::fs::copy(entry.path(), &target).unwrap();
+            let modified = entry.metadata().unwrap().modified().unwrap();
+            let file = std::fs::File::options().write(true).open(&target).unwrap();
+            file.set_modified(modified).unwrap();
+        }
+    }
+}
+
+// Reads every page of memory_review; returns the pages and the project note lines they hold (#77).
+fn review_pages(client: &mut Client, full: bool) -> (Vec<String>, usize) {
+    let mut pages = Vec::new();
+    loop {
+        let page = pages.len() + 1;
+        let (is_error, text) = client.call("memory_review", json!({"page": page, "full": full}));
+        // Antigravity saves a tool result over about 4 KB to a file the agent has to page through.
+        assert!(
+            !is_error && text.len() <= 3500,
+            "page {page}: {} bytes",
+            text.len()
+        );
+        let more = text.contains(&format!("more: call memory_review with page={}", page + 1));
+        pages.push(text);
+        if !more {
+            let notes = pages
+                .iter()
+                .map(|p| p.matches(" | project | ").count())
+                .sum();
+            return (pages, notes);
+        }
+    }
+}
+
+// Changes a limit in a config `init` wrote.
+fn set_limit(home: &Path, key: &str, value: usize) {
+    let path = home.join(".config/petit-poucet/config.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let line = text
+        .lines()
+        .find(|l| l.starts_with(&format!("{key} = ")))
+        .unwrap_or_else(|| panic!("{key} not in {text}"));
+    let text = text.replace(line, &format!("{key} = {value}"));
+    std::fs::write(&path, text).unwrap();
+}
+
+// Over 300 notes, a later cleanup sends preferences, changed and recently used folders whole, then the rest while pages last (#89).
+#[test]
+fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // A session loads a project's 100 notes: over the Index budget, a problem this test isn't about.
+    set_limit(home.path(), "index_max_notes", 200);
+    for project in ["api", "web", "infra"] {
+        let dir = vault.join("Projects").join(project);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("_project.md"),
+            format!("---\ntype: project-identity\nremotes: []\nfolders: [{project}]\n---\n"),
+        )
+        .unwrap();
+        for i in 0..100 {
+            std::fs::write(
+                dir.join(format!("fact-{i}.md")),
+                format!("---\ntype: project\nscope: {project}\nsummary: fact {project}{i} detail{i}{project}\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Fact {i}\n\n**Why:** test.\n"),
+            )
+            .unwrap();
+        }
+    }
+    let (mut child, mut client, _) = start(home.path());
+    // Any change rewrites the Index, so the vault has no problem left.
+    let (_, saved) = client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "Tabs", "summary": "the user prefers tabs",
+               "fact": "Tabs.", "source": "the user on 2026-10-04", "how_to_apply": "When indenting."}),
+    );
+    assert_eq!(saved, "saved Preferences/tabs");
+
+    let (first, notes) = review_pages(&mut client, false);
+    assert!(
+        first[0].contains("\nfirst cleanup: all 301 notes"),
+        "{}",
+        first[0]
+    );
+    assert!(first.len() > 5, "{} pages", first.len());
+    assert_eq!(notes, 300);
+    assert!(
+        !first.iter().any(|p| p.contains("## check")),
+        "no problem in this vault"
+    );
+    // The cleanup is recorded in the vault and committed, so it syncs with the notes.
+    assert!(vault.join(".last-cleanup").is_file());
+    let log = git_log(&vault);
+    assert!(
+        log.starts_with("cleanup: memory reviewed (test-agent)\n"),
+        "{log}"
+    );
+
+    // Another machine, with room for 3 pages, gets the vault through a sync that keeps file times, then edits one note.
+    let other = TempDir::new().unwrap();
+    let synced = other.path().join("vault");
+    sync(&vault, &synced);
+    petit_poucet(other.path())
+        .args(["init", synced.to_str().unwrap()])
+        .assert()
+        .success();
+    set_limit(other.path(), "review_max_pages", 3);
+    set_limit(other.path(), "index_max_notes", 200);
+    let note = synced.join("Projects/infra/fact-3.md");
+    let text = std::fs::read_to_string(&note).unwrap();
+    std::fs::write(
+        &note,
+        text.replace("**Why:** test.", "**Why:** edited there."),
+    )
+    .unwrap();
+    let (mut other_child, mut other_client, _) = start(other.path());
+    let (there, notes) = review_pages(&mut other_client, false);
+    let text = there.concat();
+    assert!(text.contains("\n101 of 301 notes: preferences, "), "{text}");
+    assert_eq!(notes, 100, "the changed note's whole folder");
+    assert!(text.contains("## Preferences\n- tabs | "), "{text}");
+    assert!(text.contains("## Projects/infra\n"), "{text}");
+    assert!(
+        !text.contains("## Projects/api") && !text.contains("## Projects/web"),
+        "no room left: {text}"
+    );
+
+    // A read makes its folder one of the recently used ones.
+    other_client.call("memory_read", json!({"path": "Projects/web/fact-1"}));
+    let (next, notes) = review_pages(&mut other_client, false);
+    let text = next.concat();
+    assert_eq!(notes, 100);
+    assert!(text.contains("## Projects/web\n"), "{text}");
+    assert!(
+        !text.contains("## Projects/infra"),
+        "reviewed already: {text}"
+    );
+
+    // A whole review on demand.
+    let (full, notes) = review_pages(&mut other_client, true);
+    assert!(
+        full[0].contains("\nall 301 notes, 0 changed since the last cleanup ("),
+        "{}",
+        full[0]
+    );
+    assert_eq!(notes, 300);
+    drop(other_client);
+    assert!(other_child.wait().unwrap().success());
+
+    // With the default 10 pages, everything fits again.
+    for file in ["Projects/api/fact-7.md", "Projects/web/fact-42.md"] {
+        let path = vault.join(file);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            &path,
+            text.replace("**Why:** test.", "**Why:** checked again."),
+        )
+        .unwrap();
+    }
+    let (second, notes) = review_pages(&mut client, false);
+    assert!(
+        second[0].contains("\nall 301 notes, 2 changed since the last cleanup ("),
+        "{}",
+        second[0]
+    );
+    assert_eq!(notes, 300);
+
+    let (is_error, _) = client.call("memory_review", json!({"page": second.len() + 1}));
+    assert!(is_error);
+
+    // An agent saves what an old note already says: the review names the pair once (#36).
+    let (_, saved) = client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "API fact", "summary": "fact api7 detail7api again",
+               "fact": "Again.", "source": "the user on 2026-10-04", "how_to_apply": "Never."}),
+    );
+    assert!(saved.starts_with("saved Preferences/api-fact"), "{saved}");
+    let (third, _) = review_pages(&mut client, false);
+    assert_eq!(
+        third
+            .concat()
+            .matches(
+                "- Projects/api/fact-7.md: warning: near-duplicate of [[Preferences/api-fact]]"
+            )
+            .count(),
+        1,
+        "{third:?}"
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// Notes nobody opened for `unused_days` come with the review's problems, once usage has counted that long (#25).
+#[test]
+fn a_cleanup_lists_notes_nobody_opens() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let long_ago = jiff::Zoned::now().date() - jiff::Span::new().days(200);
+    for (slug, note_type) in [("old-fact", "user"), ("old-rule", "feedback")] {
+        std::fs::write(
+            vault.join(format!("Preferences/{slug}.md")),
+            format!("---\ntype: {note_type}\nscope: all repos\nsummary: {slug}\ncreated: {long_ago}\ntags: [agent-memory]\n---\nx\n"),
+        )
+        .unwrap();
+    }
+    // Another machine has counted usage since then.
+    std::fs::create_dir(vault.join(".usage")).unwrap();
+    std::fs::write(
+        vault.join(".usage/other.json"),
+        format!("{{\"since\": \"{long_ago}\"}}"),
+    )
+    .unwrap();
+    let (mut child, mut client, _) = start(home.path());
+
+    let (pages, _) = review_pages(&mut client, false);
+    let text = pages.concat();
+    assert!(
+        text.contains(&format!(
+            "## unused\n- Preferences/old-fact.md: never read, written {long_ago}\n"
+        )),
+        "{text}"
+    );
+    assert!(
+        !text.contains("old-rule.md: never read"),
+        "feedback notes apply unread: {text}"
+    );
+
+    client.call("memory_read", json!({"path": "Preferences/old-fact"}));
+    let (pages, _) = review_pages(&mut client, false);
+    assert!(!pages.concat().contains("## unused"), "{pages:?}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// Usage lives in the vault: a read never commits alone, and every machine's reads add up (#88).
+#[test]
+fn usage_rides_with_the_next_commit_and_adds_up_across_machines() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = |title: &str| {
+        json!({"type": "user", "scope": "all repos", "title": title, "summary": format!("about {title}"),
+               "fact": "A fact.", "source": "test on 2026-10-04", "how_to_apply": "Test."})
+    };
+    let (mut child, mut client, _) = start(home.path());
+    client.call("memory_save", note("tabs"));
+    let commits = git_log(&vault).lines().count();
+    client.call("memory_read", json!({"path": "Preferences/tabs"}));
+    client.call("memory_read", json!({"path": "Preferences/tabs"}));
+    assert_eq!(
+        git_log(&vault).lines().count(),
+        commits,
+        "a read never commits"
+    );
+    client.call("memory_save", note("spaces"));
+    let files = std::process::Command::new("git")
+        .args(["show", "--name-only", "--format=", "HEAD"])
+        .current_dir(&vault)
+        .output()
+        .unwrap();
+    let files = String::from_utf8_lossy(&files.stdout).into_owned();
+    assert!(
+        files.contains(".usage/"),
+        "usage rides with the save: {files}"
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+
+    // Another machine gets the vault by sync, reads the note once, and sees every machine's reads.
+    let other = TempDir::new().unwrap();
+    let synced = other.path().join("vault");
+    sync(&vault, &synced);
+    petit_poucet(other.path())
+        .args(["init", synced.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut other_child, mut other_client, _) = start(other.path());
+    other_client.call("memory_read", json!({"path": "Preferences/tabs"}));
+    let (pages, _) = review_pages(&mut other_client, false);
+    assert!(pages[0].contains("- tabs | user | 2026-"), "{}", pages[0]);
+    assert!(
+        pages[0].contains(" | 3r "),
+        "2 reads there + 1 here: {}",
+        pages[0]
+    );
+    // A small vault: a later cleanup still lists every note, changed or not (#89).
+    let (again, _) = review_pages(&mut other_client, false);
+    assert!(
+        again[0].contains("\nall 2 notes, 0 changed since the last cleanup (")
+            && again[0].contains("- tabs | ")
+            && again[0].contains("- spaces | "),
+        "{}",
+        again[0]
+    );
+    assert_eq!(std::fs::read_dir(synced.join(".usage")).unwrap().count(), 2);
+    drop(other_client);
+    assert!(other_child.wait().unwrap().success());
+}
+
 #[test]
 fn two_agents_writing_at_once_lose_nothing() {
     const EACH: usize = 15;
@@ -468,15 +827,24 @@ fn two_agents_writing_at_once_lose_nothing() {
     assert_eq!(git_log(&vault).lines().count(), 2 + 2 * EACH);
     let index = std::fs::read_to_string(vault.join("Index.md")).unwrap();
     assert_eq!(index.matches("- [[Preferences/").count(), 1 + 2 * EACH);
-    let usage = std::fs::read_to_string(vault.join(".petit-poucet/usage.json")).unwrap();
+    // One machine, so one usage file in the vault.
+    let files: Vec<_> = std::fs::read_dir(vault.join(".usage")).unwrap().collect();
+    assert_eq!(files.len(), 1);
+    let usage = std::fs::read_to_string(files[0].as_ref().unwrap().path()).unwrap();
     let usage: Value = serde_json::from_str(&usage).unwrap();
-    assert_eq!(usage["Preferences/shared"]["reads"], 2 * EACH);
+    assert_eq!(usage["notes"]["Preferences/shared"]["reads"], 2 * EACH);
     let status = std::process::Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(&vault)
         .output()
         .unwrap();
-    assert_eq!(String::from_utf8_lossy(&status.stdout), "", "all committed");
+    // A read never commits on its own: only the last reads' usage may wait for the next commit.
+    let pending: Vec<String> = String::from_utf8_lossy(&status.stdout)
+        .lines()
+        .filter(|l| !l.contains(".usage/"))
+        .map(str::to_string)
+        .collect();
+    assert!(pending.is_empty(), "all committed: {pending:?}");
 }
 
 #[test]

@@ -1,13 +1,17 @@
 mod agent;
 mod antigravity;
+mod budget;
 mod change;
 mod check;
+mod checkouts;
 mod claude;
+mod cleanup;
 mod codex;
 mod config;
 mod copilot;
 mod cursor;
 mod delete;
+mod duplicates;
 mod edit;
 mod git;
 mod guard;
@@ -20,6 +24,7 @@ mod lock;
 mod migrate;
 mod move_note;
 mod note;
+mod priority;
 mod project;
 mod review;
 mod save;
@@ -28,8 +33,10 @@ mod secrets;
 mod server;
 mod setup;
 mod skills;
+mod stale_paths;
 mod state;
 mod stops;
+mod unused;
 mod update;
 mod usage;
 mod vault;
@@ -152,8 +159,9 @@ fn run_setup(agent: Option<agent::Agent>, check: bool, uninstall: bool) -> Resul
 }
 
 fn run_check() -> Result<bool, String> {
-    let vault = Vault::load(&Config::load()?.vault)?;
-    let issues = check::check(&vault);
+    let config = Config::load()?;
+    let vault = Vault::load(&config.vault)?;
+    let issues = check::check(&vault, &config.limits);
     for issue in &issues {
         println!("{issue}");
     }

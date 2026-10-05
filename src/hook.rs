@@ -1,11 +1,16 @@
+use std::time::SystemTime;
+
 use serde_json::Value;
 
 use crate::agent::Agent;
 use crate::change;
+use crate::cleanup;
 use crate::config::Config;
 use crate::index;
+use crate::lock;
 use crate::stops;
 use crate::update;
+use crate::usage;
 use crate::vault::Vault;
 
 const FIRST_REMINDER: u32 = 3;
@@ -16,8 +21,8 @@ Open only the notes a task needs with memory_read. Pass your working directory a
 - One short fact per note. Search first (memory_search) and update a note rather than adding a near-duplicate; read a note (memory_read) before updating or deleting it.
 - `source` says where the fact came from (the user's words, or the file/command that verified it) and when.
 - Rules the user stated (type feedback) change only after the user confirms: ask first.
-- When unsure whether a note is wrong, obsolete, or where it belongs: ask the user.
-- Update or delete (memory_delete) contradicted or obsolete notes, and mention the change in your reply.
+- When a note or Index line you see contradicts another note or what you just verified, or looks wrong or outdated: \
+fix it now (memory_save or memory_delete) and say so; ask the user first when unsure, and always for `feedback` notes.
 - Knowledge tied to no repo (a homelab, a server, the work machine) goes in a topic: memory_save with `topic`. \
 Topics are only named at the end of the Index: search them (memory_search) when a task touches one.
 - Never store secrets. Never write memory anywhere else, including an agent's built-in memory (e.g. Copilot's store_memory): use memory_save.
@@ -39,10 +44,11 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
         return None;
     }
     update::start();
-    let (mut context, mut message) = match memory_context(agent, event) {
+    let (mut context, mut message, cleanup) = match memory_context(agent, event) {
         _ if !Config::is_set() => (
             setup_context(),
             format!("{PEBBLE} no vault yet: the agent will offer to create one"),
+            None,
         ),
         Ok(loaded) => loaded,
         Err(e) => (
@@ -51,13 +57,15 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
                  and do not write memory anywhere else."
             ),
             format!("{PEBBLE} memory unavailable: {e}"),
+            None,
         ),
     };
-    if let Some(version) = update::newer() {
+    let release = update::newer().map(|version| update::notice(&version));
+    for notice in cleanup.into_iter().chain(release) {
         match agent.shows_hook_messages() {
-            true => message.push_str(&format!("\n{PEBBLE} {}", update::notice(&version))),
+            true => message.push_str(&format!("\n{PEBBLE} {notice}")),
             false => context.push_str(&format!(
-                "\n\npetit-poucet {version} is out: tell the user once, in one line, to run its installer again."
+                "\n\nTell the user once, in one line: petit-poucet: {notice}."
             )),
         }
     }
@@ -71,8 +79,18 @@ fn setup_context() -> String {
         .to_string()
 }
 
-// Returns the context for the agent and the line shown to the user.
-fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), String> {
+// A session that loads a project counts as a use of it, even if no note is opened.
+fn record_session(vault: &Vault, project: &str) {
+    let today = jiff::Zoned::now().date();
+    let recorded = lock::vault(&vault.root)
+        .and_then(|_lock| usage::record_session(&vault.root, project, today));
+    if let Err(e) = recorded {
+        eprintln!("petit-poucet: session not recorded: {e}");
+    }
+}
+
+// Returns the context for the agent, the line shown to the user, and why a cleanup is due if it is.
+fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Option<String>), String> {
     let config = Config::load()?;
     let vault = Vault::load(&config.vault)?;
     let dir = agent
@@ -80,15 +98,24 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String), Strin
         .or_else(|| std::env::current_dir().ok());
     let project = dir.and_then(|d| change::identify(&config, &vault, &d, agent.hook_label()));
     let project = project.as_deref();
+    if let Some(project) = project {
+        record_session(&vault, project);
+    }
     let loaded = vault
         .notes
         .iter()
         .filter(|n| index::in_session(n.place(), project))
         .count();
     let scope = project.map_or("preferences".to_string(), |p| format!("preferences + {p}"));
+    let max = config.limits.index_max_notes;
+    let over = match loaded > max {
+        true => format!(", over {max}: ask your agent to tidy your memory"),
+        false => String::new(),
+    };
     Ok((
         format!("{RULES}\n{}", index::for_project(&vault, project)),
-        format!("{PEBBLE} {loaded} notes loaded ({scope})"),
+        format!("{PEBBLE} {loaded} notes loaded ({scope}){over}"),
+        cleanup::due(&vault, &config.limits, SystemTime::now()),
     ))
 }
 

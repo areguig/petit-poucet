@@ -1,0 +1,1 @@
+- app: the staging server is staging.example.test, deployed with `make deploy`.

@@ -89,6 +89,11 @@ fn read(path: &Path) -> Result<String, String> {
 }
 
 // Temp file + rename, so Obsidian or a reader never sees a half-written file.
+// A note path's folder: `Preferences`, `Projects/<key>` or `Topics/<topic>`.
+pub fn folder(path: &str) -> &str {
+    path.rsplit_once('/').map_or("", |(folder, _)| folder)
+}
+
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
     let dir = path.parent().ok_or("no parent folder")?;
     let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
@@ -102,8 +107,9 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
             .set_permissions(fs::Permissions::from_mode(0o644))
             .map_err(|e| e.to_string())?;
     }
-    tmp.persist(path).map_err(|e| e.to_string())?;
-    Ok(())
+    // Not `persist`: on Windows it can't replace a file another process is reading, and `fs::rename` can.
+    let tmp = tmp.into_temp_path();
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -130,5 +136,17 @@ mod tests {
             1,
             "no temp file left"
         );
+    }
+
+    // Windows refused to replace a file another process was reading: a session start reading the latest release lost the check's write.
+    #[test]
+    fn write_atomic_replaces_a_file_another_reader_holds_open() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("latest-release");
+        fs::write(&path, "0.3.0").unwrap();
+        let reader = fs::File::open(&path).unwrap();
+        write_atomic(&path, "0.4.0").unwrap();
+        drop(reader);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "0.4.0");
     }
 }
