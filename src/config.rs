@@ -11,11 +11,11 @@ pub struct Config {
     pub vault: PathBuf,
     pub git_autocommit: bool,
     #[serde(flatten)]
-    pub review: Review,
+    pub limits: Limits,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct Review {
+pub struct Limits {
     pub full_review_max_notes: usize,
     pub review_max_pages: usize,
     pub active_days: i64,
@@ -27,7 +27,7 @@ impl Config {
         Config {
             vault,
             git_autocommit: true,
-            review: Review {
+            limits: Limits {
                 full_review_max_notes: 300,
                 review_max_pages: 10,
                 active_days: 30,
@@ -123,8 +123,8 @@ mod tests {
         );
         assert!(text.starts_with(old), "{text}");
         let config: Config = toml::from_str(&text).unwrap();
-        assert_eq!(config.review.review_max_pages, 4);
-        assert_eq!(config.review.active_days, 30);
+        assert_eq!(config.limits.review_max_pages, 4);
+        assert_eq!(config.limits.active_days, 30);
         assert!(config.git_autocommit);
         assert_eq!(with_missing(&text).unwrap(), (text.clone(), vec![]));
     }

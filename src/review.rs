@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use jiff::civil::Date;
 
-use crate::config::{Config, Review};
+use crate::config::{Config, Limits};
 use crate::index::NO_SUMMARY;
 use crate::note::Note;
 use crate::usage::{self, Activity};
@@ -27,7 +27,7 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
     let changed = changed_since(&vault, since);
     let activity = usage::load(&vault.root);
     let today = jiff::Zoned::now().date();
-    let unused = unused::find(&vault, &activity, config.review.unused_days, today);
+    let unused = unused::find(&vault, &activity, config.limits.unused_days, today);
     let findings: Vec<Item> = check::check(&vault)
         .into_iter()
         .map(|issue| ("check".to_string(), format!("- {issue}")))
@@ -37,7 +37,7 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
                 .map(|note| ("unused".to_string(), format!("- {note}"))),
         )
         .collect();
-    let limits = &config.review;
+    let limits = &config.limits;
     let mut items = match full || vault.notes.len() <= limits.full_review_max_notes {
         true => vault.notes.iter().map(|n| item(n, &activity)).collect(),
         false => by_priority(&vault, &changed, &activity, limits, today, &findings),
@@ -77,7 +77,7 @@ fn by_priority(
     vault: &Vault,
     changed: &[&Note],
     activity: &Activity,
-    limits: &Review,
+    limits: &Limits,
     today: Date,
     findings: &[Item],
 ) -> Vec<Item> {
@@ -288,10 +288,10 @@ mod tests {
         let config = Config::new(root.to_path_buf());
         Config {
             git_autocommit: false,
-            review: Review {
+            limits: Limits {
                 full_review_max_notes,
                 review_max_pages,
-                ..config.review
+                ..config.limits
             },
             ..config
         }
