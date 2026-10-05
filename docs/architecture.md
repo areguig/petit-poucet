@@ -1,6 +1,21 @@
 # How petit-poucet works
 
-Technical notes for contributors. The design and its decisions are in [PLAN.md](PLAN.md).
+For readers who want to know what happens under the hood. The design and its decisions are in [PLAN.md](PLAN.md); the tools, skills and commands in the [reference](reference.md).
+
+## Overview
+
+```
+Claude Code ─┐
+Copilot     ─┤
+Codex       ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
+Cursor      ─┤
+Antigravity ─┘
+```
+
+One binary plays three parts:
+- **Session start (a hook):** gives the agent the memory rules and the Index of what applies here (your preferences and the current repo's notes, one line each), plus a line for you when a cleanup is due or a release is out.
+- **During the session (an MCP server):** the agent opens only the notes a task needs, searches, and saves new facts on purpose, one per note, with their source. Every change is checked, rewrites the Index and makes a local git commit. A stop hook asks now and then whether the session produced something worth remembering.
+- **Cleanup (a skill and a subagent):** `tidy-memory` hands a review to the `memory-cleanup` subagent, which reads the notes and the problems code found, and proposes fixes; your agent applies only what you confirm.
 
 ## Files in the vault
 | Path | What | Synced and committed |

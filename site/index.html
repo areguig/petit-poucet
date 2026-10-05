@@ -32,133 +32,7 @@
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
-<style>
-  :root {
-    --bg: #f7f4ec;
-    --bg-deep: #efe9da;
-    --surface: #fffdf8;
-    --ink: #2b2822;
-    --muted: #6b6558;
-    --line: #e2dccd;
-    --accent: #2f6b4f;
-    --accent-soft: #e3eee6;
-    --accent-ink: #ffffff;
-    --code-bg: #1f1d19;
-    --code-ink: #efe9dc;
-    --code-dim: #a39c8c;
-    --code-green: #9fd5b6;
-    --pebble: #f4f1ea;
-    --pebble-edge: #8a8578;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #15140f;
-      --bg-deep: #1b1914;
-      --surface: #1d1b16;
-      --ink: #ece6d8;
-      --muted: #a39c8c;
-      --line: #34302a;
-      --accent: #7cc4a0;
-      --accent-soft: #1f2e26;
-      --accent-ink: #10231a;
-      --code-bg: #0f0e0b;
-      --pebble: #d9d3c4;
-      --pebble-edge: #6b6558;
-    }
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  }
-  main { max-width: 960px; margin: 0 auto; padding: 0 16px 64px; }
-  h1, h2, h3 { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-weight: 600; line-height: 1.2; }
-  h2 { font-size: clamp(1.6rem, 4vw, 2rem); margin: 0 0 12px; }
-  h3 { font-size: 1.15rem; margin: 0 0 6px; }
-  p { margin: 0 0 16px; }
-  a { color: var(--accent); }
-  code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86em; }
-  :not(pre) > code { background: var(--line); padding: 1px 6px; border-radius: 5px; }
-
-  section { padding: 56px 0 8px; }
-  .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.78rem; font-weight: 700; color: var(--accent); margin: 0 0 8px; }
-  .lead { font-size: 1.1rem; color: var(--muted); max-width: 680px; }
-
-  /* A trail of pebbles between sections, like the tale. */
-  .trail { display: flex; justify-content: center; gap: 22px; padding-top: 48px; }
-  .trail span { width: 14px; height: 10px; border-radius: 50%; background: var(--pebble); border: 2px solid var(--pebble-edge); }
-  .trail span:nth-child(2) { transform: translateY(-5px) rotate(14deg); width: 16px; }
-  .trail span:nth-child(3) { transform: rotate(-10deg); width: 12px; }
-
-  .hero { text-align: center; padding: 72px 0 8px; }
-  .hero img { width: 104px; height: 104px; }
-  .hero .name { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em; margin: 12px 0 20px; color: var(--muted); }
-  .hero h1 { font-size: clamp(2.3rem, 7vw, 3.8rem); margin: 0 auto 16px; max-width: 760px; }
-  .hero .lead { margin: 0 auto 28px; }
-  .buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .button { display: inline-block; padding: 11px 24px; border-radius: 999px; text-decoration: none; font-weight: 600; border: 1px solid var(--accent); }
-  .button.primary { background: var(--accent); color: var(--accent-ink); }
-  .clients { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 28px 0 0; padding: 0; list-style: none; }
-  .clients li { font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
-  .clients.planned { margin-top: 10px; }
-  .clients.planned li { background: transparent; border-style: dashed; }
-  .clients.planned li:first-child { border: 0; padding-right: 0; font-weight: 600; }
-  .clients.planned a { color: inherit; }
-
-  .problems { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 16px; margin-top: 24px; }
-  .problem { padding: 20px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 12px 12px 0; }
-  .problem p { margin: 0; color: var(--muted); font-size: 0.95rem; }
-
-  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px; margin: 24px 0; counter-reset: step; }
-  .step { position: relative; padding: 20px 20px 20px 64px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
-  .step::before { counter-increment: step; content: counter(step); position: absolute; left: 18px; top: 18px; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 700; display: grid; place-items: center; }
-  .step p { margin: 0; color: var(--muted); font-size: 0.95rem; }
-
-  .terminal { background: var(--code-bg); border-radius: 12px; overflow: hidden; margin: 0 0 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
-  .terminal .bar { display: flex; gap: 7px; padding: 12px 16px; }
-  .terminal .bar span { width: 11px; height: 11px; border-radius: 50%; background: #4a463e; }
-  pre { background: var(--code-bg); color: var(--code-ink); padding: 18px 20px; border-radius: 12px; overflow-x: auto; margin: 0 0 16px; line-height: 1.55; }
-  .terminal pre { border-radius: 0; padding-top: 4px; margin: 0; }
-  pre .dim { color: var(--code-dim); }
-  pre .pebble { color: var(--pebble); font-weight: 600; }
-  pre .ok { color: var(--code-green); }
-
-  .table-wrap { overflow-x: auto; margin: 24px 0 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 0.92rem; table-layout: fixed; }
-  col.label { width: 130px; }
-  th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--line); }
-  tr:last-child th, tr:last-child td { border-bottom: 0; }
-  thead th { font-family: inherit; font-size: 0.85rem; color: var(--muted); background: var(--bg-deep); }
-  tbody th { font-weight: 600; color: var(--ink); }
-  td code { overflow-wrap: anywhere; }
-  td.us, th.us { background: var(--accent-soft); }
-  thead th.us { color: var(--accent); }
-  .sources { font-size: 0.82rem; color: var(--muted); }
-  .verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; margin-top: 24px; }
-  .verdict > div { padding: 20px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
-  .verdict ul { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 0.95rem; }
-
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 16px; margin-top: 24px; }
-  .cards > *, .install > * { min-width: 0; }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
-  .card .icon { font-size: 1.4rem; line-height: 1; margin-bottom: 10px; }
-  .card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
-  .card code { white-space: nowrap; }
-
-  .install { display: grid; gap: 8px; margin-top: 24px; }
-  .install h3 { font-size: 1rem; margin-bottom: 8px; }
-  .note { color: var(--muted); font-size: 0.95rem; }
-
-  details { border-bottom: 1px solid var(--line); padding: 14px 0; }
-  details:first-of-type { border-top: 1px solid var(--line); margin-top: 16px; }
-  summary { cursor: pointer; font-weight: 600; }
-  details p { margin: 10px 0 0; color: var(--muted); }
-
-  footer { border-top: 1px solid var(--line); margin-top: 72px; padding-top: 24px; color: var(--muted); font-size: 0.9rem; text-align: center; }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
@@ -304,6 +178,7 @@ Cursor      ─┤                                       ├─ Index.md        
 Antigravity ─┘                                       ├─ Preferences/       every repo
                                                      ├─ Projects/&lt;repo&gt;/   that repo
                                                      └─ Topics/&lt;topic&gt;/    searched on demand</pre>
+    <p class="note">Want to know more? <a href="how-it-works.html">How it works</a>: a session step by step, the note format, how the memory stays clean, and the settings.</p>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -340,7 +215,7 @@ petit-poucet setup</pre>
   </section>
 
   <footer>
-    <p>Apache-2.0 · <a href="https://github.com/areguig/petit-poucet">github.com/areguig/petit-poucet</a> · <a href="https://github.com/areguig/petit-poucet/releases/latest">latest release</a> · built with <a href="https://claude.com/claude-code">Claude Code</a></p>
+    <p><a href="how-it-works.html">How it works</a> · Apache-2.0 · <a href="https://github.com/areguig/petit-poucet">github.com/areguig/petit-poucet</a> · <a href="https://github.com/areguig/petit-poucet/releases/latest">latest release</a> · built with <a href="https://claude.com/claude-code">Claude Code</a></p>
   </footer>
 </main>
 </body>
