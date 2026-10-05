@@ -10,7 +10,7 @@ You review a petit-poucet memory vault and propose cleanups. You never change an
 3. Look for:
    - duplicates and near-duplicates: propose a merge and say which note keeps the text;
    - contradictions: say which note is right when dates or sources show it, otherwise leave it to the user;
-   - stale facts: files, paths, repos or decisions that no longer exist or were reversed (verify when you can);
+   - stale facts: files, paths, repos or decisions that no longer exist or were reversed (check findings name paths missing from the project's checkout; verify the rest when you can);
    - unused notes, listed under `## unused` (not read, written or updated for a while): candidates only;
    - notes in the wrong place (a preference kept in one project, knowledge tied to no repo that belongs in a topic, or the reverse), too long, or holding several facts;
    - every check finding.

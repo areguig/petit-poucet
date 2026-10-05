@@ -5,7 +5,7 @@ use std::fs;
 use crate::note::{self, REQUIRED_TAG};
 use crate::project::IDENTITY_FILE;
 use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, TOPICS, Vault};
-use crate::{duplicates, index, secrets};
+use crate::{checkouts, duplicates, index, secrets, stale_paths};
 
 // A note is one short fact; past this the body is probably several facts or history.
 pub const MAX_BODY_CHARS: usize = 1500;
@@ -92,6 +92,14 @@ pub fn check(vault: &Vault) -> Vec<Issue> {
                 ),
             });
         }
+    }
+
+    for (note, path, checkout) in stale_paths::find(&vault.notes, &checkouts::load(&vault.root)) {
+        issues.push(Issue {
+            file: format!("{}.md", note.path),
+            level: Level::Warning,
+            message: format!("names `{path}`, missing from {}", checkout.display()),
+        });
     }
 
     // One short line per note after its group's first: a big group never makes a line too long for a review page.
