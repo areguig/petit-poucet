@@ -13,6 +13,7 @@ mod cursor;
 mod delete;
 mod duplicates;
 mod edit;
+mod fillers;
 mod git;
 mod guard;
 mod hook;

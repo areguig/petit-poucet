@@ -104,8 +104,13 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     let (vault, commit_warning) =
         change::finish(config, changed, &format!("{action}: {path} ({agent})"))?;
     let mut reply = vec![format!("saved {path}")];
+    let saved = vault
+        .notes
+        .iter()
+        .find(|n| n.path == path)
+        .ok_or("the saved note is missing")?;
     let others = vault.notes.iter().filter(|n| n.path != path);
-    let similar = duplicates::similar(others, &req.title, &req.summary);
+    let similar = duplicates::similar(others, saved);
     if !similar.is_empty() {
         let list: Vec<String> = similar.iter().map(|n| format!("[[{}]]", n.path)).collect();
         reply.push(format!(

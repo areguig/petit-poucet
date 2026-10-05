@@ -247,6 +247,14 @@ Memory quality before new reach: checks that are deterministic, so the `memory-c
 
 **Status 2026-10-05:** every 0.4 issue is merged into `v0.4`: #77, #36, #88, #89, #25, #23, #14, #84, #22, plus the Windows write fix #101 found on the way (a file another process was reading couldn't be replaced, which lost the update check's write). #35 and #24 moved to triage. What remains before the release is the owner's test session, from the checklist compiled from every PR's manual check, starting with the 0.3 vs 0.4 cleanup comparison.
 
+**Released 2026-10-05** as v0.4.0, after the owner's test session.
+
+### 0.4.1: fixes from the 0.4 test session (decided 2026-10-05)
+One PR per issue into `v0.4.1-fixes`:
+- #105 near-duplicates leave out the filler words of each note's language (owner's decision: detect the language per note, multilingual, never English only). **Built 2026-10-05.**
+- #106 vault commits name the agent instead of "unknown agent".
+- #109 `petit-poucet update`: install the latest release, then run `setup`.
+
 ### 0.5: one vault on several machines, then OpenCode
 Two sync routes, because users have different needs; petit-poucet itself never runs a sync service, and cloud sync services stay out of scope:
 - #81 Syncthing, peer to peer, plus the shared base: `Index.md` per machine (out of git), session start commits changes made outside petit-poucet under the vault lock, sync conflicts reported by `check` and session start.

@@ -74,7 +74,7 @@ The limits live in `~/.config/petit-poucet/config.toml`. `init` writes every set
 - **Report only:** a warning per missing path; the note may be right about history, so nothing is changed.
 
 ## Near-duplicates (`check`)
-- **Words:** a note's title and summary, lowercased, split on anything that isn't a letter or digit (Unicode), words of 3+ characters. The body is not used.
+- **Words:** a note's title and summary, lowercased, split on anything that isn't a letter or digit (Unicode), words of 3+ characters, without the filler words ("the", "for", "les", "pour"…) of the note's language. The language is detected on the whole note (`whatlang`), the fillers come from NLTK's lists (`stop-words`, about 30 languages); English when the language can't be told reliably.
 - **Rule:** two notes are near-duplicates when they share at least 2 words, covering at least half of the shorter one's words. `memory_save`'s "similar notes" warning uses the same rule.
 - **Groups:** notes linked by near-duplicate pairs form a group (union-find, `petgraph`); `check` writes one line per note after the group's first.
 - **Cost:** a word-to-notes index means only notes sharing a word are compared: about 0.16 s of CPU for 5,000 notes.
@@ -84,4 +84,4 @@ Limits:
 - shared words, not meaning: a paraphrase is not matched;
 - word forms differ: "commit" and "commits" are two words;
 - notes in two languages share no words; Chinese or Japanese text, written without spaces, counts as one word per sentence;
-- two very short summaries sharing two common words can match by accident.
+- two very short summaries sharing two ordinary words can match by accident.

@@ -44,6 +44,28 @@ notes: 20, errors: 17, warnings: 3
 }
 
 #[test]
+fn check_reports_near_duplicates_by_meaning_words_in_each_note_language() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(
+        &Path::new(FIXTURE).with_file_name("near-duplicates"),
+        &vault,
+    );
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let output = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert_eq!(
+        stdout(&output),
+        "\
+Topics/notes/recette-par-branche.md: warning: near-duplicate of [[Topics/notes/deploiement-recette]]: merge them if they say the same
+notes: 5, errors: 0, warnings: 1
+"
+    );
+}
+
+#[test]
 fn check_without_a_configured_vault_says_how_to_create_one() {
     let home = TempDir::new().unwrap();
     let output = petit_poucet(home.path()).arg("check").output().unwrap();
