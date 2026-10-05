@@ -220,6 +220,22 @@ mod tests {
         }
     }
 
+    // Sources checked against each agent's docs on 2026-10-04: adding an agent without them fails here.
+    #[test]
+    fn migrate_memory_names_the_sources_of_every_supported_agent() {
+        let (_, migrate) = SKILLS
+            .iter()
+            .find(|(name, _)| *name == "migrate-memory")
+            .unwrap();
+        for agent in Agent::ALL {
+            assert!(
+                migrate.contains(&format!("**{}:**", agent.name())),
+                "migrate-memory has no sources for {}",
+                agent.name()
+            );
+        }
+    }
+
     #[test]
     fn check_reports_a_changed_skill() {
         let home = tempfile::tempdir().unwrap();

@@ -150,7 +150,7 @@ The script installs the latest release in `~/.local/bin` after checking its SHA-
 
 Coming from the 0.2 plugin for Claude Code or Copilot? `petit-poucet setup` removes it with the agent's own command, so its hooks don't run twice.
 
-Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it), with the limits `check` and the cleanup review apply: `full_review_max_notes`, `review_max_pages`, `active_days`, `unused_days`, `summary_max_chars`, `index_max_notes`, `cleanup_reminder_notes` and `cleanup_reminder_days`. Nothing is ever pushed from the vault. Already keeping memory in files? Ask your agent to run the `migrate-memory` skill.
+Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/config.toml` (`PETIT_POUCET_VAULT` overrides it), with the limits `check` and the cleanup review apply: `full_review_max_notes`, `review_max_pages`, `active_days`, `unused_days`, `summary_max_chars`, `index_max_notes`, `cleanup_reminder_notes` and `cleanup_reminder_days`. Nothing is ever pushed from the vault. Already keeping memory elsewhere, in any supported agent's files or own memory? Ask your agent to run the `migrate-memory` skill.
 
 ## Browse your memory in Obsidian
 
