@@ -1,11 +1,12 @@
 use std::fs;
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use jiff::Timestamp;
 
-use crate::config::Config;
-use crate::vault::write_atomic;
+use crate::config::{Config, Limits};
+use crate::note::Note;
+use crate::vault::{Vault, write_atomic};
 use crate::{git, lock, usage};
 
 // In the vault (a dot-file the loader and Obsidian skip), synced and committed: a cleanup counts on every machine.
@@ -33,11 +34,100 @@ pub fn record(config: &Config, at: SystemTime, agent: &str) -> Result<(), String
     Ok(())
 }
 
+// Every note before the first cleanup; a note whose file time can't be read counts as changed.
+pub fn changed_since(vault: &Vault, since: Option<SystemTime>) -> Vec<&Note> {
+    let modified = |note: &Note| {
+        fs::metadata(vault.root.join(format!("{}.md", note.path)))
+            .and_then(|m| m.modified())
+            .ok()
+    };
+    vault
+        .notes
+        .iter()
+        .filter(|note| since.is_none_or(|since| modified(note).is_none_or(|m| m > since)))
+        .collect()
+}
+
+// Why a cleanup is due, when it is: many notes changed, a long time passed, or a sizeable vault was never cleaned.
+pub fn due(vault: &Vault, limits: &Limits, now: SystemTime) -> Option<String> {
+    let max_notes = limits.cleanup_reminder_notes;
+    let reason = match last(&vault.root) {
+        None => (vault.notes.len() > max_notes)
+            .then(|| format!("{} notes, never cleaned up", vault.notes.len()))?,
+        Some(at) => {
+            let changed = changed_since(vault, Some(at)).len();
+            let days = now.duration_since(at).unwrap_or(Duration::ZERO).as_secs() / 86_400;
+            (changed > max_notes || days > limits.cleanup_reminder_days)
+                .then(|| format!("{changed} notes changed and {days} days since the last one"))?
+        }
+    };
+    Some(format!(
+        "a memory cleanup is due ({reason}): ask to tidy your memory"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
     use super::*;
+
+    fn vault_of(root: &Path, notes: usize) -> Vault {
+        fs::create_dir_all(root.join("Preferences")).unwrap();
+        for i in 0..notes {
+            fs::write(root.join(format!("Preferences/n-{i}.md")), "x").unwrap();
+        }
+        Vault::load(root).unwrap()
+    }
+
+    #[test]
+    fn a_cleanup_is_due_after_many_changes_a_long_time_or_never_in_a_sizeable_vault() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = Config {
+            git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
+        };
+        let limits = Limits {
+            cleanup_reminder_notes: 2,
+            cleanup_reminder_days: 30,
+            ..config.limits
+        };
+        let day = Duration::from_secs(86_400);
+        let small = vault_of(tmp.path(), 2);
+        assert_eq!(
+            due(&small, &limits, SystemTime::now()),
+            None,
+            "a small vault never cleaned"
+        );
+        let vault = vault_of(tmp.path(), 3);
+        let now = SystemTime::now();
+        assert_eq!(
+            due(&vault, &limits, now).as_deref(),
+            Some("a memory cleanup is due (3 notes, never cleaned up): ask to tidy your memory")
+        );
+
+        record(&config, now - 10 * day, "test").unwrap();
+        assert_eq!(
+            due(&vault, &limits, now).as_deref(),
+            Some(
+                "a memory cleanup is due (3 notes changed and 10 days since the last one): ask to tidy your memory"
+            ),
+            "every note was written after that cleanup"
+        );
+        record(&config, now, "test").unwrap();
+        assert_eq!(due(&vault, &limits, now), None, "just cleaned up");
+        assert_eq!(
+            due(&vault, &limits, now + 31 * day).as_deref(),
+            Some(
+                "a memory cleanup is due (0 notes changed and 31 days since the last one): ask to tidy your memory"
+            )
+        );
+        assert_eq!(
+            due(&vault, &limits, now + 30 * day),
+            None,
+            "30 days is not over 30"
+        );
+    }
 
     #[test]
     fn none_until_recorded_then_the_recorded_time_to_the_nanosecond_in_a_readable_file() {

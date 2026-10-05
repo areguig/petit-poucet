@@ -47,6 +47,9 @@ Every session loads the preferences and its project's notes, one Index line each
 - `check` warns when the preferences alone, or the preferences plus one project, exceed `index_max_notes` (100); the session-start line tells the user to ask for a tidy-up.
 - `check` warns about a summary over `summary_max_chars` (200 characters): one short fact per note keeps the Index and the review small.
 
+## Cleanup reminder (session start)
+Session start says a cleanup is due when more than `cleanup_reminder_notes` (30) notes changed since `.last-cleanup`, the last cleanup was more than `cleanup_reminder_days` (30) days ago, or the vault holds more than 30 notes and was never cleaned. Agents that show hook messages (Claude Code) put it in the line shown to the user; the others get it in the context, to tell the user once. The release notice goes the same way.
+
 ## Settings
 The limits live in `~/.config/petit-poucet/config.toml`. `init` writes every setting; reading a config written by an older version writes in the settings it lacks, keeping the user's own lines and comments, so the file always shows the values in effect.
 
