@@ -35,7 +35,7 @@ petit-poucet setup
 
 - `setup --check` says what's missing.
 - `setup --uninstall` takes it all out again; your vault stays.
-- `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`) limits either to one agent.
+- `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`, `opencode`) limits either to one agent.
 
 | Agent | What `setup` writes | Then |
 |---|---|---|
@@ -44,6 +44,7 @@ petit-poucet setup
 | Codex | `~/.codex/config.toml`, `~/.codex/hooks.json`, `~/.agents/skills`, `~/.codex/agents` | Open Codex once and trust the new hooks with `/hooks`. |
 | Cursor | `~/.cursor/mcp.json`, `~/.cursor/hooks.json`, `~/.agents/skills`, `~/.cursor/agents` | Restart Cursor. Cloud agents don't read user-level hooks: there memory loads through the MCP server's instructions. |
 | Antigravity CLI | `~/.gemini/config/`: `mcp_config.json`, `hooks.json`, `skills`, `agents` | Memory reaches the model before each of its calls. Gemini CLI isn't supported: it no longer serves personal Google accounts, and Antigravity CLI replaces it. |
+| OpenCode 2 | `~/.config/opencode/`: `opencode.json`, `plugins/petit-poucet.js`, `agents`; `~/.agents/skills` | Restart OpenCode. OpenCode 1.x isn't supported: install OpenCode 2 (`curl -fsSL https://opencode.ai/v2/install \| bash`). OpenCode has no hooks: the plugin adds your memory to the system prompt of each model call and sends the save reminder when a session's turn ends. |
 
 Coming from the 0.2 plugin for Claude Code or Copilot? `setup` removes it with the agent's own command, so its hooks don't run twice.
 

@@ -7,9 +7,10 @@ For readers who want to know what happens under the hood. The design and its dec
 ```
 Claude Code ─┐
 Copilot     ─┤
-Codex       ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
-Cursor      ─┤
-Antigravity ─┘
+Codex       ─┤
+Cursor      ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
+Antigravity ─┤
+OpenCode    ─┘
 ```
 
 One binary plays three parts:
