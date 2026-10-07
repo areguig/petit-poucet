@@ -5,7 +5,7 @@ Claude Code, Copilot and Codex now keep memories of their own, and that's useful
 | | Claude Code auto memory | GitHub Copilot Memory | Codex memories | petit-poucet |
 |---|---|---|---|---|
 | Where it lives | `~/.claude/projects/<repo>/memory/`, on this machine | Stored by GitHub (in VS Code: local memory files) | Generated files in `~/.codex/memories/` | A folder you choose: plain Markdown, Obsidian-compatible |
-| Other agents | Claude Code only | Copilot only | Codex only | Claude Code, Copilot, Codex, Cursor, Antigravity CLI, any MCP client |
+| Other agents | Claude Code only | Copilot only | Codex only | Claude Code, Copilot, Codex, Cursor, Antigravity CLI, OpenCode, any MCP client |
 | Scope | One repo; rules for all repos go in `CLAUDE.md`, by hand | One repo | Global | Preferences for every repo, notes per repo (matched by git remote), topics tied to no repo |
 | How notes are made | Claude decides what to save | The agent saves while working | Summarised in the background from past chats | Saved on purpose, one fact per note, each with its source |
 | Your say | Edit the files yourself | Review and delete in repository settings | Docs advise against editing them by hand | Rules you stated change only with your confirmation; your edits are never overwritten |

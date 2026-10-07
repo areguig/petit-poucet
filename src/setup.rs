@@ -4,7 +4,7 @@ use crate::agent::Agent;
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
-use crate::{antigravity, claude, codex, copilot, cursor, skills};
+use crate::{antigravity, claude, codex, copilot, cursor, opencode, skills};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -155,6 +155,12 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
             copilot::check,
             copilot::uninstall,
             copilot::dir(home),
+        ),
+        Agent::Opencode => (
+            opencode::setup,
+            opencode::check,
+            opencode::uninstall,
+            opencode::dir(home),
         ),
     };
     match mode {

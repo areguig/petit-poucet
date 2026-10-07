@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::agent::Agent;
-use crate::{antigravity, codex, copilot, edit, note};
+use crate::{antigravity, codex, copilot, edit, note, opencode};
 
 // The skills and the subagent tidy-memory starts, embedded so `setup` can install them.
 const SKILLS: [(&str, &str); 3] = [
@@ -21,10 +21,12 @@ const SKILLS: [(&str, &str); 3] = [
 const CLEANUP: &str = include_str!("../agents/memory-cleanup.md");
 const CLEANUP_NAME: &str = "memory-cleanup";
 
-// Codex, Cursor and Copilot share the Agent Skills folder; Claude Code and Antigravity read only their own.
+// Codex, Cursor, Copilot and OpenCode share the Agent Skills folder; Claude Code and Antigravity read only their own.
 fn skills_dir(agent: Agent, home: &Path) -> PathBuf {
     match agent {
-        Agent::Codex | Agent::Cursor | Agent::Copilot => home.join(".agents/skills"),
+        Agent::Codex | Agent::Cursor | Agent::Copilot | Agent::Opencode => {
+            home.join(".agents/skills")
+        }
         Agent::Claude => home.join(".claude/skills"),
         Agent::Antigravity => antigravity::dir(home).join("skills"),
     }
@@ -76,6 +78,14 @@ fn subagent(agent: Agent, home: &Path) -> (PathBuf, String) {
         Agent::Cursor => (
             home.join(format!(".cursor/agents/{CLEANUP_NAME}.md")),
             markdown("", ""),
+        ),
+        // OpenCode names an agent after its file; denying edits and shell keeps it read-only.
+        Agent::Opencode => (
+            opencode::dir(home).join(format!("agents/{CLEANUP_NAME}.md")),
+            markdown(
+                "mode: subagent\npermission:\n  edit: deny\n  bash: deny\n",
+                "",
+            ),
         ),
         // Antigravity's prompt starts at an H1; mainAgent: false keeps it out of the agents a session can run as.
         Agent::Antigravity => (
@@ -175,7 +185,12 @@ mod tests {
     fn installs_the_skills_and_the_subagent_in_each_agents_format() {
         let home = tempfile::tempdir().unwrap();
         let home = home.path();
-        for agent in [Agent::Codex, Agent::Cursor, Agent::Antigravity] {
+        for agent in [
+            Agent::Codex,
+            Agent::Cursor,
+            Agent::Antigravity,
+            Agent::Opencode,
+        ] {
             assert!(!check(agent, home).1);
             assert!(setup(agent, home).unwrap().starts_with("installed in "));
             assert_eq!(setup(agent, home).unwrap(), "already installed");
@@ -203,13 +218,18 @@ mod tests {
                 .starts_with("You review a petit-poucet")
         );
         for (path, extra) in [
-            (".cursor/agents/memory-cleanup.md", ""),
+            (home.join(".cursor/agents/memory-cleanup.md"), ""),
             (
-                ".gemini/config/agents/memory-cleanup/agent.md",
+                home.join(".gemini/config/agents/memory-cleanup/agent.md"),
                 "subagent: true\nmainAgent: false\n",
             ),
+            (
+                opencode::dir(home).join("agents/memory-cleanup.md"),
+                "mode: subagent\npermission:\n  edit: deny\n  bash: deny\n",
+            ),
         ] {
-            let text = fs::read_to_string(home.join(path)).unwrap();
+            let text = fs::read_to_string(&path).unwrap();
+            let path = path.display();
             let (yaml, body) = note::split_frontmatter(&text).unwrap();
             assert!(
                 yaml.starts_with("name: memory-cleanup\ndescription: \"Reviews the whole"),

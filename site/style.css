@@ -68,10 +68,6 @@ section { padding: 56px 0 8px; }
 .button.primary { background: var(--accent); color: var(--accent-ink); }
 .clients { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 28px 0 0; padding: 0; list-style: none; }
 .clients li { font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
-.clients.planned { margin-top: 10px; }
-.clients.planned li { background: transparent; border-style: dashed; }
-.clients.planned li:first-child { border: 0; padding-right: 0; font-weight: 600; }
-.clients.planned a { color: inherit; }
 
 .problems { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 16px; margin-top: 24px; }
 .problem { padding: 20px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 12px 12px 0; }
