@@ -1,6 +1,6 @@
 [package]
 name = "petit-poucet"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 description = "Curated, shared Markdown memory for coding agents, served over MCP"
 repository = "https://github.com/areguig/petit-poucet"
@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 dunce = "1.0.5"
+isolang = { version = "2.4.0", default-features = false }
 jiff = { version = "0.2.37", features = ["serde"] }
 petgraph = { version = "0.8.3", default-features = false }
 regex = "1.13.1"
@@ -21,11 +22,13 @@ serde-saphyr = "1.3.0"
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
 shlex = "2.0.1"
 slug = "0.1.6"
+stop-words = { version = "0.10.1", default-features = false, features = ["nltk"] }
 tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["macros", "rt"] }
 toml = "1.1.6"
 toml_edit = "0.25.15"
 walkdir = "2.5.0"
+whatlang = "0.18.0"
 
 [dev-dependencies]
 assert_cmd = "2.2.2"

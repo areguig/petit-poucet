@@ -44,6 +44,28 @@ notes: 20, errors: 17, warnings: 3
 }
 
 #[test]
+fn check_reports_near_duplicates_by_meaning_words_in_each_note_language() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(
+        &Path::new(FIXTURE).with_file_name("near-duplicates"),
+        &vault,
+    );
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let output = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert_eq!(
+        stdout(&output),
+        "\
+Topics/notes/recette-par-branche.md: warning: near-duplicate of [[Topics/notes/deploiement-recette]]: merge them if they say the same
+notes: 5, errors: 0, warnings: 1
+"
+    );
+}
+
+#[test]
 fn check_without_a_configured_vault_says_how_to_create_one() {
     let home = TempDir::new().unwrap();
     let output = petit_poucet(home.path()).arg("check").output().unwrap();
@@ -578,7 +600,7 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode)\n"
         ),
         "{out}"
     );
@@ -841,7 +863,7 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("vault: set your git identity"), "{out}");
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode)\n"
         ),
         "{out}"
     );
@@ -1082,6 +1104,62 @@ fn setup_wires_antigravity_in_and_out() {
         read("mcp_config.json"),
         serde_json::from_str::<serde_json::Value>(mine).unwrap()
     );
+}
+
+#[test]
+fn setup_wires_opencode_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let config = home.path().join(".config/opencode");
+    let mine = r#"{"model": "anthropic/claude", "mcp": {"servers": {"other": {"type": "remote", "url": "http://localhost:1"}}}}"#;
+    write(home.path(), ".config/opencode/opencode.json", mine);
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains("OpenCode: set up (MCP server in opencode.json, plugin in plugins/petit-poucet.js): restart OpenCode\n"),
+        "{out}"
+    );
+    let read = || -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(config.join("opencode.json")).unwrap()).unwrap()
+    };
+    assert_eq!(
+        read()["mcp"]["servers"]["other"]["url"],
+        "http://localhost:1"
+    );
+    assert_eq!(
+        read()["mcp"]["servers"]["petit-poucet"],
+        serde_json::json!({"type": "local", "command": [exe.display().to_string(), "serve"]})
+    );
+    let plugin = fs::read_to_string(config.join("plugins/petit-poucet.js")).unwrap();
+    assert!(
+        plugin.contains(&format!(
+            "const EXE = {};",
+            serde_json::to_string(&exe.display().to_string()).unwrap()
+        )),
+        "{plugin}"
+    );
+    assert!(
+        out.ends_with(&format!(
+            "OpenCode skills: installed in {} (with the memory-cleanup subagent)\n",
+            home.path().join(".agents/skills").display()
+        )),
+        "{out}"
+    );
+    assert!(config.join("agents/memory-cleanup.md").is_file());
+
+    assert!(setup(home.path(), &["--check"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.contains("OpenCode: removed (MCP server and plugin)\n"),
+        "{out}"
+    );
+    assert_eq!(
+        read(),
+        serde_json::from_str::<serde_json::Value>(mine).unwrap()
+    );
+    assert!(!config.join("plugins/petit-poucet.js").exists());
+    assert!(!config.join("agents/memory-cleanup.md").exists());
 }
 
 // Antigravity leaves an empty mcp_config.json behind.

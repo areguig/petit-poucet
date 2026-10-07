@@ -247,15 +247,23 @@ Memory quality before new reach: checks that are deterministic, so the `memory-c
 
 **Status 2026-10-05:** every 0.4 issue is merged into `v0.4`: #77, #36, #88, #89, #25, #23, #14, #84, #22, plus the Windows write fix #101 found on the way (a file another process was reading couldn't be replaced, which lost the update check's write). #35 and #24 moved to triage. What remains before the release is the owner's test session, from the checklist compiled from every PR's manual check, starting with the 0.3 vs 0.4 cleanup comparison.
 
-### 0.5: one vault on several machines, then OpenCode
+**Released 2026-10-05** as v0.4.0, after the owner's test session.
+
+### 0.5: OpenCode, and fixes from the 0.4 test session (decided 2026-10-05; OpenCode added 2026-10-07)
+OpenCode first (owner's decision 2026-10-07: as soon as possible, in the next release, even a small one). One PR per issue into `v0.5`, cut from `v0.4.1-fixes`:
+- #10 OpenCode: MCP server in `opencode.json`, a plugin that adds the memory to the system prompt of each model call and sends the save reminder when a session goes idle (OpenCode has no hooks), skills in `~/.agents/skills`, the `memory-cleanup` subagent in `agents/`. **Built 2026-10-07.**
+- #105 near-duplicates leave out the filler words of each note's language (owner's decision: detect the language per note, multilingual, never English only). **Built 2026-10-05.**
+- #106 vault commits name the agent instead of "unknown agent".
+- #109 `petit-poucet update`: install the latest release, then run `setup`.
+
+### 0.6: one vault on several machines
 Two sync routes, because users have different needs; petit-poucet itself never runs a sync service, and cloud sync services stay out of scope:
 - #81 Syncthing, peer to peer, plus the shared base: `Index.md` per machine (out of git), session start commits changes made outside petit-poucet under the vault lock, sync conflicts reported by `check` and session start.
 - #19 a git remote the user owns (opt-in `git_sync`): fetch outside the vault lock, push in the background; also the route for cloud agents.
-- OpenCode (#10), delayed from 0.4.
 
 ### Later, only when needed
 - Homebrew tap and `cargo install`, once the install script has users.
 - Search that scales: better ranking (stems, BM25) once vaults reach several hundred notes; semantic search stays optional behind `memory_search`.
 
 ### Out of scope
-Team or shared vaults, sharing or exporting notes between vaults, cloud sync services (syncing through Syncthing or the user's own git remote is planned for 0.5), automatic capture from transcripts, and a GUI of our own. (Codex was out of scope until 2026-10-01.)
+Team or shared vaults, sharing or exporting notes between vaults, cloud sync services (syncing through Syncthing or the user's own git remote is planned for 0.6), automatic capture from transcripts, and a GUI of our own. (Codex was out of scope until 2026-10-01.)

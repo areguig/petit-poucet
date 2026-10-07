@@ -4,16 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>petit-poucet: one memory for every coding agent you switch between</title>
-<meta name="description" content="An MCP memory server for coding agents: one curated memory for Claude Code, GitHub Copilot, Codex, Cursor and Antigravity CLI: your rules, decisions and verified facts in a Markdown folder you own, loaded at the start of every session, with every change in git.">
+<meta name="description" content="An MCP memory server for coding agents: one curated memory for Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI and OpenCode: your rules, decisions and verified facts in a Markdown folder you own, loaded at the start of every session, with every change in git.">
 <meta property="og:title" content="petit-poucet: one memory for every coding agent you switch between">
-<meta property="og:description" content="Your rules, decisions and verified facts in a Markdown folder you own, loaded by Claude Code, Copilot, Codex, Cursor and Antigravity CLI at the start of every session.">
+<meta property="og:description" content="Your rules, decisions and verified facts in a Markdown folder you own, loaded by Claude Code, Copilot, Codex, Cursor, Antigravity CLI and OpenCode at the start of every session.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://areguig.github.io/petit-poucet/">
 <meta property="og:site_name" content="petit-poucet">
 <meta property="og:image" content="https://areguig.github.io/petit-poucet/social-preview.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
-<meta property="og:image:alt" content="petit-poucet: one memory for every agent you switch between. Claude Code, Copilot, Codex, Cursor, Antigravity CLI.">
+<meta property="og:image:alt" content="petit-poucet: one memory for every agent you switch between. Claude Code, Copilot, Codex, Cursor, Antigravity CLI, OpenCode.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="https://areguig.github.io/petit-poucet/">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
@@ -22,7 +22,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "petit-poucet",
-  "description": "An MCP memory server for coding agents. One curated memory, a Markdown folder with every change in git, that Claude Code, GitHub Copilot, Codex, Cursor and Antigravity CLI load at the start of every session.",
+  "description": "An MCP memory server for coding agents. One curated memory, a Markdown folder with every change in git, that Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI and OpenCode load at the start of every session.",
   "url": "https://areguig.github.io/petit-poucet/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Linux, Windows",
@@ -47,10 +47,7 @@
       <a class="button" href="https://github.com/areguig/petit-poucet">GitHub</a>
     </div>
     <ul class="clients" aria-label="Works with">
-      <li>Claude Code</li><li>Copilot CLI</li><li>Copilot in VS Code</li><li>Copilot in IntelliJ</li><li>GitHub Copilot app</li><li>Codex</li><li>Cursor</li><li>Antigravity CLI</li><li>any MCP client</li>
-    </ul>
-    <ul class="clients planned" aria-label="Next">
-      <li>Next:</li><li><a href="https://github.com/areguig/petit-poucet/issues/10">OpenCode</a></li>
+      <li>Claude Code</li><li>Copilot CLI</li><li>Copilot in VS Code</li><li>Copilot in IntelliJ</li><li>GitHub Copilot app</li><li>Codex</li><li>Cursor</li><li>Antigravity CLI</li><li>OpenCode</li><li>any MCP client</li>
     </ul>
   </section>
 
@@ -73,7 +70,7 @@
     <h2>Memory that follows you, not one tool</h2>
     <p class="lead">Built-in memories are tied to one agent. A memory server on its own waits for the model to decide to call it. petit-poucet is wired into each agent, so the memory is already there when the session starts.</p>
     <div class="cards">
-      <div class="card"><div class="icon" aria-hidden="true">🔀</div><h3>One vault, every agent</h3><p>Claude Code, Copilot, Codex, Cursor and Antigravity CLI read and write the same notes. A rule you gave one of them, the others follow.</p></div>
+      <div class="card"><div class="icon" aria-hidden="true">🔀</div><h3>One vault, every agent</h3><p>Claude Code, Copilot, Codex, Cursor, Antigravity CLI and OpenCode read and write the same notes. A rule you gave one of them, the others follow.</p></div>
       <div class="card"><div class="icon" aria-hidden="true">⚡</div><h3>Loaded, not just available</h3><p>A session-start hook hands the agent your rules and the Index before your first message: there's no tool call for the model to forget.</p></div>
       <div class="card"><div class="icon" aria-hidden="true">🛠️</div><h3>One command to set up</h3><p><code>petit-poucet setup</code> finds your agents and writes their config: MCP server, hooks, skills. <code>--check</code> and <code>--uninstall</code> do what they say.</p></div>
     </div>
@@ -121,7 +118,7 @@
         </thead>
         <tbody>
           <tr><th>Where it lives</th><td>Markdown in <code>~/.claude/projects/&lt;repo&gt;/memory/</code>, on this machine</td><td>Stored by GitHub (in VS Code: local memory files)</td><td>Generated files in <code>~/.codex/memories/</code></td><td class="us">A folder you choose, plain Markdown, Obsidian-compatible</td></tr>
-          <tr><th>Other agents</th><td>Claude Code only</td><td>Copilot only</td><td>Codex only</td><td class="us">Claude Code, Copilot, Codex, Cursor, Antigravity CLI, any MCP client</td></tr>
+          <tr><th>Other agents</th><td>Claude Code only</td><td>Copilot only</td><td>Codex only</td><td class="us">Claude Code, Copilot, Codex, Cursor, Antigravity CLI, OpenCode, any MCP client</td></tr>
           <tr><th>Scope</th><td>One repo; rules for all repos go in <code>CLAUDE.md</code>, by hand</td><td>One repo</td><td>Global</td><td class="us">Preferences for every repo, notes per repo (matched by git remote), and topics tied to no repo</td></tr>
           <tr><th>How notes are made</th><td>Claude decides what to save</td><td>The agent saves while working</td><td>Summarised in the background from past chats</td><td class="us">Saved on purpose, one fact per note, each with its source</td></tr>
           <tr><th>Your say</th><td>Edit the files yourself</td><td>Review and delete in repository settings</td><td>Docs advise against editing them by hand</td><td class="us">Rules you stated change only with your confirmation; your edits are never overwritten</td></tr>
@@ -142,7 +139,7 @@
       <div>
         <h3>petit-poucet helps when</h3>
         <ul>
-          <li>you switch between Claude Code, Copilot, Codex, Cursor or Antigravity, or use several;</li>
+          <li>you switch between Claude Code, Copilot, Codex, Cursor, Antigravity or OpenCode, or use several;</li>
           <li>you want one place to read, edit and correct what agents know;</li>
           <li>your rules must not drift, expire or be rewritten silently.</li>
         </ul>
@@ -173,9 +170,10 @@
     <h2>A folder you can read</h2>
 <pre>Claude Code ─┐
 Copilot     ─┤
-Codex       ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
-Cursor      ─┤                                       ├─ Index.md           generated
-Antigravity ─┘                                       ├─ Preferences/       every repo
+Codex       ─┤
+Cursor      ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
+Antigravity ─┤                                       ├─ Index.md           generated
+OpenCode    ─┘                                       ├─ Preferences/       every repo
                                                      ├─ Projects/&lt;repo&gt;/   that repo
                                                      └─ Topics/&lt;topic&gt;/    searched on demand</pre>
     <p class="note">Want to know more? <a href="how-it-works.html">How it works</a>: a session step by step, the note format, how the memory stays clean, and the settings.</p>
@@ -210,7 +208,7 @@ petit-poucet setup</pre>
     <details><summary>What does <code>setup</code> change on my machine?</summary><p>Only petit-poucet's own entries in each agent's user-level config (MCP server, hooks, skills, the <code>memory-cleanup</code> subagent), with a <code>.petit-poucet.bak</code> copy of each file it changed. <code>petit-poucet setup --uninstall</code> takes them out again and keeps your vault.</p></details>
     <details><summary>I use the 0.2 plugin for Claude Code or Copilot</summary><p>Install the binary and run <code>petit-poucet setup</code>: it removes the plugin with the agent's own command and wires the agent directly. Your vault doesn't change.</p></details>
     <details><summary>How do I update?</summary><p>Run the install script again. Once a day, session start checks for a new release in the background and tells you when one is out.</p></details>
-    <details><summary>My agent isn't supported yet</summary><p>OpenCode comes next. Any MCP client can already use the tools; give a 👍 to <a href="https://github.com/areguig/petit-poucet/issues/10">OpenCode</a> or open an issue for yours: the votes decide what comes first.</p></details>
+    <details><summary>My agent isn't supported yet</summary><p>Any MCP client can already use the tools: point it at <code>petit-poucet serve</code>. For hooks and skills in yours, <a href="https://github.com/areguig/petit-poucet/issues">open an issue</a>: the votes decide what comes first.</p></details>
     <details><summary>Can my team share one memory?</summary><p>Not by design: each person keeps their own vault. Knowledge the whole team needs belongs in the repository, in <code>AGENTS.md</code> or <code>CLAUDE.md</code>.</p></details>
   </section>
 

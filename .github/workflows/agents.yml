@@ -14,12 +14,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        agent: [codex, claude, copilot, cursor, antigravity]
+        agent: [codex, claude, copilot, cursor, antigravity, opencode]
         # install-windows only where Windows needs another command.
         include:
           - { agent: codex, install: "npm install -g @openai/codex" }
           - { agent: claude, install: "npm install -g @anthropic-ai/claude-code" }
           - { agent: copilot, install: "npm install -g @github/copilot" }
+          - { agent: opencode, install: "npm install -g @opencode/cli" }
           - agent: cursor
             install: curl https://cursor.com/install -fsS | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
             install-windows: irm 'https://cursor.com/install?win32=true' | iex
