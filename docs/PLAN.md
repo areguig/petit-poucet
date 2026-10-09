@@ -253,10 +253,15 @@ Memory quality before new reach: checks that are deterministic, so the `memory-c
 OpenCode first (owner's decision 2026-10-07: as soon as possible, in the next release, even a small one). One PR per issue into `v0.5`, cut from `v0.4.1-fixes`:
 - #10 OpenCode: MCP server in `opencode.json`, a plugin that adds the memory to the system prompt of each model call and sends the save reminder when a session goes idle (OpenCode has no hooks), skills in `~/.agents/skills`, the `memory-cleanup` subagent in `agents/`. **Built 2026-10-07.**
 - #105 near-duplicates leave out the filler words of each note's language (owner's decision: detect the language per note, multilingual, never English only). **Built 2026-10-05.**
-- #106 vault commits name the agent instead of "unknown agent".
-- #109 `petit-poucet update`: install the latest release, then run `setup`.
 
-### 0.6: one vault on several machines
+**Released 2026-10-07** as v0.5.0 with #10 and #105; #106 and #109 moved to 0.6.
+
+### 0.6: updates in one command (decided 2026-10-09)
+The two issues left from 0.5. One PR per issue into `v0.6`, cut from `main`:
+- #106 vault commits name the agent instead of "unknown agent".
+- #109 `petit-poucet update`: install the latest release, then run `setup`; the update notice tells users to run it. It ships before sync so the next upgrades take one command.
+
+### 0.7: one vault on several machines
 Two sync routes, because users have different needs; petit-poucet itself never runs a sync service, and cloud sync services stay out of scope:
 - #81 Syncthing, peer to peer, plus the shared base: `Index.md` per machine (out of git), session start commits changes made outside petit-poucet under the vault lock, sync conflicts reported by `check` and session start.
 - #19 a git remote the user owns (opt-in `git_sync`): fetch outside the vault lock, push in the background; also the route for cloud agents.
@@ -266,4 +271,4 @@ Two sync routes, because users have different needs; petit-poucet itself never r
 - Search that scales: better ranking (stems, BM25) once vaults reach several hundred notes; semantic search stays optional behind `memory_search`.
 
 ### Out of scope
-Team or shared vaults, sharing or exporting notes between vaults, cloud sync services (syncing through Syncthing or the user's own git remote is planned for 0.6), automatic capture from transcripts, and a GUI of our own. (Codex was out of scope until 2026-10-01.)
+Team or shared vaults, sharing or exporting notes between vaults, cloud sync services (syncing through Syncthing or the user's own git remote is planned for 0.7), automatic capture from transcripts, and a GUI of our own. (Codex was out of scope until 2026-10-01.)
