@@ -147,7 +147,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Create or update one short fact. Search first; read a note before updating it; updating a `feedback` note needs the user's confirmation."
+        description = "Create or update one short fact: needs type, title, summary, fact, source and how_to_apply. Search first; read a note before updating it; updating a `feedback` note needs the user's confirmation."
     )]
     fn memory_save(
         &self,

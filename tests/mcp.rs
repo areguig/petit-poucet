@@ -923,3 +923,58 @@ fn search_finds_two_letter_names_as_whole_words() {
     drop(client);
     assert!(child.wait().unwrap().success());
 }
+
+#[test]
+fn a_save_missing_fields_names_all_of_them_and_the_likely_field() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+
+    let tools = client.request("tools/list", json!({}));
+    let save = tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "memory_save")
+        .unwrap();
+    let required: Vec<&str> = save["inputSchema"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    // Not every client shows the schema up front: the description names the required fields too.
+    let description = save["description"].as_str().unwrap();
+    for field in ["type", "title", "summary", "fact", "source", "how_to_apply"] {
+        assert!(
+            required.contains(&field),
+            "{field} not required: {required:?}"
+        );
+        assert!(
+            description.contains(field),
+            "{field} not in the description: {description}"
+        );
+    }
+
+    let (is_error, text) = client.call(
+        "memory_save",
+        json!({
+            "scope": "all repos", "title": "Tabs", "content": "Use tabs.",
+            "description": "Indent with tabs", "source": "the user on 2026-10-19",
+        }),
+    );
+    assert!(is_error);
+    assert_eq!(
+        text,
+        "missing: type, summary, fact, how_to_apply; unknown: `content` (use `fact` for the text), \
+         `description` (use `summary` for the one-line description)"
+    );
+    assert!(!vault.join("Preferences/tabs.md").exists());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}

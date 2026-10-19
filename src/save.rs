@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -12,35 +13,54 @@ use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
 use crate::{change, duplicates, git, secrets};
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(transform = require_fields_in_schema)]
 pub struct SaveRequest {
     /// Existing note to update, e.g. `Preferences/commit-rules`; omit to create a note.
     pub path: Option<String>,
-    #[serde(rename = "type")]
-    pub note_type: NoteType,
+    // The fields below default to empty so that `validate` can report every missing one at once.
+    #[serde(rename = "type", default)]
+    pub note_type: Option<NoteType>,
     /// A subject tied to no repo, e.g. `homelab` or `work-mac`: the note goes to Topics/<topic>. Overrides scope and project_dir.
     pub topic: Option<String>,
     /// `all repos`, or a project key; overrides project_dir.
     pub scope: Option<String>,
     /// The agent's working directory, used to find the project.
     pub project_dir: Option<PathBuf>,
+    #[serde(default)]
     pub title: String,
     /// One line; becomes the note's line in the Index.
+    #[serde(default)]
     pub summary: String,
     /// The fact itself, in a few lines.
+    #[serde(default)]
     pub fact: String,
     /// Where the fact came from (the user's words, or the file/command that verified it) and when.
+    #[serde(default)]
     pub source: String,
+    #[serde(default)]
     pub how_to_apply: String,
     #[serde(default)]
     pub tags: Vec<String>,
     /// Required to update a `feedback` note: set only after the user confirmed the change.
     #[serde(default)]
     pub user_confirmed: bool,
+    // Fields agents guess (`content`, `body`), named in the error instead of silently dropped.
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub unknown: BTreeMap<String, serde_json::Value>,
+}
+
+// serde's defaults would make the schema optional: agents must still see these fields as required.
+fn require_fields_in_schema(schema: &mut schemars::Schema) {
+    schema.insert(
+        "required".to_string(),
+        serde_json::json!(["type", "title", "summary", "fact", "source", "how_to_apply"]),
+    );
 }
 
 // Returns the saved note's path and the reply for the agent.
 pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, String), String> {
-    validate(&req)?;
+    let note_type = validate(&req)?;
     let root = &config.vault;
     let vault = Vault::load(root)?;
     let today = jiff::Zoned::now().date();
@@ -74,7 +94,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         }
     }
     let frontmatter = Frontmatter {
-        note_type: req.note_type,
+        note_type,
         scope: note::Place::of(&path).scope().to_string(),
         summary: Some(req.summary.trim().to_string()),
         created: previous.map_or(today, |fm| fm.created),
@@ -127,18 +147,10 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     Ok((path, reply.join("\n")))
 }
 
-fn validate(req: &SaveRequest) -> Result<(), String> {
-    let fields = [
-        ("title", &req.title),
-        ("summary", &req.summary),
-        ("fact", &req.fact),
-        ("source", &req.source),
-        ("how_to_apply", &req.how_to_apply),
-    ];
-    for (name, value) in fields {
-        if value.trim().is_empty() {
-            return Err(format!("{name} is required"));
-        }
+// Returns the note type once every required field is there.
+fn validate(req: &SaveRequest) -> Result<NoteType, String> {
+    let note_type = require_fields(req)?;
+    for (name, value) in text_fields(req) {
         if let Some(kind) = secrets::find(value) {
             return Err(format!(
                 "{name} looks like a secret ({kind}): never store secrets"
@@ -154,7 +166,52 @@ fn validate(req: &SaveRequest) -> Result<(), String> {
     if slug::slugify(&req.title).is_empty() {
         return Err("title needs at least one letter or digit".to_string());
     }
-    Ok(())
+    Ok(note_type)
+}
+
+fn text_fields(req: &SaveRequest) -> [(&'static str, &String); 5] {
+    [
+        ("title", &req.title),
+        ("summary", &req.summary),
+        ("fact", &req.fact),
+        ("source", &req.source),
+        ("how_to_apply", &req.how_to_apply),
+    ]
+}
+
+// Agents guess field names; the unknown ones are listed with the field they probably meant.
+fn require_fields(req: &SaveRequest) -> Result<NoteType, String> {
+    let mut missing: Vec<&str> = req
+        .note_type
+        .is_none()
+        .then_some("type")
+        .into_iter()
+        .collect();
+    missing.extend(
+        text_fields(req)
+            .into_iter()
+            .filter(|(_, value)| value.trim().is_empty())
+            .map(|(name, _)| name),
+    );
+    let unknown: Vec<String> = req
+        .unknown
+        .keys()
+        .map(|name| match name.as_str() {
+            "content" | "body" => format!("`{name}` (use `fact` for the text)"),
+            "description" => format!("`{name}` (use `summary` for the one-line description)"),
+            _ => format!("`{name}`"),
+        })
+        .collect();
+    match req.note_type {
+        Some(note_type) if missing.is_empty() => Ok(note_type),
+        _ => {
+            let mut problems = vec![format!("missing: {}", missing.join(", "))];
+            if !unknown.is_empty() {
+                problems.push(format!("unknown: {}", unknown.join(", ")));
+            }
+            Err(problems.join("; "))
+        }
+    }
 }
 
 // Returns the note folder, plus the `_project.md` to create on the first save in an unknown repo.
@@ -237,7 +294,7 @@ mod tests {
     fn request(title: &str) -> SaveRequest {
         SaveRequest {
             path: None,
-            note_type: NoteType::Feedback,
+            note_type: Some(NoteType::Feedback),
             scope: Some(ALL_REPOS.into()),
             project_dir: None,
             topic: None,
@@ -248,6 +305,7 @@ mod tests {
             how_to_apply: "Always.".into(),
             tags: vec!["git".into(), REQUIRED_TAG.into()],
             user_confirmed: false,
+            unknown: Default::default(),
         }
     }
 
@@ -286,7 +344,7 @@ mod tests {
         let (_tmp, config) = vault();
         type Change = fn(&mut SaveRequest);
         let cases: [(Change, &str); 6] = [
-            (|r| r.source = " ".into(), "source is required"),
+            (|r| r.source = " ".into(), "missing: source"),
             (
                 |r| r.fact = "key AKIAIOSFODNN7EXAMPLE".into(),
                 "fact looks like a secret",
@@ -366,7 +424,7 @@ mod tests {
         )
         .unwrap();
         let mut update = request("Broken");
-        update.note_type = NoteType::User;
+        update.note_type = Some(NoteType::User);
         update.path = Some("Preferences/broken".into());
         save(&config, update, "test").unwrap();
         let fm = read(&config, "Preferences/broken").frontmatter.unwrap();
@@ -411,7 +469,7 @@ mod tests {
         // Unrelated titles: "First fact" and "Second fact" would be near-duplicates.
         for title in ["Deploy steps", "Database host"] {
             let mut req = request(title);
-            req.note_type = NoteType::Project;
+            req.note_type = Some(NoteType::Project);
             req.scope = None;
             req.project_dir = Some(repo.join("src"));
             fs::create_dir_all(repo.join("src")).unwrap();
@@ -463,7 +521,7 @@ mod tests {
         };
         let save_in = |repo: std::path::PathBuf, title: &str| {
             let mut req = request(title);
-            req.note_type = NoteType::Project;
+            req.note_type = Some(NoteType::Project);
             req.scope = None;
             req.project_dir = Some(repo);
             save(&config, req, "test").unwrap().1
@@ -511,7 +569,7 @@ mod tests {
     fn a_topic_note_goes_to_its_folder_with_the_topic_as_scope() {
         let (_tmp, config) = vault();
         let mut req = request("NAS backups");
-        req.note_type = NoteType::Reference;
+        req.note_type = Some(NoteType::Reference);
         req.topic = Some("Home Lab".into());
         req.scope = Some("app".into());
         assert_eq!(
