@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::ValueEnum;
 use serde_json::{Value, json};
 
-use crate::{antigravity, codex, copilot, opencode};
+use crate::{antigravity, codex, copilot, omp, opencode};
 
 // Every agent petit-poucet knows: how its hooks reply, how to find it, how it gets set up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -15,16 +15,18 @@ pub enum Agent {
     Cursor,
     Antigravity,
     Opencode,
+    Omp,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 6] = [
+    pub const ALL: [Agent; 7] = [
         Agent::Claude,
         Agent::Copilot,
         Agent::Codex,
         Agent::Cursor,
         Agent::Antigravity,
         Agent::Opencode,
+        Agent::Omp,
     ];
 
     pub fn name(self) -> &'static str {
@@ -35,6 +37,7 @@ impl Agent {
             Agent::Cursor => "Cursor",
             Agent::Antigravity => "Antigravity CLI",
             Agent::Opencode => "OpenCode",
+            Agent::Omp => "omp",
         }
     }
 
@@ -47,6 +50,7 @@ impl Agent {
             Agent::Cursor => "cursor",
             Agent::Antigravity => "antigravity",
             Agent::Opencode => "opencode",
+            Agent::Omp => "omp",
         }
     }
 
@@ -59,6 +63,7 @@ impl Agent {
             Agent::Cursor => "cursor hook",
             Agent::Antigravity => "antigravity hook",
             Agent::Opencode => "opencode hook",
+            Agent::Omp => "omp hook",
         }
     }
 
@@ -101,7 +106,7 @@ impl Agent {
         matches!(self, Agent::Claude | Agent::Codex)
     }
 
-    // Copilot CLI, Cursor, Antigravity and OpenCode hooks have no line for the user, so `message` goes to Claude Code and Codex only.
+    // Copilot CLI, Cursor, Antigravity, OpenCode and omp hooks have no line for the user, so `message` goes to Claude Code and Codex only.
     pub fn session_start_reply(self, context: &str, message: &str) -> Value {
         match self {
             Agent::Claude | Agent::Codex => json!({
@@ -112,8 +117,8 @@ impl Agent {
             Agent::Cursor => json!({"additional_context": context}),
             // Sent before every model call; an ephemeral message is never kept in the history.
             Agent::Antigravity => json!({"injectSteps": [{"ephemeralMessage": context}]}),
-            // Read by petit-poucet's own plugin, which adds it to every model call's system prompt.
-            Agent::Opencode => json!({"context": context}),
+            // Read by petit-poucet's own plugin, which adds it to every model call.
+            Agent::Opencode | Agent::Omp => json!({"context": context}),
         }
     }
 
@@ -126,8 +131,8 @@ impl Agent {
             // Cursor sends it as the user's next message.
             Agent::Cursor => json!({"followup_message": reason}),
             Agent::Antigravity => json!({"decision": "continue", "reason": reason}),
-            // The plugin sends it as the user's next message.
-            Agent::Opencode => json!({"reason": reason}),
+            // The plugin sends it back to the agent.
+            Agent::Opencode | Agent::Omp => json!({"reason": reason}),
         }
     }
 
@@ -139,6 +144,7 @@ impl Agent {
             Agent::Cursor => home.join(".cursor").is_dir(),
             Agent::Antigravity => antigravity::dir(home).is_dir(),
             Agent::Opencode => opencode::dir(home).is_dir(),
+            Agent::Omp => omp::dir(home).is_dir(),
         }
     }
 
@@ -147,7 +153,9 @@ impl Agent {
         match self {
             Agent::Claude => Some(&["claude", "plugin", "uninstall", "petit-poucet@petit-poucet"]),
             Agent::Copilot => Some(&["copilot", "plugin", "uninstall", "petit-poucet"]),
-            Agent::Codex | Agent::Cursor | Agent::Antigravity | Agent::Opencode => None,
+            Agent::Codex | Agent::Cursor | Agent::Antigravity | Agent::Opencode | Agent::Omp => {
+                None
+            }
         }
     }
 
@@ -163,7 +171,9 @@ impl Agent {
                         .flatten()
                         .any(|marketplace| marketplace.path().join("petit-poucet").is_dir())
             }
-            Agent::Codex | Agent::Cursor | Agent::Antigravity | Agent::Opencode => false,
+            Agent::Codex | Agent::Cursor | Agent::Antigravity | Agent::Opencode | Agent::Omp => {
+                false
+            }
         }
     }
 }

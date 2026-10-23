@@ -602,7 +602,7 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp)\n"
         ),
         "{out}"
     );
@@ -865,7 +865,7 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("vault: set your git identity"), "{out}");
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp)\n"
         ),
         "{out}"
     );
@@ -1161,6 +1161,54 @@ fn setup_wires_opencode_in_and_out() {
         serde_json::from_str::<serde_json::Value>(mine).unwrap()
     );
     assert!(!config.join("plugins/petit-poucet.js").exists());
+    assert!(!config.join("agents/memory-cleanup.md").exists());
+}
+
+#[test]
+fn setup_wires_omp_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let config = home.path().join(".omp/agent");
+    let mine = r#"{"mcpServers": {"other": {"url": "http://localhost:1"}}}"#;
+    write(home.path(), ".omp/agent/mcp.json", mine);
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains(
+            "omp: set up (MCP server in mcp.json, extension in extensions/petit-poucet.js)\n"
+        ),
+        "{out}"
+    );
+    let read = || -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(config.join("mcp.json")).unwrap()).unwrap()
+    };
+    assert_eq!(read()["mcpServers"]["other"]["url"], "http://localhost:1");
+    assert_eq!(
+        read()["mcpServers"]["petit-poucet"],
+        serde_json::json!({"command": exe.display().to_string(), "args": ["serve"]})
+    );
+    assert!(config.join("extensions/petit-poucet.js").is_file());
+    assert!(
+        out.ends_with(&format!(
+            "omp skills: installed in {} (with the memory-cleanup subagent)\n",
+            home.path().join(".agents/skills").display()
+        )),
+        "{out}"
+    );
+    assert!(config.join("agents/memory-cleanup.md").is_file());
+
+    assert!(setup(home.path(), &["--check"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.contains("omp: removed (MCP server and extension)\n"),
+        "{out}"
+    );
+    assert_eq!(
+        read(),
+        serde_json::from_str::<serde_json::Value>(mine).unwrap()
+    );
+    assert!(!config.join("extensions/petit-poucet.js").exists());
     assert!(!config.join("agents/memory-cleanup.md").exists());
 }
 
