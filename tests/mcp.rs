@@ -1056,3 +1056,43 @@ fn a_delete_of_an_unread_note_shows_its_text_then_goes_through() {
     drop(client);
     assert!(child.wait().unwrap().success());
 }
+
+// A multi-word query leaves out the notes matching only one common term (#120).
+#[test]
+fn search_drops_notes_matching_under_half_the_terms() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    for (title, summary) in [
+        (
+            "Jsonb filters in specifications",
+            "jsonb filters go through cb.function in the repository",
+        ),
+        (
+            "Config of the session",
+            "the session config lives in one file",
+        ),
+    ] {
+        let (is_error, text) = client.call(
+            "memory_save",
+            json!({"type": "reference", "scope": "all repos", "title": title, "summary": summary,
+                   "fact": "x.", "source": "test on 2026-10-23", "how_to_apply": "When querying."}),
+        );
+        assert!(!is_error, "{text}");
+    }
+    let (_, found) = client.call(
+        "memory_search",
+        json!({"query": "jsonb specification repository config", "project_dir": home.path()}),
+    );
+    assert_eq!(
+        found,
+        "- [[Preferences/jsonb-filters-in-specifications]] — jsonb filters go through cb.function in the repository"
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
