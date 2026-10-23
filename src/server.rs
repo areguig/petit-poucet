@@ -181,7 +181,7 @@ impl Server {
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
         let _lock = self.lock()?;
-        self.reads.check(&self.config.vault, &req.path)?;
+        self.reads.check_delete(&self.config.vault, &req.path)?;
         let path = req.path.trim_end_matches(".md").to_string();
         let (reply, rewritten) = delete::delete(&self.config, req, &agent_name(&client))?;
         self.reads.forget(&path);

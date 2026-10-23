@@ -22,6 +22,7 @@ Index.md: error: does not list [[Projects/beta/too-long]]
 Index.md: error: lists missing note [[Preferences/deleted-note]]
 Preferences/bad-type.md: error: frontmatter: line 1 column 7: unknown variant `opinion`, expected one of user, feedback, project, reference
 Preferences/no-summary.md: error: missing summary
+Preferences/user-commits-themselves.md: warning: file name no longer matches the title: rename it with memory_move to Preferences/commit-rules
 Preferences/wrong-scope.md: error: scope is `alpha`, expected `all repos`
 Projects/alpha/_project.md: error: remote github.com/example/alpha is claimed by projects alpha, delta
 Projects/alpha/broken-link.md: error: broken link [[Projects/alpha/nowhere]]
@@ -38,7 +39,7 @@ Projects/gamma/_project.md: error: missing
 Topics/homelab/wrong-scope.md: error: scope is `all repos`, expected `homelab`
 Topics/homelab/wrong-scope.md: warning: near-duplicate of [[Preferences/wrong-scope]]: merge them if they say the same
 scratch.md: error: not in Preferences/, Projects/<project>/ or Topics/<topic>/
-notes: 20, errors: 17, warnings: 3
+notes: 20, errors: 17, warnings: 4
 "
     );
 }
@@ -59,8 +60,9 @@ fn check_reports_near_duplicates_by_meaning_words_in_each_note_language() {
     assert_eq!(
         stdout(&output),
         "\
+Topics/notes/recette-par-branche.md: warning: file name no longer matches the title: rename it with memory_move to Topics/notes/deploiement-en-recette
 Topics/notes/recette-par-branche.md: warning: near-duplicate of [[Topics/notes/deploiement-recette]]: merge them if they say the same
-notes: 5, errors: 0, warnings: 1
+notes: 5, errors: 0, warnings: 2
 "
     );
 }
@@ -148,7 +150,7 @@ fn env_var_overrides_the_configured_vault() {
         .arg("check")
         .output()
         .unwrap();
-    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 3\n"));
+    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 4\n"));
 }
 
 #[test]
