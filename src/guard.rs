@@ -9,6 +9,12 @@ use std::sync::Mutex;
 #[derive(Default)]
 pub struct ReadLog(Mutex<HashMap<String, u64>>);
 
+enum Seen {
+    Current,
+    Unread(String),
+    Changed(String),
+}
+
 fn fingerprint(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
@@ -31,19 +37,41 @@ impl ReadLog {
         self.0.lock().unwrap().remove(key(path));
     }
 
-    // A note missing on disk passes: the write itself reports it.
-    pub fn check(&self, root: &Path, path: &str) -> Result<(), String> {
-        let path = key(path);
-        let Ok(current) = fs::read_to_string(root.join(format!("{path}.md"))) else {
-            return Ok(());
+    // A note missing on disk counts as current: the write itself reports it.
+    fn seen(&self, root: &Path, path: &str) -> Seen {
+        let Ok(text) = fs::read_to_string(root.join(format!("{path}.md"))) else {
+            return Seen::Current;
         };
         match self.0.lock().unwrap().get(path) {
-            None => Err(format!("read {path} first (memory_read), then change it")),
-            Some(&seen) if seen != fingerprint(&current) => Err(format!(
+            None => Seen::Unread(text),
+            Some(&seen) if seen != fingerprint(&text) => Seen::Changed(text),
+            Some(_) => Seen::Current,
+        }
+    }
+
+    pub fn check(&self, root: &Path, path: &str) -> Result<(), String> {
+        let path = key(path);
+        match self.seen(root, path) {
+            Seen::Current => Ok(()),
+            Seen::Unread(_) => Err(format!("read {path} first (memory_read), then change it")),
+            Seen::Changed(_) => Err(format!(
                 "{path} changed since you read it (edited by the user or another agent): read it again, then redo your change"
             )),
-            Some(_) => Ok(()),
         }
+    }
+
+    // A delete needs no edit of its own: the refusal shows the text and counts as reading it, so a retry goes through.
+    pub fn check_delete(&self, root: &Path, path: &str) -> Result<(), String> {
+        let path = key(path);
+        let (why, text) = match self.seen(root, path) {
+            Seen::Current => return Ok(()),
+            Seen::Unread(text) => ("not read yet", text),
+            Seen::Changed(text) => ("changed since you read it", text),
+        };
+        self.record(path, &text);
+        Err(format!(
+            "{path} {why}: its current text is below, now counted as read. Call memory_delete again if it should still go.\n\n{text}"
+        ))
     }
 
     // After this session's own tool rewrote links in a note it had read, the new text counts as seen.
@@ -101,5 +129,25 @@ mod tests {
         log.forget("note");
         assert!(log.check(tmp.path(), "note").is_err());
         assert!(log.check(tmp.path(), "missing").is_ok());
+    }
+
+    #[test]
+    fn a_refused_delete_shows_the_text_and_counts_as_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("note.md");
+        fs::write(&file, "v1").unwrap();
+        let log = ReadLog::default();
+
+        let err = log.check_delete(tmp.path(), "note").unwrap_err();
+        assert!(err.starts_with("note not read yet: "), "{err}");
+        assert!(err.ends_with("\n\nv1"), "{err}");
+        assert!(log.check_delete(tmp.path(), "note.md").is_ok());
+
+        fs::write(&file, "v2 from Obsidian").unwrap();
+        let err = log.check_delete(tmp.path(), "note").unwrap_err();
+        assert!(err.starts_with("note changed since you read it: "), "{err}");
+        assert!(err.ends_with("v2 from Obsidian"), "{err}");
+        assert!(log.check_delete(tmp.path(), "note").is_ok());
+        assert!(log.check_delete(tmp.path(), "missing").is_ok());
     }
 }

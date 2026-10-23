@@ -22,6 +22,7 @@ Index.md: error: does not list [[Projects/beta/too-long]]
 Index.md: error: lists missing note [[Preferences/deleted-note]]
 Preferences/bad-type.md: error: frontmatter: line 1 column 7: unknown variant `opinion`, expected one of user, feedback, project, reference
 Preferences/no-summary.md: error: missing summary
+Preferences/user-commits-themselves.md: warning: file name no longer matches the title: rename it with memory_move to Preferences/commit-rules
 Preferences/wrong-scope.md: error: scope is `alpha`, expected `all repos`
 Projects/alpha/_project.md: error: remote github.com/example/alpha is claimed by projects alpha, delta
 Projects/alpha/broken-link.md: error: broken link [[Projects/alpha/nowhere]]
@@ -38,7 +39,7 @@ Projects/gamma/_project.md: error: missing
 Topics/homelab/wrong-scope.md: error: scope is `all repos`, expected `homelab`
 Topics/homelab/wrong-scope.md: warning: near-duplicate of [[Preferences/wrong-scope]]: merge them if they say the same
 scratch.md: error: not in Preferences/, Projects/<project>/ or Topics/<topic>/
-notes: 20, errors: 17, warnings: 3
+notes: 20, errors: 17, warnings: 4
 "
     );
 }
@@ -59,8 +60,9 @@ fn check_reports_near_duplicates_by_meaning_words_in_each_note_language() {
     assert_eq!(
         stdout(&output),
         "\
+Topics/notes/recette-par-branche.md: warning: file name no longer matches the title: rename it with memory_move to Topics/notes/deploiement-en-recette
 Topics/notes/recette-par-branche.md: warning: near-duplicate of [[Topics/notes/deploiement-recette]]: merge them if they say the same
-notes: 5, errors: 0, warnings: 1
+notes: 5, errors: 0, warnings: 2
 "
     );
 }
@@ -148,7 +150,7 @@ fn env_var_overrides_the_configured_vault() {
         .arg("check")
         .output()
         .unwrap();
-    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 3\n"));
+    assert!(stdout(&output).ends_with("notes: 20, errors: 17, warnings: 4\n"));
 }
 
 #[test]
@@ -600,7 +602,7 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp)\n"
         ),
         "{out}"
     );
@@ -863,7 +865,7 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("vault: set your git identity"), "{out}");
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp)\n"
         ),
         "{out}"
     );
@@ -1159,6 +1161,54 @@ fn setup_wires_opencode_in_and_out() {
         serde_json::from_str::<serde_json::Value>(mine).unwrap()
     );
     assert!(!config.join("plugins/petit-poucet.js").exists());
+    assert!(!config.join("agents/memory-cleanup.md").exists());
+}
+
+#[test]
+fn setup_wires_omp_in_and_out() {
+    let home = TempDir::new().unwrap();
+    let config = home.path().join(".omp/agent");
+    let mine = r#"{"mcpServers": {"other": {"url": "http://localhost:1"}}}"#;
+    write(home.path(), ".omp/agent/mcp.json", mine);
+    let exe = dunce::canonicalize(Path::new(env!("CARGO_BIN_EXE_petit-poucet"))).unwrap();
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    assert!(
+        out.contains(
+            "omp: set up (MCP server in mcp.json, extension in extensions/petit-poucet.js)\n"
+        ),
+        "{out}"
+    );
+    let read = || -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(config.join("mcp.json")).unwrap()).unwrap()
+    };
+    assert_eq!(read()["mcpServers"]["other"]["url"], "http://localhost:1");
+    assert_eq!(
+        read()["mcpServers"]["petit-poucet"],
+        serde_json::json!({"command": exe.display().to_string(), "args": ["serve"]})
+    );
+    assert!(config.join("extensions/petit-poucet.js").is_file());
+    assert!(
+        out.ends_with(&format!(
+            "omp skills: installed in {} (with the memory-cleanup subagent)\n",
+            home.path().join(".agents/skills").display()
+        )),
+        "{out}"
+    );
+    assert!(config.join("agents/memory-cleanup.md").is_file());
+
+    assert!(setup(home.path(), &["--check"]).0);
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(
+        ok && out.contains("omp: removed (MCP server and extension)\n"),
+        "{out}"
+    );
+    assert_eq!(
+        read(),
+        serde_json::from_str::<serde_json::Value>(mine).unwrap()
+    );
+    assert!(!config.join("extensions/petit-poucet.js").exists());
     assert!(!config.join("agents/memory-cleanup.md").exists());
 }
 

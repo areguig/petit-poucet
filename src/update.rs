@@ -17,7 +17,7 @@ const RELEASE: &str = "https://api.github.com/repos/areguig/petit-poucet/release
 const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 // Holds the latest release's version as last fetched; its date is the last check's.
 const FILE: &str = "latest-release";
-const CURRENT: &str = env!("CARGO_PKG_VERSION");
+pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
 fn file() -> Option<PathBuf> {
     if std::env::var_os(OFF).is_some() {
@@ -91,9 +91,8 @@ fn keep_own_handles() {
     }
 }
 
-// Fetches the latest release's version and records it; None offline, on failure or without curl.
-pub fn fetch() -> Option<String> {
-    let file = file()?;
+// The latest release's version; None offline, on failure or without curl.
+pub fn latest() -> Option<Version> {
     let url = std::env::var(RELEASE_ENV).unwrap_or_else(|_| RELEASE.to_string());
     let output = Command::new("curl")
         .args(["-fsSL", "--max-time", "10", &url])
@@ -102,15 +101,19 @@ pub fn fetch() -> Option<String> {
         .ok()?;
     let release: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
     let tag = release["tag_name"].as_str()?;
-    let version = Version::parse(tag.trim_start_matches('v'))
-        .ok()?
-        .to_string();
+    Version::parse(tag.trim_start_matches('v')).ok()
+}
+
+// Fetches the latest release's version and records it.
+pub fn fetch() -> Option<String> {
+    let file = file()?;
+    let version = latest()?.to_string();
     write_atomic(&file, &version).ok()?;
     Some(version)
 }
 
 pub fn notice(version: &str) -> String {
-    format!("{version} is out: run the installer again")
+    format!("{version} is out: run `petit-poucet update`")
 }
 
 // For `petit-poucet check`.

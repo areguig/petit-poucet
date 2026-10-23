@@ -39,7 +39,7 @@ Commit each finished step locally; never push.
 |---|---|
 | `memory_index` | Preferences, the current project and the topic names; with `topic`, that topic's notes |
 | `memory_read` | One note |
-| `memory_search` | Word search over preferences, the current project and all topics (every note when the folder is no known project) |
+| `memory_search` | Word search over preferences, the current project and all topics (every note when the folder is no known project): notes matching the most words first, rare words before common ones, and none matching under half the words when others match more |
 | `memory_save` | Create or update a note; the Index and a git commit follow |
 | `memory_move` | Rename or re-scope a note, rewriting every link to it |
 | `memory_delete` | Delete a note (with a reason) and unlink it everywhere |
@@ -56,7 +56,8 @@ Commit each finished step locally; never push.
 | Command | What it does |
 |---|---|
 | `petit-poucet setup` | Set up memory for every agent on this machine and create the vault if there's none; `--check` reports what's missing, `--uninstall` removes petit-poucet from the agents (never the vault), `--agent <name>` limits it to one |
-| `petit-poucet check` | Validate the vault: frontmatter, summaries and their length, scopes, links, secrets, near-duplicates, paths gone from a project's checkout, the Index and its size per session; and report the latest release |
+| `petit-poucet update` | Install the latest release over the binary the install script placed, after checking its SHA-256, then run `setup` with it |
+| `petit-poucet check` | Validate the vault: frontmatter, summaries and their length, scopes, links, secrets, near-duplicates, file names whose title changed, paths gone from a project's checkout, the Index and its size per session; and report the latest release |
 | `petit-poucet init [path]` | Create a vault (default `~/agent-memory`) and the config file |
 | `petit-poucet migrate` | Upgrade a hand-maintained vault: summaries from its old Index, full-path links, project identities, git |
 

@@ -923,3 +923,176 @@ fn search_finds_two_letter_names_as_whole_words() {
     drop(client);
     assert!(child.wait().unwrap().success());
 }
+
+#[test]
+fn a_save_missing_fields_names_all_of_them_and_the_likely_field() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+
+    let tools = client.request("tools/list", json!({}));
+    let save = tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "memory_save")
+        .unwrap();
+    let required: Vec<&str> = save["inputSchema"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    // Not every client shows the schema up front: the description names the required fields too.
+    let description = save["description"].as_str().unwrap();
+    for field in ["type", "title", "summary", "fact", "source", "how_to_apply"] {
+        assert!(
+            required.contains(&field),
+            "{field} not required: {required:?}"
+        );
+        assert!(
+            description.contains(field),
+            "{field} not in the description: {description}"
+        );
+    }
+
+    let (is_error, text) = client.call(
+        "memory_save",
+        json!({
+            "scope": "all repos", "title": "Tabs", "content": "Use tabs.",
+            "description": "Indent with tabs", "source": "the user on 2026-10-19",
+        }),
+    );
+    assert!(is_error);
+    assert_eq!(
+        text,
+        "missing: type, summary, fact, how_to_apply; unknown: `content` (use `fact` for the text), \
+         `description` (use `summary` for the one-line description)"
+    );
+    assert!(!vault.join("Preferences/tabs.md").exists());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// The fixes a cleanup applies after its review don't count towards the next reminder (#123).
+#[test]
+fn a_cleanup_marked_done_after_its_fixes_leaves_no_reminder() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    set_limit(home.path(), "cleanup_reminder_notes", 1);
+    let reminder = || {
+        let out = petit_poucet(home.path())
+            .args(["hook", "session-start", "--agent", "claude"])
+            .write_stdin("{}")
+            .output()
+            .unwrap();
+        let start: Value = serde_json::from_slice(&out.stdout).unwrap();
+        start["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("a memory cleanup is due")
+    };
+    let (mut child, mut client, _) = start(home.path());
+
+    review_pages(&mut client, false);
+    for title in ["Tabs", "Spaces"] {
+        let (is_error, text) = client.call(
+            "memory_save",
+            json!({"type": "user", "scope": "all repos", "title": title, "summary": format!("{title} fixed"),
+                   "fact": "Fixed.", "source": "the user on 2026-10-23", "how_to_apply": "Always."}),
+        );
+        assert!(!is_error, "{text}");
+    }
+    assert!(
+        reminder(),
+        "the fixes count until the cleanup is marked done"
+    );
+
+    let (is_error, text) = client.call("memory_review", json!({"done": true}));
+    assert!(!is_error, "{text}");
+    assert_eq!(
+        text,
+        "cleanup recorded: its fixes won't count towards the next reminder"
+    );
+    assert!(!reminder());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// A cleanup deletes notes it knows by their summary: the refusal shows the text, so the retry is the only extra call (#118).
+#[test]
+fn a_delete_of_an_unread_note_shows_its_text_then_goes_through() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = "---\ntype: user\nscope: all repos\nsummary: the user prefers tabs\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Tabs\n\nTabs.\n\n**Why:** test.\n";
+    std::fs::write(vault.join("Preferences/tabs.md"), note).unwrap();
+    let (mut child, mut client, _) = start(home.path());
+    let delete = json!({"path": "Preferences/tabs", "reason": "obsolete"});
+
+    let (is_error, text) = client.call("memory_delete", delete.clone());
+    assert!(is_error);
+    assert!(text.starts_with("Preferences/tabs not read yet"), "{text}");
+    assert!(text.ends_with(note), "{text}");
+    assert!(vault.join("Preferences/tabs.md").exists());
+
+    let (is_error, text) = client.call("memory_delete", delete);
+    assert!(!is_error, "{text}");
+    assert!(!vault.join("Preferences/tabs.md").exists());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// A multi-word query leaves out the notes matching only one common term (#120).
+#[test]
+fn search_drops_notes_matching_under_half_the_terms() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    for (title, summary) in [
+        (
+            "Jsonb filters in specifications",
+            "jsonb filters go through cb.function in the repository",
+        ),
+        (
+            "Config of the session",
+            "the session config lives in one file",
+        ),
+    ] {
+        let (is_error, text) = client.call(
+            "memory_save",
+            json!({"type": "reference", "scope": "all repos", "title": title, "summary": summary,
+                   "fact": "x.", "source": "test on 2026-10-23", "how_to_apply": "When querying."}),
+        );
+        assert!(!is_error, "{text}");
+    }
+    let (_, found) = client.call(
+        "memory_search",
+        json!({"query": "jsonb specification repository config", "project_dir": home.path()}),
+    );
+    assert_eq!(
+        found,
+        "- [[Preferences/jsonb-filters-in-specifications]] — jsonb filters go through cb.function in the repository"
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}

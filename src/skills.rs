@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::agent::Agent;
-use crate::{antigravity, codex, copilot, edit, note, opencode};
+use crate::{antigravity, codex, copilot, edit, note, omp, opencode};
 
 // The skills and the subagent tidy-memory starts, embedded so `setup` can install them.
 const SKILLS: [(&str, &str); 3] = [
@@ -21,10 +21,10 @@ const SKILLS: [(&str, &str); 3] = [
 const CLEANUP: &str = include_str!("../agents/memory-cleanup.md");
 const CLEANUP_NAME: &str = "memory-cleanup";
 
-// Codex, Cursor, Copilot and OpenCode share the Agent Skills folder; Claude Code and Antigravity read only their own.
+// Codex, Cursor, Copilot, OpenCode and omp share the Agent Skills folder; Claude Code and Antigravity read only their own.
 fn skills_dir(agent: Agent, home: &Path) -> PathBuf {
     match agent {
-        Agent::Codex | Agent::Cursor | Agent::Copilot | Agent::Opencode => {
+        Agent::Codex | Agent::Cursor | Agent::Copilot | Agent::Opencode | Agent::Omp => {
             home.join(".agents/skills")
         }
         Agent::Claude => home.join(".claude/skills"),
@@ -86,6 +86,11 @@ fn subagent(agent: Agent, home: &Path) -> (PathBuf, String) {
                 "mode: subagent\npermission:\n  edit: deny\n  bash: deny\n",
                 "",
             ),
+        ),
+        // omp skips ~/.claude/agents: it reads its own folder.
+        Agent::Omp => (
+            omp::dir(home).join(format!("agents/{CLEANUP_NAME}.md")),
+            markdown("", ""),
         ),
         // Antigravity's prompt starts at an H1; mainAgent: false keeps it out of the agents a session can run as.
         Agent::Antigravity => (
@@ -190,6 +195,7 @@ mod tests {
             Agent::Cursor,
             Agent::Antigravity,
             Agent::Opencode,
+            Agent::Omp,
         ] {
             assert!(!check(agent, home).1);
             assert!(setup(agent, home).unwrap().starts_with("installed in "));
@@ -219,6 +225,7 @@ mod tests {
         );
         for (path, extra) in [
             (home.join(".cursor/agents/memory-cleanup.md"), ""),
+            (omp::dir(home).join("agents/memory-cleanup.md"), ""),
             (
                 home.join(".gemini/config/agents/memory-cleanup/agent.md"),
                 "subagent: true\nmainAgent: false\n",

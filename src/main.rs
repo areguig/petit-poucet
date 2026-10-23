@@ -25,6 +25,7 @@ mod lock;
 mod migrate;
 mod move_note;
 mod note;
+mod omp;
 mod opencode;
 mod priority;
 mod project;
@@ -40,6 +41,7 @@ mod state;
 mod stops;
 mod unused;
 mod update;
+mod upgrade;
 mod usage;
 mod vault;
 
@@ -86,6 +88,8 @@ enum Command {
         #[arg(long)]
         uninstall: bool,
     },
+    /// Install the latest release, then set up every agent with it
+    Update,
     /// Record the latest release's version: session start runs it in the background
     #[command(hide = true)]
     UpdateCheck,
@@ -116,6 +120,7 @@ fn main() -> ExitCode {
             check,
             uninstall,
         } => run_setup(agent, check, uninstall),
+        Command::Update => run_update(),
         Command::Hook { event, agent } => {
             run_hook(event, agent);
             Ok(true)
@@ -180,6 +185,24 @@ fn run_check() -> Result<bool, String> {
         println!("{line}");
     }
     Ok(errors == 0)
+}
+
+// The new binary sets the agents up: its skills, subagent and hooks are the ones to install.
+fn run_update() -> Result<bool, String> {
+    // Read before the replacement: on Linux it then names the deleted old file.
+    let exe = std::env::current_exe()
+        .and_then(dunce::canonicalize)
+        .map_err(|e| e.to_string())?;
+    let Some(version) = upgrade::upgrade(&exe)? else {
+        println!("petit-poucet {} is already up to date", update::CURRENT);
+        return Ok(true);
+    };
+    println!("petit-poucet: updated to {version}");
+    let setup = std::process::Command::new(exe)
+        .arg("setup")
+        .status()
+        .map_err(|e| format!("setup: {e}"))?;
+    Ok(setup.success())
 }
 
 #[cfg(test)]
