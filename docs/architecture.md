@@ -62,6 +62,7 @@ Why the limits: each tool call re-sends the pages already read, so k pages cost 
 Every session loads the preferences and its project's notes, one Index line each, so their count is a cost paid in every session.
 - `check` warns when the preferences alone, or the preferences plus one project, exceed `index_max_notes` (100); the session-start line tells the user to ask for a tidy-up.
 - `check` warns about a summary over `summary_max_chars` (200 characters): one short fact per note keeps the Index and the review small.
+- `check` warns when a note's title no longer holds at least half of its file name's words (an update never renames the file) and names the `memory_move` target; a few reworded words don't count.
 
 ## Cleanup reminder (session start)
 Session start says a cleanup is due when more than `cleanup_reminder_notes` (30) notes changed since `.last-cleanup`, the last cleanup was more than `cleanup_reminder_days` (30) days ago, or the vault holds more than 30 notes and was never cleaned. Agents that show hook messages (Claude Code) put it in the line shown to the user; the others get it in the context, to tell the user once. The release notice goes the same way.

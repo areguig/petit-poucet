@@ -94,6 +94,15 @@ pub fn check(vault: &Vault, limits: &Limits) -> Vec<Issue> {
                 ),
             });
         }
+        if let Some(renamed) = renamed_title(note) {
+            issues.push(Issue {
+                file: file.clone(),
+                level: Level::Warning,
+                message: format!(
+                    "file name no longer matches the title: rename it with memory_move to {renamed}"
+                ),
+            });
+        }
         if note.body.chars().count() > MAX_BODY_CHARS {
             issues.push(Issue {
                 file,
@@ -209,6 +218,19 @@ fn check_index(vault: &Vault, issues: &mut Vec<Issue>) {
     }
 }
 
+// An update can change the title but never renames the file; a few words reworded is not worth a rename.
+fn renamed_title(note: &note::Note) -> Option<String> {
+    let (folder, name) = note.path.rsplit_once('/')?;
+    let slug = slug::slugify(note.title());
+    let title_words: BTreeSet<&str> = slug.split('-').collect();
+    let name_words: Vec<&str> = name.split('-').collect();
+    let kept = name_words
+        .iter()
+        .filter(|w| title_words.contains(*w))
+        .count();
+    (!slug.is_empty() && kept * 2 < name_words.len()).then(|| format!("{folder}/{slug}"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -237,6 +259,34 @@ mod tests {
         assert!(
             issues.contains(&"Preferences: warning: every session loads its 2 notes, over 1: merge or move some".to_string()),
             "{issues:?}"
+        );
+    }
+
+    #[test]
+    fn a_file_name_that_lost_most_of_its_title_s_words_is_a_warning() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join(PREFERENCES)).unwrap();
+        for (slug, heading) in [
+            ("book-has-thirteen-chapters", "# Sixteen chapters\n"),
+            ("clean-api-over-compat", "# Clean API over compatibility\n"),
+            ("no-heading", ""),
+        ] {
+            fs::write(
+                tmp.path().join(format!("{PREFERENCES}/{slug}.md")),
+                format!("---\ntype: user\nscope: all repos\nsummary: x\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n{heading}**Why:** x\n"),
+            )
+            .unwrap();
+        }
+        let warnings: Vec<String> = check(&Vault::load(tmp.path()).unwrap(), &limits())
+            .iter()
+            .filter(|i| i.message.starts_with("file name"))
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            warnings,
+            [
+                "Preferences/book-has-thirteen-chapters.md: warning: file name no longer matches the title: rename it with memory_move to Preferences/sixteen-chapters"
+            ]
         );
     }
 
