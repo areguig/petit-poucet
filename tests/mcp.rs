@@ -1028,3 +1028,31 @@ fn a_cleanup_marked_done_after_its_fixes_leaves_no_reminder() {
     drop(client);
     assert!(child.wait().unwrap().success());
 }
+
+// A cleanup deletes notes it knows by their summary: the refusal shows the text, so the retry is the only extra call (#118).
+#[test]
+fn a_delete_of_an_unread_note_shows_its_text_then_goes_through() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = "---\ntype: user\nscope: all repos\nsummary: the user prefers tabs\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Tabs\n\nTabs.\n\n**Why:** test.\n";
+    std::fs::write(vault.join("Preferences/tabs.md"), note).unwrap();
+    let (mut child, mut client, _) = start(home.path());
+    let delete = json!({"path": "Preferences/tabs", "reason": "obsolete"});
+
+    let (is_error, text) = client.call("memory_delete", delete.clone());
+    assert!(is_error);
+    assert!(text.starts_with("Preferences/tabs not read yet"), "{text}");
+    assert!(text.ends_with(note), "{text}");
+    assert!(vault.join("Preferences/tabs.md").exists());
+
+    let (is_error, text) = client.call("memory_delete", delete);
+    assert!(!is_error, "{text}");
+    assert!(!vault.join("Preferences/tabs.md").exists());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
