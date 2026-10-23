@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.s
 irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex
 ```
 
-The script installs the latest release in `~/.local/bin` after checking its SHA-256. Run it again to upgrade.
+The script installs the latest release in `~/.local/bin` after checking its SHA-256. To upgrade, run `petit-poucet update`: it checks the new release the same way, replaces the binary, then runs `setup` again (before 0.6, run the script again).
 
 | Variable | Effect |
 |---|---|

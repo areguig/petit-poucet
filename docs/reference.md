@@ -56,6 +56,7 @@ Commit each finished step locally; never push.
 | Command | What it does |
 |---|---|
 | `petit-poucet setup` | Set up memory for every agent on this machine and create the vault if there's none; `--check` reports what's missing, `--uninstall` removes petit-poucet from the agents (never the vault), `--agent <name>` limits it to one |
+| `petit-poucet update` | Install the latest release over the binary the install script placed, after checking its SHA-256, then run `setup` with it |
 | `petit-poucet check` | Validate the vault: frontmatter, summaries and their length, scopes, links, secrets, near-duplicates, file names whose title changed, paths gone from a project's checkout, the Index and its size per session; and report the latest release |
 | `petit-poucet init [path]` | Create a vault (default `~/agent-memory`) and the config file |
 | `petit-poucet migrate` | Upgrade a hand-maintained vault: summaries from its old Index, full-path links, project identities, git |
