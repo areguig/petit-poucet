@@ -54,7 +54,7 @@ Which notes:
   3. folders used in the last `active_days` (30), from reads and session loads in `.usage/`, most recent first;
   4. the other folders, while pages last.
 
-A folder comes whole so a note is judged next to its neighbours. Reading the last page records the cleanup in `.last-cleanup`. Pages hold at most 3 KiB: Antigravity CLI saves a tool result over about 4 KB to a file, the smallest limit of the supported agents. Each page names the next one.
+A folder comes whole so a note is judged next to its neighbours. Reading the last page records the cleanup in `.last-cleanup`; once the fixes are applied, `tidy-memory` records it again with `done: true`, so they don't count towards the next reminder. Pages hold at most 3 KiB: Antigravity CLI saves a tool result over about 4 KB to a file, the smallest limit of the supported agents. Each page names the next one.
 
 Why the limits: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. 10 pages of 200-character summaries hold about 300 notes, about 37k tokens of input per cleanup.
 
