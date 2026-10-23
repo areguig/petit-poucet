@@ -978,3 +978,53 @@ fn a_save_missing_fields_names_all_of_them_and_the_likely_field() {
     drop(client);
     assert!(child.wait().unwrap().success());
 }
+
+// The fixes a cleanup applies after its review don't count towards the next reminder (#123).
+#[test]
+fn a_cleanup_marked_done_after_its_fixes_leaves_no_reminder() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    set_limit(home.path(), "cleanup_reminder_notes", 1);
+    let reminder = || {
+        let out = petit_poucet(home.path())
+            .args(["hook", "session-start", "--agent", "claude"])
+            .write_stdin("{}")
+            .output()
+            .unwrap();
+        let start: Value = serde_json::from_slice(&out.stdout).unwrap();
+        start["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("a memory cleanup is due")
+    };
+    let (mut child, mut client, _) = start(home.path());
+
+    review_pages(&mut client, false);
+    for title in ["Tabs", "Spaces"] {
+        let (is_error, text) = client.call(
+            "memory_save",
+            json!({"type": "user", "scope": "all repos", "title": title, "summary": format!("{title} fixed"),
+                   "fact": "Fixed.", "source": "the user on 2026-10-23", "how_to_apply": "Always."}),
+        );
+        assert!(!is_error, "{text}");
+    }
+    assert!(
+        reminder(),
+        "the fixes count until the cleanup is marked done"
+    );
+
+    let (is_error, text) = client.call("memory_review", json!({"done": true}));
+    assert!(!is_error, "{text}");
+    assert_eq!(
+        text,
+        "cleanup recorded: its fixes won't count towards the next reminder"
+    );
+    assert!(!reminder());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}

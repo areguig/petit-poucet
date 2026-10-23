@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -15,7 +16,7 @@ use crate::move_note::{self, MoveRequest};
 use crate::note::Place;
 use crate::save::{self, SaveRequest};
 use crate::vault::Vault;
-use crate::{change, hook, index, lock, review, search, usage};
+use crate::{change, cleanup, hook, index, lock, review, search, usage};
 
 // Clients that don't run hooks (Copilot in JetBrains IDEs) never get the session-start context.
 const INSTRUCTIONS: &str = "petit-poucet holds the user's memory: rules, decisions and verified facts. \
@@ -49,6 +50,8 @@ pub struct ReviewRequest {
     page: Option<usize>,
     /// Every note, whatever the vault's size: only when the user asked to review their whole memory.
     full: Option<bool>,
+    /// After the confirmed fixes are applied: marks the cleanup done, so they don't count towards the next reminder.
+    done: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -131,13 +134,19 @@ impl Server {
     }
 
     #[tool(
-        description = "For a memory cleanup review, in pages: the notes, one line each under their folder (every note in a small vault, else preferences, changed folders and recently used folders), then the problems found in the whole vault. Reading the last page marks the cleanup done. Only for the memory-cleanup agent."
+        description = "For a memory cleanup review, in pages: the notes, one line each under their folder (every note in a small vault, else preferences, changed folders and recently used folders), then the problems found in the whole vault. Reading the last page marks the cleanup done; `done: true` marks it again once its fixes are applied. Only for the memory-cleanup agent and the tidy-memory skill."
     )]
     fn memory_review(
         &self,
         Parameters(req): Parameters<ReviewRequest>,
         client: Peer<RoleServer>,
     ) -> Result<String, String> {
+        if req.done == Some(true) {
+            cleanup::record(&self.config, SystemTime::now(), &agent_name(&client))?;
+            return Ok(
+                "cleanup recorded: its fixes won't count towards the next reminder".to_string(),
+            );
+        }
         review::review(
             &self.config,
             req.page.unwrap_or(1),
