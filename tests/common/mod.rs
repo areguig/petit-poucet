@@ -13,7 +13,12 @@ const SYSTEM: [&str; 6] = ["PATH", "SystemRoot", "ComSpec", "PATHEXT", "TEMP", "
 // A fake home (HOME, USERPROFILE on Windows) keeps the real config untouched, git's global config included.
 // Tests stay offline: no update check unless a test turns it back on.
 pub fn command(home: &Path) -> std::process::Command {
-    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_petit-poucet"));
+    command_for(Path::new(env!("CARGO_BIN_EXE_petit-poucet")), home)
+}
+
+// The same, for a copy of the binary.
+pub fn command_for(exe: &Path, home: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new(exe);
     cmd.env_clear();
     for key in SYSTEM {
         if let Some(value) = std::env::var_os(key) {
