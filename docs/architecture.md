@@ -10,7 +10,8 @@ Copilot     ─┤
 Codex       ─┤
 Cursor      ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
 Antigravity ─┤
-OpenCode    ─┘
+OpenCode    ─┤
+omp         ─┘
 ```
 
 One binary plays three parts:

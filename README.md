@@ -12,7 +12,7 @@
 
 In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, and every agent you switch between starts each session with it.
 
-Works with **Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor, Antigravity CLI and OpenCode**, on macOS, Linux and Windows.
+Works with **Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor, Antigravity CLI, OpenCode and omp**, on macOS, Linux and Windows.
 
 ## Why
 
