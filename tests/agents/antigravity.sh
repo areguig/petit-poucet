@@ -12,7 +12,7 @@ if agy agents 2>&1 | grep -q memory-cleanup; then fail "memory-cleanup is offere
 # agy needs a Google sign-in, except through an LLM gateway: the mock model stands in for one.
 # agy reaches MCP tools through call_mcp_tool.
 export REVIEW_TOOL=call_mcp_tool
-export REVIEW_ARGS='{"ServerName":"petit-poucet","ToolName":"memory_review","Arguments":{},"toolSummary":"Memory review","toolAction":"Reviewing memory"}'
+export REVIEW_ARGS='{"ServerName":"petit-poucet","ToolName":"memory_review","Arguments":{}}'
 start_model
 cd "$(mktemp -d)"
 session=$(for turn in one two three; do printf '{"event":"user","message":{"content":"%s"}}\n' "$turn"; done |
