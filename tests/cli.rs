@@ -215,7 +215,7 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
     assert!(read("Projects/alpha/_project.md").contains("type: project-identity"));
     assert_eq!(
         read(".gitignore"),
-        ".obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n"
+        ".obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n*.sync-conflict-*\n"
     );
 
     let check = petit_poucet(home.path())

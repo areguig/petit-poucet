@@ -8,7 +8,13 @@ use crate::{git, index};
 pub const GITIGNORE: &str = ".gitignore";
 
 // Obsidian rewrites its workspace files constantly; only the notes belong in the history.
-const IGNORED: [&str; 4] = [".obsidian/", ".trash/", ".DS_Store", ".petit-poucet/"];
+const IGNORED: [&str; 5] = [
+    ".obsidian/",
+    ".trash/",
+    ".DS_Store",
+    ".petit-poucet/",
+    "*.sync-conflict-*",
+];
 
 pub fn ensure_repo(root: &Path) -> Result<(), String> {
     if !git::is_repo(root) {
@@ -102,7 +108,7 @@ mod tests {
         ensure_repo(tmp.path()).unwrap();
         assert_eq!(
             fs::read_to_string(tmp.path().join(GITIGNORE)).unwrap(),
-            "custom\n.obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n"
+            "custom\n.obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n*.sync-conflict-*\n"
         );
         assert!(git::is_repo(tmp.path()));
     }
