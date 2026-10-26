@@ -190,7 +190,6 @@ fn link_exists(vault: &Vault, target: &str) -> bool {
     vault.has_note(target) || vault.root.join(target).is_file()
 }
 
-// Only a note's copy can hold a fact the agent would miss; other synced files are machine state.
 fn conflict_issue(vault: &Vault, conflict: &Conflict) -> Issue {
     let read = |path: &str| fs::read_to_string(vault.root.join(path)).unwrap_or_default();
     let only_here = sync_conflict::lines_only_in(&read(&conflict.copy), &read(&conflict.original));
@@ -200,7 +199,7 @@ fn conflict_issue(vault: &Vault, conflict: &Conflict) -> Issue {
     );
     Issue {
         file: conflict.copy.clone(),
-        level: match conflict.original.ends_with(".md") {
+        level: match conflict.in_note() {
             true => Level::Error,
             false => Level::Warning,
         },

@@ -393,6 +393,59 @@ fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
     );
 }
 
+// Syncthing drops files into the vault without petit-poucet: session start indexes and commits them, and names conflicts (#81).
+#[test]
+fn session_start_catches_up_with_files_synced_in() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    fs::write(
+        vault.join("Preferences/synced-in.md"),
+        "---\ntype: user\nscope: all repos\nsummary: arrived from the laptop\ncreated: 2026-10-26\ntags: [agent-memory]\n---\n**Why:** x\n",
+    )
+    .unwrap();
+    let copy = "Preferences/synced-in.sync-conflict-20261026-101112-ABCDEF7.md";
+    fs::write(vault.join(copy), "older version\n").unwrap();
+
+    let reply: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        "{}",
+    ))
+    .unwrap();
+    let context = reply["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("arrived from the laptop"), "{context}");
+    assert!(!context.contains("sync-conflict"), "{context}");
+    assert!(
+        reply["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("1 notes have a sync conflict copy: run `petit-poucet check` and merge them"),
+        "{reply}"
+    );
+    assert!(
+        git_log(&vault).starts_with("sync: notes changed outside petit-poucet\ninit: vault\n"),
+        "{}",
+        git_log(&vault)
+    );
+
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(!check.status.success());
+    assert!(
+        stdout(&check).contains(&format!(
+            "{copy}: error: sync conflict copy of Preferences/synced-in.md"
+        )),
+        "{}",
+        stdout(&check)
+    );
+}
+
 // A cleanup that is due is announced at session start, to the user or through the agent, until one is done (#84).
 #[test]
 fn session_start_reminds_of_a_due_cleanup() {

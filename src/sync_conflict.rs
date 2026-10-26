@@ -12,6 +12,13 @@ pub struct Conflict {
     pub original: String,
 }
 
+impl Conflict {
+    // Only a note's copy can hold a fact the agent would miss; other synced files are machine state.
+    pub fn in_note(&self) -> bool {
+        self.original.ends_with(".md")
+    }
+}
+
 // A copy of a copy names the first original too.
 pub fn original_of(path: &str) -> Option<String> {
     MARKER

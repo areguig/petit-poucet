@@ -9,6 +9,7 @@ use crate::config::Config;
 use crate::index;
 use crate::lock;
 use crate::stops;
+use crate::sync;
 use crate::update;
 use crate::usage;
 use crate::vault::Vault;
@@ -44,11 +45,11 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
         return None;
     }
     update::start();
-    let (mut context, mut message, cleanup) = match memory_context(agent, event) {
+    let (mut context, mut message, notices) = match memory_context(agent, event) {
         _ if !Config::is_set() => (
             setup_context(),
             format!("{PEBBLE} no vault yet: the agent will offer to create one"),
-            None,
+            Vec::new(),
         ),
         Ok(loaded) => loaded,
         Err(e) => (
@@ -57,11 +58,11 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
                  and do not write memory anywhere else."
             ),
             format!("{PEBBLE} memory unavailable: {e}"),
-            None,
+            Vec::new(),
         ),
     };
     let release = update::newer().map(|version| update::notice(&version));
-    for notice in cleanup.into_iter().chain(release) {
+    for notice in notices.into_iter().chain(release) {
         match agent.shows_hook_messages() {
             true => message.push_str(&format!("\n{PEBBLE} {notice}")),
             false => context.push_str(&format!(
@@ -89,10 +90,10 @@ fn record_session(vault: &Vault, project: &str) {
     }
 }
 
-// Returns the context for the agent, the line shown to the user, and why a cleanup is due if it is.
-fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Option<String>), String> {
+// Returns the context for the agent, the line shown to the user, and what the user should hear about.
+fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Vec<String>), String> {
     let config = Config::load()?;
-    let vault = Vault::load(&config.vault)?;
+    let vault = sync::catch_up(&config)?;
     let dir = agent
         .working_dir(event)
         .or_else(|| std::env::current_dir().ok());
@@ -115,8 +116,18 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Option
     Ok((
         format!("{RULES}\n{}", index::for_project(&vault, project)),
         format!("{PEBBLE} {loaded} notes loaded ({scope}){over}"),
-        cleanup::due(&vault, &config.limits, SystemTime::now()),
+        conflicts_notice(&vault)
+            .into_iter()
+            .chain(cleanup::due(&vault, &config.limits, SystemTime::now()))
+            .collect(),
     ))
+}
+
+fn conflicts_notice(vault: &Vault) -> Option<String> {
+    let count = vault.conflicts.iter().filter(|c| c.in_note()).count();
+    (count > 0).then(|| {
+        format!("{count} notes have a sync conflict copy: run `petit-poucet check` and merge them")
+    })
 }
 
 // Reminds at the 3rd stop of a session, then every 10th; never without a session id to count by.
