@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::config::Config;
-use crate::init::ensure_repo;
+use crate::init::ensure_vault_files;
 use crate::note;
 use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{INDEX_FILE, PROJECTS, Vault, write_atomic};
@@ -84,7 +84,7 @@ pub fn migrate(config: &Config) -> Result<String, String> {
         projects_added += 1;
     }
 
-    ensure_repo(root)?;
+    ensure_vault_files(root)?;
     let vault = Vault::load(root)?;
     write_atomic(&root.join(INDEX_FILE), &index::generate(&vault))?;
     if config.git_autocommit {

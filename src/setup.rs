@@ -2,9 +2,9 @@ use std::path::Path;
 
 use crate::agent::Agent;
 use crate::config::Config;
-use crate::init;
 use crate::vault::Vault;
 use crate::{antigravity, claude, codex, copilot, cursor, omp, opencode, skills};
+use crate::{git, init};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -56,6 +56,11 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         let kept = format!("vault: kept at {}", config.vault.display());
         return Ok((vec![kept], true));
     }
+    if mode == Mode::Setup
+        && let Err(e) = update_vault_files(&config)
+    {
+        return Ok((vec![format!("vault: {e}")], false));
+    }
     Ok(match Vault::load(&config.vault) {
         Ok(vault) => (
             vec![format!(
@@ -67,6 +72,19 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         ),
         Err(e) => (vec![format!("vault: {e}")], false),
     })
+}
+
+// A vault made by an older version gets the ignore lines added since, such as the Syncthing ones.
+fn update_vault_files(config: &Config) -> Result<(), String> {
+    init::ensure_vault_files(&config.vault)?;
+    match config.git_autocommit {
+        true => git::commit(
+            &config.vault,
+            &[init::GITIGNORE, init::STIGNORE],
+            "setup: ignore files",
+        ),
+        false => Ok(()),
+    }
 }
 
 // An agent not on this machine is only mentioned when the user named it.

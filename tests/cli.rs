@@ -686,6 +686,57 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
 }
 
+// A vault made before 0.7 gets the Syncthing lines from `setup`, which `update` runs (#81).
+#[test]
+fn setup_adds_the_sync_lines_to_an_older_vault_once() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    fs::remove_file(vault.join(".stignore")).unwrap();
+    let gitignore = vault.join(".gitignore");
+    let older = fs::read_to_string(&gitignore)
+        .unwrap()
+        .replace("*.sync-conflict-*\n", "");
+    fs::write(&gitignore, &older).unwrap();
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&vault)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "--quiet",
+        "-am",
+        "older",
+    ]);
+
+    for _ in 0..2 {
+        let (ok, out) = setup(home.path(), &[]);
+        assert!(ok, "{out}");
+    }
+    assert_eq!(
+        fs::read_to_string(&gitignore).unwrap(),
+        format!("{older}*.sync-conflict-*\n")
+    );
+    assert!(
+        fs::read_to_string(vault.join(".stignore"))
+            .unwrap()
+            .contains("/.git\n")
+    );
+    assert_eq!(git_log(&vault), "setup: ignore files\nolder\ninit: vault\n");
+    assert!(git(&["status", "--porcelain"]).stdout.is_empty());
+}
+
 // A config written by an older version gets the settings added since, the user's own lines kept, as soon as it is read.
 #[test]
 fn an_older_config_gets_the_new_settings_written_in() {

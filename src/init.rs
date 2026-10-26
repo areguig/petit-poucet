@@ -20,10 +20,31 @@ pub fn ensure_repo(root: &Path) -> Result<(), String> {
     if !git::is_repo(root) {
         git::init(root)?;
     }
-    let gitignore = root.join(GITIGNORE);
-    let mut text = fs::read_to_string(&gitignore).unwrap_or_default();
-    let missing: Vec<&str> = IGNORED
-        .into_iter()
+    add_missing_lines(&root.join(GITIGNORE), &IGNORED)
+}
+
+// Syncthing never syncs `.stignore`, so every machine writes its own, even before Syncthing is installed.
+// Git history, the generated Index and machine state stay per machine; `.usage` and `.last-cleanup` must sync.
+pub const STIGNORE: &str = ".stignore";
+const NOT_SYNCED: [&str; 5] = [
+    "/.git",
+    "/.petit-poucet",
+    "/Index.md",
+    "/.obsidian/workspace*.json",
+    "(?d).DS_Store",
+];
+
+pub fn ensure_vault_files(root: &Path) -> Result<(), String> {
+    ensure_repo(root)?;
+    add_missing_lines(&root.join(STIGNORE), &NOT_SYNCED)
+}
+
+// The user's own lines are kept; each entry is added once.
+fn add_missing_lines(file: &Path, entries: &[&str]) -> Result<(), String> {
+    let mut text = fs::read_to_string(file).unwrap_or_default();
+    let missing: Vec<&str> = entries
+        .iter()
+        .copied()
         .filter(|entry| !text.lines().any(|line| line == *entry))
         .collect();
     if missing.is_empty() {
@@ -36,7 +57,7 @@ pub fn ensure_repo(root: &Path) -> Result<(), String> {
         text.push_str(entry);
         text.push('\n');
     }
-    write_atomic(&gitignore, &text)
+    write_atomic(file, &text)
 }
 
 const DEFAULT_VAULT: &str = "agent-memory";
@@ -74,12 +95,12 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
         }
     };
 
-    ensure_repo(&root)?;
+    ensure_vault_files(&root)?;
     let vault = Vault::load(&root)?;
     write_atomic(&root.join(INDEX_FILE), &index::generate(&vault))?;
     // The vault works without its first commit, so a refused one (no git identity) only warns.
     let committed = match config.git_autocommit {
-        true => git::commit(&root, &[INDEX_FILE, GITIGNORE], "init: vault").err(),
+        true => git::commit(&root, &[INDEX_FILE, GITIGNORE, STIGNORE], "init: vault").err(),
         false => None,
     };
     let mut reply = format!(
@@ -111,5 +132,19 @@ mod tests {
             "custom\n.obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n*.sync-conflict-*\n"
         );
         assert!(git::is_repo(tmp.path()));
+    }
+
+    #[test]
+    fn stignore_keeps_the_user_s_lines_and_lets_usage_and_cleanup_time_sync() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(STIGNORE), "/Index.md\ncustom").unwrap();
+        ensure_vault_files(tmp.path()).unwrap();
+        ensure_vault_files(tmp.path()).unwrap();
+        let text = fs::read_to_string(tmp.path().join(STIGNORE)).unwrap();
+        assert_eq!(
+            text,
+            "/Index.md\ncustom\n/.git\n/.petit-poucet\n/.obsidian/workspace*.json\n(?d).DS_Store\n"
+        );
+        assert!(!text.contains(crate::usage::DIR) && !text.contains(".last-cleanup"));
     }
 }
