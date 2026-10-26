@@ -1,66 +1,12 @@
 mod common;
 
-use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdout, Stdio};
 
-use common::{command, git_log, petit_poucet, stdout};
+use common::{
+    Client, git_log, git_status, petit_poucet, review_pages, session_start, start, stdout,
+};
 use serde_json::{Value, json};
 use tempfile::TempDir;
-
-struct Client {
-    stdin: std::process::ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    next_id: u64,
-}
-
-impl Client {
-    fn send(&mut self, message: Value) {
-        writeln!(self.stdin, "{message}").unwrap();
-    }
-
-    // Every stdout line must be a JSON-RPC message: logs on stdout would break the protocol.
-    fn request(&mut self, method: &str, params: Value) -> Value {
-        self.next_id += 1;
-        let id = self.next_id;
-        self.send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
-        loop {
-            let mut line = String::new();
-            self.stdout.read_line(&mut line).unwrap();
-            let message: Value = serde_json::from_str(&line).expect("stdout carries only JSON-RPC");
-            if message["id"] == id {
-                return message["result"].clone();
-            }
-        }
-    }
-
-    fn call(&mut self, tool: &str, arguments: Value) -> (bool, String) {
-        let result = self.request("tools/call", json!({"name": tool, "arguments": arguments}));
-        let text = result["content"][0]["text"].as_str().unwrap().to_string();
-        (result["isError"] == true, text)
-    }
-}
-
-// One agent session: a `serve` process after the MCP handshake.
-fn start(home: &Path) -> (Child, Client, Value) {
-    let mut child = command(home)
-        .arg("serve")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut client = Client {
-        stdin: child.stdin.take().unwrap(),
-        stdout: BufReader::new(child.stdout.take().unwrap()),
-        next_id: 0,
-    };
-    let init = client.request(
-        "initialize",
-        json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test-agent", "version": "1"}}),
-    );
-    client.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
-    (child, client, init)
-}
 
 #[test]
 fn an_agent_saves_finds_and_reads_a_note() {
@@ -483,30 +429,6 @@ fn sync(from: &Path, to: &Path) {
     }
 }
 
-// Reads every page of memory_review; returns the pages and the project note lines they hold (#77).
-fn review_pages(client: &mut Client, full: bool) -> (Vec<String>, usize) {
-    let mut pages = Vec::new();
-    loop {
-        let page = pages.len() + 1;
-        let (is_error, text) = client.call("memory_review", json!({"page": page, "full": full}));
-        // Antigravity saves a tool result over about 4 KB to a file the agent has to page through.
-        assert!(
-            !is_error && text.len() <= 3500,
-            "page {page}: {} bytes",
-            text.len()
-        );
-        let more = text.contains(&format!("more: call memory_review with page={}", page + 1));
-        pages.push(text);
-        if !more {
-            let notes = pages
-                .iter()
-                .map(|p| p.matches(" | project | ").count())
-                .sum();
-            return (pages, notes);
-        }
-    }
-}
-
 // Changes a limit in a config `init` wrote.
 fn set_limit(home: &Path, key: &str, value: usize) {
     let path = home.join(".config/petit-poucet/config.toml");
@@ -781,33 +703,6 @@ fn usage_rides_with_the_next_commit_and_adds_up_across_machines() {
     assert_eq!(std::fs::read_dir(synced.join(".usage")).unwrap().count(), 2);
     drop(other_client);
     assert!(other_child.wait().unwrap().success());
-}
-
-fn session_start(home: &Path, agent: &str) -> (String, String) {
-    let event = json!({"cwd": home, "session_id": format!("{agent}-1"), "source": "startup"});
-    let mut child = command(home)
-        .args(["hook", "session-start", "--agent", agent])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    write!(child.stdin.take().unwrap(), "{event}").unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    (
-        stdout(&output),
-        String::from_utf8_lossy(&output.stderr).into_owned(),
-    )
-}
-
-fn git_status(vault: &Path) -> String {
-    let status = std::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(vault)
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&status.stdout).into_owned()
 }
 
 // The laptop saves, Syncthing carries the note, the server's next session has it (#81).
