@@ -3,7 +3,7 @@ mod common;
 use std::path::Path;
 
 use common::{
-    Client, git_log, git_status, petit_poucet, review_pages, session_start, start, stdout,
+    Client, connect, git_log, git_status, petit_poucet, review_pages, session_start, start, stdout,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -839,6 +839,46 @@ fn session_starts_beside_saves_and_synced_files_keep_the_vault_whole() {
         .map(str::to_string)
         .collect();
     assert!(pending.is_empty(), "all committed: {pending:?}");
+}
+
+// Claude Code 2.1.311 skips `initialize` and names itself in each request's `_meta` (#106).
+#[test]
+fn commits_name_the_agent_with_or_without_a_handshake() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let save = |title: &str| {
+        json!({"type": "user", "scope": "all repos", "title": title, "summary": format!("about {title}"),
+               "fact": "A fact.", "source": "test on 2026-10-27", "how_to_apply": "Test."})
+    };
+
+    let (mut child, mut client) = connect(home.path());
+    let meta = json!({
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientInfo": {"name": "claude-code", "version": "2.1.311"},
+        "io.modelcontextprotocol/clientCapabilities": {},
+    });
+    let mut arguments = save("Stateless");
+    let reply = client.request(
+        "tools/call",
+        json!({"name": "memory_save", "arguments": arguments.take(), "_meta": meta}),
+    );
+    assert_ne!(reply["isError"], true, "{reply}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+
+    let (mut child, mut client, _) = start(home.path());
+    client.call("memory_save", save("Handshake"));
+    drop(client);
+    assert!(child.wait().unwrap().success());
+
+    assert_eq!(
+        git_log(&vault),
+        "create: Preferences/handshake (test-agent)\ncreate: Preferences/stateless (claude-code)\ninit: vault\n"
+    );
 }
 
 #[test]

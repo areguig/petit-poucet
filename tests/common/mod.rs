@@ -102,23 +102,29 @@ impl Client {
 
 // One agent session: a `serve` process after the MCP handshake.
 pub fn start(home: &Path) -> (Child, Client, Value) {
-    let mut child = command(home)
-        .arg("serve")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut client = Client {
-        stdin: child.stdin.take().unwrap(),
-        stdout: BufReader::new(child.stdout.take().unwrap()),
-        next_id: 0,
-    };
+    let (child, mut client) = connect(home);
     let init = client.request(
         "initialize",
         json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test-agent", "version": "1"}}),
     );
     client.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
     (child, client, init)
+}
+
+// A `serve` process with no handshake yet: clients of protocol 2026-07-28 send none.
+pub fn connect(home: &Path) -> (Child, Client) {
+    let mut child = command(home)
+        .arg("serve")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let client = Client {
+        stdin: child.stdin.take().unwrap(),
+        stdout: BufReader::new(child.stdout.take().unwrap()),
+        next_id: 0,
+    };
+    (child, client)
 }
 
 // Reads every page of memory_review; returns the pages and the project note lines they hold (#77).

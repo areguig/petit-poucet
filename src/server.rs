@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
+use rmcp::model::{Implementation, RequestMetaObject, ServerCapabilities, ServerConfig};
 use rmcp::{Peer, RoleServer, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -71,22 +71,18 @@ impl Server {
     }
 }
 
-fn agent_name(client: &Peer<RoleServer>) -> String {
-    client
-        .peer_info()
-        .map(|info| info.client_info.name.clone())
+// Clients of protocol 2026-07-28, such as Claude Code, skip `initialize` and name themselves in each request.
+fn agent_name(client: &Peer<RoleServer>, meta: &RequestMetaObject) -> String {
+    meta.client_info()
+        .map(|info| info.name)
+        .or_else(|| client.peer_info().map(|info| info.client_info.name.clone()))
         .unwrap_or_else(|| "unknown agent".to_string())
 }
 
 impl Server {
     // Clients start servers anywhere (not always in the project), so the agent always names its directory.
-    fn project_key(
-        &self,
-        vault: &Vault,
-        dir: &std::path::Path,
-        client: &Peer<RoleServer>,
-    ) -> Option<String> {
-        change::identify(&self.config, vault, dir, &agent_name(client))
+    fn project_key(&self, vault: &Vault, dir: &std::path::Path, agent: &str) -> Option<String> {
+        change::identify(&self.config, vault, dir, agent)
     }
 }
 
@@ -99,7 +95,9 @@ impl Server {
         &self,
         Parameters(req): Parameters<IndexRequest>,
         client: Peer<RoleServer>,
+        meta: RequestMetaObject,
     ) -> Result<String, String> {
+        let agent = agent_name(&client, &meta);
         let vault = self.vault()?;
         if let Some(topic) = &req.topic {
             let view = index::for_topic(&vault, &slug::slugify(topic));
@@ -108,7 +106,7 @@ impl Server {
                 view => view.to_string(),
             });
         }
-        let project = self.project_key(&vault, &req.project_dir, &client);
+        let project = self.project_key(&vault, &req.project_dir, &agent);
         let view = index::for_project(&vault, project.as_deref());
         let view = match view.trim() {
             "" => "no notes yet",
@@ -140,9 +138,11 @@ impl Server {
         &self,
         Parameters(req): Parameters<ReviewRequest>,
         client: Peer<RoleServer>,
+        meta: RequestMetaObject,
     ) -> Result<String, String> {
+        let agent = agent_name(&client, &meta);
         if req.done == Some(true) {
-            cleanup::record(&self.config, SystemTime::now(), &agent_name(&client))?;
+            cleanup::record(&self.config, SystemTime::now(), &agent)?;
             return Ok(
                 "cleanup recorded: its fixes won't count towards the next reminder".to_string(),
             );
@@ -151,7 +151,7 @@ impl Server {
             &self.config,
             req.page.unwrap_or(1),
             req.full.unwrap_or(false),
-            &agent_name(&client),
+            &agent,
         )
     }
 
@@ -162,12 +162,14 @@ impl Server {
         &self,
         Parameters(req): Parameters<SaveRequest>,
         client: Peer<RoleServer>,
+        meta: RequestMetaObject,
     ) -> Result<String, String> {
+        let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
         if let Some(path) = &req.path {
             self.reads.check(&self.config.vault, path)?;
         }
-        let (path, reply) = save::save(&self.config, req, &agent_name(&client))?;
+        let (path, reply) = save::save(&self.config, req, &agent)?;
         self.reads.record_file(&self.config.vault, &path);
         Ok(reply)
     }
@@ -179,11 +181,13 @@ impl Server {
         &self,
         Parameters(req): Parameters<DeleteRequest>,
         client: Peer<RoleServer>,
+        meta: RequestMetaObject,
     ) -> Result<String, String> {
+        let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
         self.reads.check_delete(&self.config.vault, &req.path)?;
         let path = req.path.trim_end_matches(".md").to_string();
-        let (reply, rewritten) = delete::delete(&self.config, req, &agent_name(&client))?;
+        let (reply, rewritten) = delete::delete(&self.config, req, &agent)?;
         self.reads.forget(&path);
         for file in &rewritten {
             self.reads.refresh(&self.config.vault, file);
@@ -197,11 +201,13 @@ impl Server {
         &self,
         Parameters(req): Parameters<MoveRequest>,
         client: Peer<RoleServer>,
+        meta: RequestMetaObject,
     ) -> Result<String, String> {
+        let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
         let path = req.path.trim_end_matches(".md").to_string();
         let new_path = req.new_path.trim_end_matches(".md").to_string();
-        let (reply, rewritten) = move_note::move_note(&self.config, req, &agent_name(&client))?;
+        let (reply, rewritten) = move_note::move_note(&self.config, req, &agent)?;
         self.reads.forget(&path);
         for file in &rewritten {
             self.reads.refresh(&self.config.vault, file);
@@ -217,9 +223,11 @@ impl Server {
         &self,
         Parameters(req): Parameters<SearchRequest>,
         client: Peer<RoleServer>,
+        meta: RequestMetaObject,
     ) -> Result<String, String> {
+        let agent = agent_name(&client, &meta);
         let vault = self.vault()?;
-        let project = self.project_key(&vault, &req.project_dir, &client);
+        let project = self.project_key(&vault, &req.project_dir, &agent);
         // An unknown project would hide every project note: search them all rather than miss the right one.
         let notes = vault.notes.iter().filter(|n| {
             project.is_none()
