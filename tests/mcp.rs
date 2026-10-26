@@ -881,6 +881,57 @@ fn commits_name_the_agent_with_or_without_a_handshake() {
     );
 }
 
+// An agent resolves sync conflicts with its memory tools alone (#137).
+#[test]
+fn an_agent_reads_and_deletes_sync_conflict_copies() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "Tabs", "summary": "indent with tabs",
+               "fact": "A fact.", "source": "test on 2026-10-27", "how_to_apply": "Test."}),
+    );
+    let mark = ".sync-conflict-20261027-101112-ABCDEF7";
+    let note_copy = format!("Preferences/tabs{mark}.md");
+    let cleanup_copy = format!("{mark}.last-cleanup");
+    std::fs::write(vault.join(&note_copy), "older text\n").unwrap();
+    std::fs::write(vault.join(&cleanup_copy), "2026-10-26T00:00:00Z\n").unwrap();
+
+    for copy in [&note_copy, &cleanup_copy] {
+        let (is_error, refused) =
+            client.call("memory_delete", json!({"path": copy, "reason": "merged"}));
+        assert!(is_error, "unread copies are not deleted: {refused}");
+        assert!(
+            refused.starts_with(&format!(
+                "{} not read yet: ",
+                copy.strip_suffix(".md").unwrap_or(copy)
+            )),
+            "{refused}"
+        );
+        let (is_error, deleted) =
+            client.call("memory_delete", json!({"path": copy, "reason": "merged"}));
+        assert!(!is_error, "{deleted}");
+        assert!(!vault.join(copy).exists());
+    }
+
+    std::fs::write(vault.join(&note_copy), "older text\n").unwrap();
+    let (is_error, text) = client.call("memory_read", json!({"path": note_copy}));
+    assert_eq!((is_error, text.as_str()), (false, "older text\n"));
+    let (is_error, deleted) = client.call(
+        "memory_delete",
+        json!({"path": note_copy.strip_suffix(".md").unwrap(), "reason": "merged"}),
+    );
+    assert!(!is_error, "read first, so deleted at once: {deleted}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+    petit_poucet(home.path()).arg("check").assert().success();
+}
+
 #[test]
 fn two_agents_writing_at_once_lose_nothing() {
     const EACH: usize = 15;

@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -6,6 +7,7 @@ use serde::Deserialize;
 use crate::change;
 use crate::config::Config;
 use crate::note;
+use crate::sync_conflict::Conflict;
 use crate::vault::Vault;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -19,6 +21,15 @@ pub struct DeleteRequest {
 }
 
 // Returns the reply and the other notes whose links were rewritten.
+// Conflict copies are left out of git, so removing one needs no commit.
+pub fn delete_copy(root: &Path, conflict: &Conflict) -> Result<String, String> {
+    fs::remove_file(root.join(&conflict.copy)).map_err(|e| format!("{}: {e}", conflict.copy))?;
+    Ok(format!(
+        "deleted {}, the conflict copy of {}",
+        conflict.copy, conflict.original
+    ))
+}
+
 pub fn delete(
     config: &Config,
     req: DeleteRequest,

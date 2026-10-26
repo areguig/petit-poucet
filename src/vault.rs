@@ -99,10 +99,20 @@ impl Vault {
     pub fn has_note(&self, path: &str) -> bool {
         self.notes.iter().any(|n| n.path == path)
     }
+
+    pub fn conflict(&self, path: &str) -> Option<&Conflict> {
+        self.conflicts
+            .iter()
+            .find(|c| c.copy == path || c.copy.strip_suffix(".md") == Some(path))
+    }
 }
 
 fn read(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| format!("cannot read: {e}"))
+}
+
+pub fn note_file(path: &str) -> String {
+    format!("{}.md", path.strip_suffix(".md").unwrap_or(path))
 }
 
 // Temp file + rename, so Obsidian or a reader never sees a half-written file.
