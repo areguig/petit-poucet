@@ -1,66 +1,12 @@
 mod common;
 
-use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdout, Stdio};
 
-use common::{command, git_log, petit_poucet, stdout};
+use common::{
+    Client, git_log, git_status, petit_poucet, review_pages, session_start, start, stdout,
+};
 use serde_json::{Value, json};
 use tempfile::TempDir;
-
-struct Client {
-    stdin: std::process::ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    next_id: u64,
-}
-
-impl Client {
-    fn send(&mut self, message: Value) {
-        writeln!(self.stdin, "{message}").unwrap();
-    }
-
-    // Every stdout line must be a JSON-RPC message: logs on stdout would break the protocol.
-    fn request(&mut self, method: &str, params: Value) -> Value {
-        self.next_id += 1;
-        let id = self.next_id;
-        self.send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
-        loop {
-            let mut line = String::new();
-            self.stdout.read_line(&mut line).unwrap();
-            let message: Value = serde_json::from_str(&line).expect("stdout carries only JSON-RPC");
-            if message["id"] == id {
-                return message["result"].clone();
-            }
-        }
-    }
-
-    fn call(&mut self, tool: &str, arguments: Value) -> (bool, String) {
-        let result = self.request("tools/call", json!({"name": tool, "arguments": arguments}));
-        let text = result["content"][0]["text"].as_str().unwrap().to_string();
-        (result["isError"] == true, text)
-    }
-}
-
-// One agent session: a `serve` process after the MCP handshake.
-fn start(home: &Path) -> (Child, Client, Value) {
-    let mut child = command(home)
-        .arg("serve")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut client = Client {
-        stdin: child.stdin.take().unwrap(),
-        stdout: BufReader::new(child.stdout.take().unwrap()),
-        next_id: 0,
-    };
-    let init = client.request(
-        "initialize",
-        json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test-agent", "version": "1"}}),
-    );
-    client.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
-    (child, client, init)
-}
 
 #[test]
 fn an_agent_saves_finds_and_reads_a_note() {
@@ -461,11 +407,14 @@ fn notes_naming_paths_gone_from_the_checkout_are_reported() {
     assert!(child.wait().unwrap().success());
 }
 
-// What Syncthing would bring to another machine: the files with their times, not git or petit-poucet's own state.
+// What Syncthing would bring to another machine, with the vault's `.stignore`: the files with their times,
+// not git, petit-poucet's own state, the generated Index, nor `.stignore` itself.
 fn sync(from: &Path, to: &Path) {
-    let entries = walkdir::WalkDir::new(from)
-        .into_iter()
-        .filter_entry(|e| ![".git", ".petit-poucet"].contains(&e.file_name().to_str().unwrap()));
+    let entries = walkdir::WalkDir::new(from).into_iter().filter_entry(|e| {
+        e.depth() != 1
+            || ![".git", ".petit-poucet", "Index.md", ".stignore"]
+                .contains(&e.file_name().to_str().unwrap())
+    });
     for entry in entries {
         let entry = entry.unwrap();
         let target = to.join(entry.path().strip_prefix(from).unwrap());
@@ -476,30 +425,6 @@ fn sync(from: &Path, to: &Path) {
             let modified = entry.metadata().unwrap().modified().unwrap();
             let file = std::fs::File::options().write(true).open(&target).unwrap();
             file.set_modified(modified).unwrap();
-        }
-    }
-}
-
-// Reads every page of memory_review; returns the pages and the project note lines they hold (#77).
-fn review_pages(client: &mut Client, full: bool) -> (Vec<String>, usize) {
-    let mut pages = Vec::new();
-    loop {
-        let page = pages.len() + 1;
-        let (is_error, text) = client.call("memory_review", json!({"page": page, "full": full}));
-        // Antigravity saves a tool result over about 4 KB to a file the agent has to page through.
-        assert!(
-            !is_error && text.len() <= 3500,
-            "page {page}: {} bytes",
-            text.len()
-        );
-        let more = text.contains(&format!("more: call memory_review with page={}", page + 1));
-        pages.push(text);
-        if !more {
-            let notes = pages
-                .iter()
-                .map(|p| p.matches(" | project | ").count())
-                .sum();
-            return (pages, notes);
         }
     }
 }
@@ -778,6 +703,142 @@ fn usage_rides_with_the_next_commit_and_adds_up_across_machines() {
     assert_eq!(std::fs::read_dir(synced.join(".usage")).unwrap().count(), 2);
     drop(other_client);
     assert!(other_child.wait().unwrap().success());
+}
+
+// The laptop saves, Syncthing carries the note, the server's next session has it (#81).
+#[test]
+fn a_note_saved_on_one_machine_is_loaded_and_committed_on_the_other() {
+    let laptop = TempDir::new().unwrap();
+    let server = TempDir::new().unwrap();
+    let (vault_a, vault_b) = (laptop.path().join("vault"), server.path().join("vault"));
+    for (home, vault) in [(&laptop, &vault_a), (&server, &vault_b)] {
+        petit_poucet(home.path())
+            .args(["init", vault.to_str().unwrap()])
+            .assert()
+            .success();
+    }
+    let (mut child, mut client, _) = start(laptop.path());
+    client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "Tabs", "summary": "indent with tabs",
+               "fact": "A fact.", "source": "test on 2026-10-26", "how_to_apply": "Test."}),
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+
+    sync(&vault_a, &vault_b);
+    let (reply, errors) = session_start(server.path(), "claude");
+    assert!(
+        reply.contains("[[Preferences/tabs]] — indent with tabs"),
+        "{reply}"
+    );
+    assert_eq!(errors, "");
+    assert!(
+        git_log(&vault_b).starts_with("sync: notes changed outside petit-poucet\n"),
+        "{}",
+        git_log(&vault_b)
+    );
+    assert_eq!(git_status(&vault_b), "");
+    petit_poucet(server.path()).arg("check").assert().success();
+
+    let copy = "Preferences/tabs.sync-conflict-20261026-101112-ABCDEF7.md";
+    std::fs::copy(vault_b.join("Preferences/tabs.md"), vault_b.join(copy)).unwrap();
+    let (mut child, mut client, _) = start(server.path());
+    let (_, found) = client.call(
+        "memory_search",
+        json!({"query": "tabs", "project_dir": server.path()}),
+    );
+    assert!(!found.contains("sync-conflict"), "{found}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// Session starts catch up under the vault lock: never an Index missing a note, never two git processes at once (#81).
+#[test]
+fn session_starts_beside_saves_and_synced_files_keep_the_vault_whole() {
+    const EACH: usize = 10;
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let vault = dunce::canonicalize(vault).unwrap();
+    let saver = {
+        let home = home.path().to_path_buf();
+        std::thread::spawn(move || {
+            let (mut child, mut client, _) = start(&home);
+            for i in 0..EACH {
+                let (_, reply) = client.call(
+                    "memory_save",
+                    json!({"type": "reference", "scope": "all repos", "title": format!("saved{i}"),
+                           "summary": format!("about saved{i}"), "fact": "A fact.",
+                           "source": "test on 2026-10-26", "how_to_apply": "Test."}),
+                );
+                assert_eq!(reply, format!("saved Preferences/saved{i}"));
+            }
+            drop(client);
+            assert!(child.wait().unwrap().success());
+        })
+    };
+    let starters: Vec<_> = ["claude", "codex"]
+        .into_iter()
+        .map(|agent| {
+            let (home, vault) = (home.path().to_path_buf(), vault.clone());
+            std::thread::spawn(move || {
+                for i in 0..EACH {
+                    // A note arriving through Syncthing between session starts.
+                    std::fs::write(
+                        vault.join(format!("Preferences/{agent}{i}.md")),
+                        format!("---\ntype: user\nscope: all repos\nsummary: about {agent}{i}\ncreated: 2026-10-26\ntags: [agent-memory]\n---\n**Why:** x\n"),
+                    )
+                    .unwrap();
+                    let (reply, errors) = session_start(&home, agent);
+                    assert!(!reply.is_empty());
+                    assert_eq!(errors, "", "{agent} session {i}");
+                }
+            })
+        })
+        .collect();
+    saver.join().unwrap();
+    for starter in starters {
+        starter.join().unwrap();
+    }
+    session_start(home.path(), "claude");
+
+    let notes: Vec<String> = std::fs::read_dir(vault.join("Preferences"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(notes.len(), 3 * EACH);
+    petit_poucet(home.path()).arg("check").assert().success();
+    let added = std::process::Command::new("git")
+        .args([
+            "log",
+            "--diff-filter=A",
+            "--name-only",
+            "--format=",
+            "--",
+            "Preferences",
+        ])
+        .current_dir(&vault)
+        .output()
+        .unwrap();
+    let mut added: Vec<String> = String::from_utf8_lossy(&added.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
+    added.sort();
+    let mut expected: Vec<String> = notes.iter().map(|n| format!("Preferences/{n}")).collect();
+    expected.sort();
+    assert_eq!(added, expected, "every note committed exactly once");
+    let pending: Vec<String> = git_status(&vault)
+        .lines()
+        .filter(|l| !l.contains(".usage/"))
+        .map(str::to_string)
+        .collect();
+    assert!(pending.is_empty(), "all committed: {pending:?}");
 }
 
 #[test]

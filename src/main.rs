@@ -39,6 +39,8 @@ mod skills;
 mod stale_paths;
 mod state;
 mod stops;
+mod sync;
+mod sync_conflict;
 mod unused;
 mod update;
 mod upgrade;

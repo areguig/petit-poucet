@@ -215,7 +215,7 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
     assert!(read("Projects/alpha/_project.md").contains("type: project-identity"));
     assert_eq!(
         read(".gitignore"),
-        ".obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n"
+        ".obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n*.sync-conflict-*\n"
     );
 
     let check = petit_poucet(home.path())
@@ -390,6 +390,59 @@ fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
             .as_str()
             .unwrap()
             .ends_with("(preferences)")
+    );
+}
+
+// Syncthing drops files into the vault without petit-poucet: session start indexes and commits them, and names conflicts (#81).
+#[test]
+fn session_start_catches_up_with_files_synced_in() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    fs::write(
+        vault.join("Preferences/synced-in.md"),
+        "---\ntype: user\nscope: all repos\nsummary: arrived from the laptop\ncreated: 2026-10-26\ntags: [agent-memory]\n---\n**Why:** x\n",
+    )
+    .unwrap();
+    let copy = "Preferences/synced-in.sync-conflict-20261026-101112-ABCDEF7.md";
+    fs::write(vault.join(copy), "older version\n").unwrap();
+
+    let reply: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        "{}",
+    ))
+    .unwrap();
+    let context = reply["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("arrived from the laptop"), "{context}");
+    assert!(!context.contains("sync-conflict"), "{context}");
+    assert!(
+        reply["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("1 notes have a sync conflict copy: run `petit-poucet check` and merge them"),
+        "{reply}"
+    );
+    assert!(
+        git_log(&vault).starts_with("sync: notes changed outside petit-poucet\ninit: vault\n"),
+        "{}",
+        git_log(&vault)
+    );
+
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(!check.status.success());
+    assert!(
+        stdout(&check).contains(&format!(
+            "{copy}: error: sync conflict copy of Preferences/synced-in.md"
+        )),
+        "{}",
+        stdout(&check)
     );
 }
 
@@ -631,6 +684,57 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
         "init: vault\n",
         "the vault is created once"
     );
+}
+
+// A vault made before 0.7 gets the Syncthing lines from `setup`, which `update` runs (#81).
+#[test]
+fn setup_adds_the_sync_lines_to_an_older_vault_once() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    fs::remove_file(vault.join(".stignore")).unwrap();
+    let gitignore = vault.join(".gitignore");
+    let older = fs::read_to_string(&gitignore)
+        .unwrap()
+        .replace("*.sync-conflict-*\n", "");
+    fs::write(&gitignore, &older).unwrap();
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&vault)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "--quiet",
+        "-am",
+        "older",
+    ]);
+
+    for _ in 0..2 {
+        let (ok, out) = setup(home.path(), &[]);
+        assert!(ok, "{out}");
+    }
+    assert_eq!(
+        fs::read_to_string(&gitignore).unwrap(),
+        format!("{older}*.sync-conflict-*\n")
+    );
+    assert!(
+        fs::read_to_string(vault.join(".stignore"))
+            .unwrap()
+            .contains("/.git\n")
+    );
+    assert_eq!(git_log(&vault), "setup: ignore files\nolder\ninit: vault\n");
+    assert!(git(&["status", "--porcelain"]).stdout.is_empty());
 }
 
 // A config written by an older version gets the settings added since, the user's own lines kept, as soon as it is read.

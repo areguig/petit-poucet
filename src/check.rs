@@ -5,6 +5,7 @@ use std::fs;
 use crate::config::Limits;
 use crate::note::{self, REQUIRED_TAG};
 use crate::project::IDENTITY_FILE;
+use crate::sync_conflict::{self, Conflict};
 use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, TOPICS, Vault};
 use crate::{budget, checkouts, duplicates, index, secrets, stale_paths};
 
@@ -175,6 +176,10 @@ pub fn check(vault: &Vault, limits: &Limits) -> Vec<Issue> {
         ));
     }
 
+    for conflict in &vault.conflicts {
+        issues.push(conflict_issue(vault, conflict));
+    }
+
     check_index(vault, &mut issues);
     issues.sort();
     issues
@@ -183,6 +188,23 @@ pub fn check(vault: &Vault, limits: &Limits) -> Vec<Issue> {
 fn link_exists(vault: &Vault, target: &str) -> bool {
     let target = target.strip_suffix(".md").unwrap_or(target);
     vault.has_note(target) || vault.root.join(target).is_file()
+}
+
+fn conflict_issue(vault: &Vault, conflict: &Conflict) -> Issue {
+    let read = |path: &str| fs::read_to_string(vault.root.join(path)).unwrap_or_default();
+    let only_here = sync_conflict::lines_only_in(&read(&conflict.copy), &read(&conflict.original));
+    let message = format!(
+        "sync conflict copy of {} (lines only in this copy: {only_here}): merge what is worth keeping, then delete the copy",
+        conflict.original
+    );
+    Issue {
+        file: conflict.copy.clone(),
+        level: match conflict.in_note() {
+            true => Level::Error,
+            false => Level::Warning,
+        },
+        message,
+    }
 }
 
 fn check_index(vault: &Vault, issues: &mut Vec<Issue>) {
@@ -344,6 +366,37 @@ mod tests {
         )
         .unwrap();
         assert_eq!(index_issues(tmp.path()), ["out of date"]);
+    }
+
+    #[test]
+    fn a_note_s_conflict_copy_is_an_error_other_copies_a_warning() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mark = ".sync-conflict-20261026-101112-ABCDEF7";
+        fs::create_dir(root.join(PREFERENCES)).unwrap();
+        fs::write(root.join("Preferences/a.md"), "same\nkept\n").unwrap();
+        fs::write(
+            root.join(format!("Preferences/a{mark}.md")),
+            "same\nonly\nhere\n",
+        )
+        .unwrap();
+        fs::write(root.join(format!("{mark}.last-cleanup")), "1\n").unwrap();
+        let conflicts: Vec<String> = check(&Vault::load(root).unwrap(), &limits())
+            .iter()
+            .filter(|i| i.file.contains(mark))
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            conflicts,
+            [
+                format!(
+                    "{mark}.last-cleanup: warning: sync conflict copy of .last-cleanup (lines only in this copy: 1): merge what is worth keeping, then delete the copy"
+                ),
+                format!(
+                    "Preferences/a{mark}.md: error: sync conflict copy of Preferences/a.md (lines only in this copy: 2): merge what is worth keeping, then delete the copy"
+                ),
+            ]
+        );
     }
 
     #[test]

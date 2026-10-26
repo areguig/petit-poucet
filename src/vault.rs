@@ -6,6 +6,7 @@ use walkdir::WalkDir;
 
 use crate::note::Note;
 use crate::project::{IDENTITY_FILE, Identity, Project};
+use crate::sync_conflict::{self, Conflict};
 
 pub const INDEX_FILE: &str = "Index.md";
 pub const PREFERENCES: &str = "Preferences";
@@ -17,6 +18,7 @@ pub struct Vault {
     pub notes: Vec<Note>,
     pub projects: Vec<Project>,
     pub stray: Vec<String>,
+    pub conflicts: Vec<Conflict>,
 }
 
 impl Vault {
@@ -29,12 +31,20 @@ impl Vault {
             notes: Vec::new(),
             projects: Vec::new(),
             stray: Vec::new(),
+            conflicts: Vec::new(),
         };
         let entries = WalkDir::new(root)
             .min_depth(1)
             .sort_by_file_name()
             .into_iter()
-            .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'));
+            .filter_entry(|e| {
+                let name = e.file_name().to_string_lossy();
+                // Hidden, except a conflict copy of a synced root file such as `.last-cleanup`.
+                !name.starts_with('.')
+                    || e.depth() == 1
+                        && e.file_type().is_file()
+                        && sync_conflict::original_of(&name).is_some()
+            });
         for entry in entries {
             let entry = entry.map_err(|e| e.to_string())?;
             let rel = entry.path().strip_prefix(root).unwrap();
@@ -55,6 +65,13 @@ impl Vault {
                         identity,
                     });
                 }
+                continue;
+            }
+            if let Some(original) = sync_conflict::original_of(&rel) {
+                vault.conflicts.push(Conflict {
+                    copy: rel,
+                    original,
+                });
                 continue;
             }
             let Some(stem) = rel.strip_suffix(".md").map(str::to_string) else {
@@ -115,6 +132,47 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sync_conflict_copies_are_listed_never_loaded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mark = ".sync-conflict-20261026-101112-ABCDEF7";
+        let copies = [
+            format!("Preferences/a{mark}.md"),
+            format!("Projects/x/a{mark}.md"),
+            format!("Projects/x/_project{mark}.md"),
+            format!("Topics/t/a{mark}.md"),
+            format!("{mark}.last-cleanup"),
+        ];
+        for file in copies.iter().map(String::as_str).chain([
+            "Preferences/a.md",
+            "Projects/x/_project.md",
+            ".git/HEAD.sync-conflict-20261026-101112-ABCDEF7",
+            ".obsidian/workspace.sync-conflict-20261026-101112-ABCDEF7.json",
+        ]) {
+            fs::create_dir_all(root.join(file).parent().unwrap()).unwrap();
+            fs::write(root.join(file), "x").unwrap();
+        }
+
+        let vault = Vault::load(root).unwrap();
+        let notes: Vec<&str> = vault.notes.iter().map(|n| n.path.as_str()).collect();
+        assert_eq!(notes, ["Preferences/a"]);
+        assert!(vault.stray.is_empty(), "{:?}", vault.stray);
+        let mut found: Vec<(&str, &str)> = vault
+            .conflicts
+            .iter()
+            .map(|c| (c.copy.as_str(), c.original.as_str()))
+            .collect();
+        found.sort();
+        let mut expected: Vec<(&str, String)> = copies
+            .iter()
+            .map(|c| (c.as_str(), c.replace(mark, "")))
+            .collect();
+        expected.sort();
+        let expected: Vec<(&str, &str)> = expected.iter().map(|(c, o)| (*c, o.as_str())).collect();
+        assert_eq!(found, expected);
+    }
 
     #[test]
     fn write_atomic_replaces_content_and_keeps_the_file_readable() {

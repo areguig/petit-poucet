@@ -266,6 +266,12 @@ Two sync routes, because users have different needs; petit-poucet itself never r
 - #81 Syncthing, peer to peer, plus the shared base: `Index.md` per machine (out of git), session start commits changes made outside petit-poucet under the vault lock, sync conflicts reported by `check` and session start.
 - #19 a git remote the user owns (opt-in `git_sync`): fetch outside the vault lock, push in the background; also the route for cloud agents.
 
+Scope decided 2026-10-26 (owner): one memory for coding agents on a laptop and a home server, and the Hermes agent there. One PR per issue into `v0.7`, in this order:
+- #81 Syncthing. Changed from the issue while building: `Index.md` stays in git (`.stignore` already keeps it per machine; #19 takes it out if it needs to); the external-change commit covers the whole vault but never runs for `.usage/` alone, or every session start would make one; `.stignore` anchors root entries (`/Index.md`), since Syncthing matches a bare name at any depth; `setup` adds missing `.gitignore` and `.stignore` lines to an existing vault, so `update` brings old vaults along; a conflict copy of a note is an error in `check`, of another file a warning, each with the count of lines only in the copy. **Built 2026-10-26.**
+- #134 `petit-poucet sync [<device id>]`: pairs two machines through an installed Syncthing, one command per side, no web UI. petit-poucet never ships, downloads or runs Syncthing: the OS package manager does.
+- #133 Hermes Agent support.
+- #19 moves to a later release.
+
 ### Later, only when needed
 - Homebrew tap and `cargo install`, once the install script has users.
 - Search that scales: better ranking (stems, BM25) once vaults reach several hundred notes; semantic search stays optional behind `memory_search`.
