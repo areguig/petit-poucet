@@ -265,6 +265,18 @@ fn two_machines_share_one_vault_through_syncthing() {
     assert!(laptop.vault.join(".stignore").is_file());
     laptop.dial(&server_id, &server);
 
+    // A line the server adds to its own .stignore keeps a work project off it (#146), and `sync` shows it.
+    let stignore = server.vault.join(".stignore");
+    let ignored = format!("{}/Projects/work\n", fs::read_to_string(&stignore).unwrap());
+    fs::write(&stignore, ignored).unwrap();
+    let (ok, out) = server.sync(None);
+    assert!(
+        ok && out.contains("not synced with this machine (its .stignore): /Projects/work\n"),
+        "{out}"
+    );
+    fs::create_dir_all(laptop.vault.join("Projects/work")).unwrap();
+    fs::write(laptop.vault.join("Projects/work/deploy.md"), "work only").unwrap();
+
     // A note saved on the laptop reaches the server; git, the Index and petit-poucet's state stay on each machine.
     save(&laptop, "Tabs", "indent with tabs");
     wait_for("the note on the server", &[&laptop, &server], || {
@@ -277,6 +289,10 @@ fn two_machines_share_one_vault_through_syncthing() {
         "the Index never syncs"
     );
     assert!(!git_log(&server.vault).contains("tabs"), "git never syncs");
+    assert!(
+        !server.vault.join("Projects/work").exists(),
+        "the server's own .stignore keeps it off"
+    );
     let (reply, errors) = session_start(server.home.path(), "claude");
     assert!(
         reply.contains("[[Preferences/tabs]] — indent with tabs"),

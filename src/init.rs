@@ -39,6 +39,17 @@ pub fn ensure_vault_files(root: &Path) -> Result<(), String> {
     add_missing_lines(&root.join(STIGNORE), &NOT_SYNCED)
 }
 
+// Lines the user added, such as work projects an always-on machine must never receive; `//` starts a comment.
+pub fn own_ignore_lines(root: &Path) -> Vec<String> {
+    fs::read_to_string(root.join(STIGNORE))
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("//") && !NOT_SYNCED.contains(line))
+        .map(str::to_string)
+        .collect()
+}
+
 // The user's own lines are kept; each entry is added once.
 fn add_missing_lines(file: &Path, entries: &[&str]) -> Result<(), String> {
     let mut text = fs::read_to_string(file).unwrap_or_default();
@@ -181,5 +192,21 @@ mod tests {
             "/Index.md\ncustom\n/.git\n/.petit-poucet\n/.obsidian/workspace*.json\n(?d).DS_Store\n"
         );
         assert!(!text.contains(crate::usage::DIR) && !text.contains(".last-cleanup"));
+    }
+
+    #[test]
+    fn own_ignore_lines_leave_out_petit_poucet_s_lines_and_comments() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(own_ignore_lines(tmp.path()), Vec::<String>::new());
+        fs::write(
+            tmp.path().join(STIGNORE),
+            "// work stays off this server\n/Projects/work\n\n/Index.md\n /Topics/work \n",
+        )
+        .unwrap();
+        ensure_vault_files(tmp.path()).unwrap();
+        assert_eq!(
+            own_ignore_lines(tmp.path()),
+            ["/Projects/work", "/Topics/work"]
+        );
     }
 }
