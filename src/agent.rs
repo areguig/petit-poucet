@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::ValueEnum;
 use serde_json::{Value, json};
 
-use crate::{antigravity, codex, copilot, omp, opencode};
+use crate::{antigravity, codex, copilot, hermes, omp, opencode};
 
 // Every agent petit-poucet knows: how its hooks reply, how to find it, how it gets set up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -16,10 +16,11 @@ pub enum Agent {
     Antigravity,
     Opencode,
     Omp,
+    Hermes,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 7] = [
+    pub const ALL: [Agent; 8] = [
         Agent::Claude,
         Agent::Copilot,
         Agent::Codex,
@@ -27,6 +28,7 @@ impl Agent {
         Agent::Antigravity,
         Agent::Opencode,
         Agent::Omp,
+        Agent::Hermes,
     ];
 
     pub fn name(self) -> &'static str {
@@ -38,6 +40,7 @@ impl Agent {
             Agent::Antigravity => "Antigravity CLI",
             Agent::Opencode => "OpenCode",
             Agent::Omp => "omp",
+            Agent::Hermes => "Hermes Agent",
         }
     }
 
@@ -51,6 +54,7 @@ impl Agent {
             Agent::Antigravity => "antigravity",
             Agent::Opencode => "opencode",
             Agent::Omp => "omp",
+            Agent::Hermes => "hermes",
         }
     }
 
@@ -64,6 +68,7 @@ impl Agent {
             Agent::Antigravity => "antigravity hook",
             Agent::Opencode => "opencode hook",
             Agent::Omp => "omp hook",
+            Agent::Hermes => "hermes hook",
         }
     }
 
@@ -98,15 +103,20 @@ impl Agent {
     }
 
     // Codex keeps a resumed session's memory in its history but runs the hook again: answering would repeat it.
+    // Hermes runs it before every model call, and keeps what the first turn's call received.
     pub fn holds_memory_already(self, event: &Value) -> bool {
-        self == Agent::Codex && event["source"] == "resume"
+        match self {
+            Agent::Codex => event["source"] == "resume",
+            Agent::Hermes => event["extra"]["is_first_turn"] == json!(false),
+            _ => false,
+        }
     }
 
     pub fn shows_hook_messages(self) -> bool {
         matches!(self, Agent::Claude | Agent::Codex)
     }
 
-    // Copilot CLI, Cursor, Antigravity, OpenCode and omp hooks have no line for the user, so `message` goes to Claude Code and Codex only.
+    // Copilot CLI, Cursor, Antigravity, OpenCode, omp and Hermes hooks have no line for the user, so `message` goes to Claude Code and Codex only.
     pub fn session_start_reply(self, context: &str, message: &str) -> Value {
         match self {
             Agent::Claude | Agent::Codex => json!({
@@ -119,20 +129,24 @@ impl Agent {
             Agent::Antigravity => json!({"injectSteps": [{"ephemeralMessage": context}]}),
             // Read by petit-poucet's own plugin, which adds it to every model call.
             Agent::Opencode | Agent::Omp => json!({"context": context}),
+            // Added to the user's message.
+            Agent::Hermes => json!({"context": context}),
         }
     }
 
-    pub fn stop_reply(self, reason: &str, message: &str) -> Value {
+    // None for Hermes: it has no hook after an answer, where the reminder belongs.
+    pub fn stop_reply(self, reason: &str, message: &str) -> Option<Value> {
         match self {
             Agent::Claude | Agent::Codex => {
-                json!({"decision": "block", "reason": reason, "systemMessage": message})
+                Some(json!({"decision": "block", "reason": reason, "systemMessage": message}))
             }
-            Agent::Copilot => json!({"decision": "block", "reason": reason}),
+            Agent::Copilot => Some(json!({"decision": "block", "reason": reason})),
             // Cursor sends it as the user's next message.
-            Agent::Cursor => json!({"followup_message": reason}),
-            Agent::Antigravity => json!({"decision": "continue", "reason": reason}),
+            Agent::Cursor => Some(json!({"followup_message": reason})),
+            Agent::Antigravity => Some(json!({"decision": "continue", "reason": reason})),
             // The plugin sends it back to the agent.
-            Agent::Opencode | Agent::Omp => json!({"reason": reason}),
+            Agent::Opencode | Agent::Omp => Some(json!({"reason": reason})),
+            Agent::Hermes => None,
         }
     }
 
@@ -145,6 +159,7 @@ impl Agent {
             Agent::Antigravity => antigravity::dir(home).is_dir(),
             Agent::Opencode => opencode::dir(home).is_dir(),
             Agent::Omp => omp::dir(home).is_dir(),
+            Agent::Hermes => hermes::dir(home).is_dir(),
         }
     }
 
@@ -153,9 +168,12 @@ impl Agent {
         match self {
             Agent::Claude => Some(&["claude", "plugin", "uninstall", "petit-poucet@petit-poucet"]),
             Agent::Copilot => Some(&["copilot", "plugin", "uninstall", "petit-poucet"]),
-            Agent::Codex | Agent::Cursor | Agent::Antigravity | Agent::Opencode | Agent::Omp => {
-                None
-            }
+            Agent::Codex
+            | Agent::Cursor
+            | Agent::Antigravity
+            | Agent::Opencode
+            | Agent::Omp
+            | Agent::Hermes => None,
         }
     }
 
@@ -171,9 +189,12 @@ impl Agent {
                         .flatten()
                         .any(|marketplace| marketplace.path().join("petit-poucet").is_dir())
             }
-            Agent::Codex | Agent::Cursor | Agent::Antigravity | Agent::Opencode | Agent::Omp => {
-                false
-            }
+            Agent::Codex
+            | Agent::Cursor
+            | Agent::Antigravity
+            | Agent::Opencode
+            | Agent::Omp
+            | Agent::Hermes => false,
         }
     }
 }
@@ -201,6 +222,20 @@ mod tests {
         let path = home.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn hermes_gets_the_memory_on_its_first_turn_only() {
+        let first = json!({"extra": {"is_first_turn": true}});
+        let later = json!({"extra": {"is_first_turn": false}});
+        assert!(!Agent::Hermes.holds_memory_already(&first));
+        assert!(Agent::Hermes.holds_memory_already(&later));
+        assert!(!Agent::Codex.holds_memory_already(&later));
+        assert_eq!(
+            Agent::Hermes.stop_reply("r", "m"),
+            None,
+            "no hook after an answer"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 ---
 name: migrate-memory
-description: "Move what agents remember elsewhere (MEMORY.md, memory folders, agents' own memories, memory sections of CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md or Cursor rules) into petit-poucet in one pass. Use only when the user asks to migrate or import their old memory."
+description: "Move what agents remember elsewhere (MEMORY.md, USER.md, memory folders, agents' own memories, memory sections of CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md or Cursor rules) into petit-poucet in one pass. Use only when the user asks to migrate or import their old memory."
 ---
 
 # Migrate older memory into petit-poucet
@@ -13,6 +13,7 @@ description: "Move what agents remember elsewhere (MEMORY.md, memory folders, ag
    - **Antigravity CLI:** `~/.gemini/GEMINI.md`, `~/.gemini/AGENTS.md`, `~/.gemini/config/GEMINI.md`, `~/.gemini/config/AGENTS.md`, `~/.gemini/config/rules/*.md`, `~/.gemini/antigravity-cli/rules/*.md`, and knowledge items in `~/.gemini/antigravity*/knowledge/*/` (a summary in `metadata.json`, details in `artifacts/`); in the repo, `GEMINI.md`, `AGENTS.md`, `.agents/GEMINI.md`, `.agents/AGENTS.md`, `.agents/rules/*.md`.
    - **OpenCode:** `~/.config/opencode/AGENTS.md`, and the files listed under `instructions` in `~/.config/opencode/opencode.json`; in the repo, `AGENTS.md` and the files listed under `instructions` in `opencode.json`.
    - **omp:** `~/.omp/agent/AGENTS.md`, `~/.omp/agent/RULES.md`, `~/.omp/agent/rules/*.md`, and the skills omp wrote itself in `~/.omp/agent/managed-skills/*/SKILL.md`; `PI_CODING_AGENT_DIR` replaces `~/.omp/agent` when set. In the repo, `AGENTS.md`, `.omp/AGENTS.md`, `.omp/RULES.md`, `.omp/rules/*.md`.
+   - **Hermes Agent:** `~/.hermes/memories/MEMORY.md` and `~/.hermes/memories/USER.md` (entries separated by a line holding `§`); `HERMES_HOME` replaces `~/.hermes` when set, and on Windows it is `%LOCALAPPDATA%\hermes`. Leave `SOUL.md`: it is the agent's persona, not memory.
    - Any file or folder the user names in this conversation.
 
    Look only there: don't search the whole home folder, and leave other folders alone (even when an instruction file mentions them, and even under `~/.config`), because they hold application data, not agent memory. Skip the line that tells an agent to use petit-poucet, and generated or raw files (Codex `raw_memories.md`, session logs). Tell the user which files you found before going further.

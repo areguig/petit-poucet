@@ -4,7 +4,7 @@ use crate::agent::Agent;
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
-use crate::{antigravity, claude, codex, copilot, cursor, omp, opencode, skills};
+use crate::{antigravity, claude, codex, copilot, cursor, hermes, omp, opencode, skills};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -176,6 +176,12 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
             opencode::dir(home),
         ),
         Agent::Omp => (omp::setup, omp::check, omp::uninstall, omp::dir(home)),
+        Agent::Hermes => (
+            hermes::setup,
+            hermes::check,
+            hermes::uninstall,
+            hermes::dir(home),
+        ),
     };
     match mode {
         Mode::Setup => Ok((setup(&dir, &exe()?)?, true)),

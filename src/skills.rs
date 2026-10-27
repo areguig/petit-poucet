@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::agent::Agent;
-use crate::{antigravity, codex, copilot, edit, note, omp, opencode};
+use crate::{antigravity, codex, copilot, edit, hermes, note, omp, opencode};
 
 // The skills and the subagent tidy-memory starts, embedded so `setup` can install them.
 const SKILLS: [(&str, &str); 3] = [
@@ -20,8 +20,11 @@ const SKILLS: [(&str, &str); 3] = [
 ];
 const CLEANUP: &str = include_str!("../agents/memory-cleanup.md");
 const CLEANUP_NAME: &str = "memory-cleanup";
+// It starts the memory-cleanup subagent, so it goes only where that subagent is installed.
+const TIDY: &str = "tidy-memory";
 
-// Codex, Cursor, Copilot, OpenCode and omp share the Agent Skills folder; Claude Code and Antigravity read only their own.
+// Codex, Cursor, Copilot, OpenCode and omp share the Agent Skills folder; Claude Code, Antigravity and Hermes read only
+// their own.
 fn skills_dir(agent: Agent, home: &Path) -> PathBuf {
     match agent {
         Agent::Codex | Agent::Cursor | Agent::Copilot | Agent::Opencode | Agent::Omp => {
@@ -29,6 +32,7 @@ fn skills_dir(agent: Agent, home: &Path) -> PathBuf {
         }
         Agent::Claude => home.join(".claude/skills"),
         Agent::Antigravity => antigravity::dir(home).join("skills"),
+        Agent::Hermes => hermes::dir(home).join("skills"),
     }
 }
 
@@ -38,7 +42,8 @@ struct Frontmatter {
 }
 
 // Read-only where the agent names its tools in a known way; elsewhere it inherits the main agent's.
-fn subagent(agent: Agent, home: &Path) -> (PathBuf, String) {
+// None for Hermes, whose subagents take their instructions from the call that starts them, not from a file.
+fn subagent(agent: Agent, home: &Path) -> Option<(PathBuf, String)> {
     let (yaml, prompt) =
         note::split_frontmatter(CLEANUP).expect("memory-cleanup.md has frontmatter");
     let description = note::parse_yaml::<Frontmatter>(yaml)
@@ -49,7 +54,7 @@ fn subagent(agent: Agent, home: &Path) -> (PathBuf, String) {
     let markdown = |extra: &str, heading: &str| {
         format!("---\nname: {CLEANUP_NAME}\ndescription: {quoted}\n{extra}---\n\n{heading}{prompt}")
     };
-    match agent {
+    Some(match agent {
         Agent::Claude => (
             home.join(format!(".claude/agents/{CLEANUP_NAME}.md")),
             markdown(
@@ -100,14 +105,20 @@ fn subagent(agent: Agent, home: &Path) -> (PathBuf, String) {
                 &format!("# {CLEANUP_NAME}\n\n"),
             ),
         ),
-    }
+        Agent::Hermes => return None,
+    })
 }
 
 // Every file petit-poucet writes for this agent, with its content.
 fn files(agent: Agent, home: &Path) -> Vec<(PathBuf, String)> {
     let dir = skills_dir(agent, home);
-    let skills = SKILLS.map(|(name, text)| (dir.join(name).join("SKILL.md"), text.to_string()));
-    skills.into_iter().chain([subagent(agent, home)]).collect()
+    let subagent = subagent(agent, home);
+    let tidy = subagent.is_some();
+    let skills = SKILLS
+        .iter()
+        .filter(|(name, _)| *name != TIDY || tidy)
+        .map(|(name, text)| (dir.join(name).join("SKILL.md"), text.to_string()));
+    skills.chain(subagent).collect()
 }
 
 pub fn setup(agent: Agent, home: &Path) -> Result<String, String> {
@@ -117,11 +128,12 @@ pub fn setup(agent: Agent, home: &Path) -> Result<String, String> {
         fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         changed |= edit::replace(&path, &text)?;
     }
+    let with = match subagent(agent, home) {
+        Some(_) => format!(" (with the {CLEANUP_NAME} subagent)"),
+        None => String::new(),
+    };
     Ok(match changed {
-        true => format!(
-            "installed in {} (with the {CLEANUP_NAME} subagent)",
-            skills_dir(agent, home).display()
-        ),
+        true => format!("installed in {}{with}", skills_dir(agent, home).display()),
         false => "already installed".to_string(),
     })
 }
@@ -147,8 +159,9 @@ pub fn check(agent: Agent, home: &Path) -> (String, bool) {
 
 pub fn uninstall(agent: Agent, home: &Path) -> Result<String, String> {
     let mut removed = false;
-    let (path, _) = subagent(agent, home);
-    if path.is_file() {
+    if let Some((path, _)) = subagent(agent, home)
+        && path.is_file()
+    {
         fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         removed = true;
         if agent == Agent::Antigravity {
@@ -160,7 +173,7 @@ pub fn uninstall(agent: Agent, home: &Path) -> Result<String, String> {
     let users: Vec<&str> = Agent::ALL
         .into_iter()
         .filter(|&other| other != agent && skills_dir(other, home) == dir)
-        .filter(|&other| subagent(other, home).0.is_file())
+        .filter(|&other| subagent(other, home).is_some_and(|(path, _)| path.is_file()))
         .map(Agent::name)
         .collect();
     if !users.is_empty() {
@@ -261,6 +274,23 @@ mod tests {
                 agent.name()
             );
         }
+    }
+
+    #[test]
+    fn hermes_gets_the_skills_that_need_no_subagent() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        assert_eq!(
+            setup(Agent::Hermes, home).unwrap(),
+            format!("installed in {}", skills_dir(Agent::Hermes, home).display())
+        );
+        let dir = hermes::dir(home).join("skills");
+        assert!(dir.join("memory/SKILL.md").is_file());
+        assert!(dir.join("migrate-memory/SKILL.md").is_file());
+        assert!(!dir.join(TIDY).exists());
+        assert_eq!(check(Agent::Hermes, home), ("installed".to_string(), true));
+        assert_eq!(uninstall(Agent::Hermes, home).unwrap(), "removed");
+        assert!(!dir.join("memory").exists());
     }
 
     #[test]
