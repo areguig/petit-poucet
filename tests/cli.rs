@@ -451,6 +451,50 @@ fn session_start_catches_up_with_files_synced_in() {
     );
 }
 
+// Two machines changed a project's identity at once: session start keeps the remotes and folders of both, which the
+// memory tools could not, and `check` says how to finish a copy it can't read (#153).
+#[test]
+fn session_start_merges_a_project_identity_conflict() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let alpha = "Projects/alpha/_project.sync-conflict-20261026-101112-ABCDEF7.md";
+    fs::write(
+        vault.join(alpha),
+        "---\ntype: project-identity\nremotes: [github.com/example/alpha, gitlab.com/example/alpha-mirror]\nfolders: [alpha, alpha-old]\n---\n",
+    )
+    .unwrap();
+    let beta = "Projects/beta/_project.sync-conflict-20261026-101112-ABCDEF7.md";
+    fs::write(vault.join(beta), "half written").unwrap();
+
+    let reply = hook(home.path(), &["session-start", "--agent", "claude"], "{}");
+    assert!(!reply.contains("sync conflict"), "{reply}");
+    let identity = fs::read_to_string(vault.join("Projects/alpha/_project.md")).unwrap();
+    assert!(
+        identity.contains("gitlab.com/example/alpha-mirror") && identity.contains("alpha-old"),
+        "{identity}"
+    );
+    assert!(!vault.join(alpha).exists());
+    assert!(
+        git_log(&vault).starts_with("sync: notes changed outside petit-poucet\n"),
+        "{}",
+        git_log(&vault)
+    );
+
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    let out = stdout(&check);
+    assert!(!check.status.success());
+    assert!(
+        out.contains(&format!("{beta}: error: sync conflict copy of Projects/beta/_project.md that petit-poucet could not merge: copy the remotes and folders it adds into Projects/beta/_project.md by hand, then delete the copy")),
+        "{out}"
+    );
+    assert!(!out.contains(alpha), "{out}");
+}
+
 // A cleanup that is due is announced at session start, to the user or through the agent, until one is done (#84).
 #[test]
 fn session_start_reminds_of_a_due_cleanup() {
@@ -765,10 +809,10 @@ fn sync_without_syncthing_says_how_to_install_it() {
         .args(["init", vault.to_str().unwrap()])
         .assert()
         .success();
-    // A line missing, so writing it back is a change to commit.
+    // A user's line above petit-poucet's, so putting theirs first is a change to commit.
     let stignore = vault.join(".stignore");
     let text = fs::read_to_string(&stignore).unwrap();
-    fs::write(&stignore, text.replacen("/.git\n", "", 1)).unwrap();
+    fs::write(&stignore, format!("!/Index.md\n{text}")).unwrap();
     let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
         .find(|dir| dir.join("git").is_file() || dir.join("git.exe").is_file())
         .unwrap();
@@ -787,9 +831,10 @@ fn sync_without_syncthing_says_how_to_install_it() {
         out.contains("\nSyncthing is not installed. Install it, start it at login, then run `petit-poucet sync` again:\n  "),
         "{out}"
     );
+    let written = fs::read_to_string(&stignore).unwrap();
     assert!(
-        vault.join(".stignore").is_file(),
-        "written before anything is shared"
+        written.starts_with("/.git\n") && written.ends_with("\n!/Index.md\n"),
+        "written before anything is shared, petit-poucet's lines first: {written}"
     );
 }
 

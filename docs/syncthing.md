@@ -51,7 +51,7 @@ Syncthing never syncs `.stignore`, so each machine can leave out more than the l
 /Topics/acme
 ```
 
-The server then neither receives these notes nor sends its own. `setup` and `sync` keep your lines, and `petit-poucet sync` lists them: `not synced with this machine (its .stignore): /Projects/acme-billing, /Topics/acme`.
+The server then neither receives these notes nor sends its own. `setup` and `sync` keep your lines below petit-poucet's own, which must come first since Syncthing applies the first line that matches, and `petit-poucet sync` lists them: `not synced with this machine (its .stignore): /Projects/acme-billing, /Topics/acme`.
 
 Limits:
 - Lines are paths, not rules: a new work project needs a new line, on each machine that must not have it.
@@ -61,6 +61,8 @@ Limits:
 ## Conflicts
 
 When two machines change the same note before they sync, Syncthing keeps the most recent version and saves the other as `<note>.sync-conflict-<date>-<time>-<device>.md`. petit-poucet never loads the copy as a note. At the next session start your agent is told, and you see `1 note has a sync conflict: ask your agent to merge it`. The agent reads both, saves what's worth keeping into the note (asking you first for a rule you stated), and deletes the copy. `petit-poucet check` lists the copies too.
+
+A project's `_project.md`, which lists its remotes and folders, is merged without asking: the next session start keeps every remote and folder from both versions and deletes the copy.
 
 ## Good to know
 
