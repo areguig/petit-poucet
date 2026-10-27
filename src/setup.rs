@@ -2,9 +2,9 @@ use std::path::Path;
 
 use crate::agent::Agent;
 use crate::config::Config;
+use crate::init;
 use crate::vault::Vault;
 use crate::{antigravity, claude, codex, copilot, cursor, omp, opencode, skills};
-use crate::{git, init};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -57,7 +57,7 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         return Ok((vec![kept], true));
     }
     let warning = match mode {
-        Mode::Setup => match update_vault_files(&config) {
+        Mode::Setup => match init::update_vault_files(&config) {
             Ok(warning) => warning,
             Err(e) => return Ok((vec![format!("vault: {e}")], false)),
         },
@@ -80,21 +80,6 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         }
         Err(e) => (vec![format!("vault: {e}")], false),
     })
-}
-
-// A vault made by an older version gets the ignore lines added since, such as the Syncthing ones.
-// Returns the warning when they could not be committed.
-fn update_vault_files(config: &Config) -> Result<Option<String>, String> {
-    init::ensure_vault_files(&config.vault)?;
-    if !config.git_autocommit {
-        return Ok(None);
-    }
-    let committed = git::commit(
-        &config.vault,
-        &[init::GITIGNORE, init::STIGNORE],
-        "setup: ignore files",
-    );
-    Ok(committed.err().map(|e| init::not_committed(&e)))
 }
 
 // An agent not on this machine is only mentioned when the user named it.
