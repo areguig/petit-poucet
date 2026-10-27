@@ -326,7 +326,7 @@ fn two_machines_share_one_vault_through_syncthing() {
     assert!(!check.status.success());
     assert!(
         out.contains(
-            "error: sync conflict copy of Preferences/tabs.md (lines only in this copy: 1)"
+            "error: older sync conflict copy of Preferences/tabs.md (lines only in this copy: 1)"
         ),
         "{out}"
     );

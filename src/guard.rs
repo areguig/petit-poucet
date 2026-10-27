@@ -21,37 +21,39 @@ fn fingerprint(text: &str) -> u64 {
     hasher.finish()
 }
 
-fn key(path: &str) -> &str {
-    path.strip_suffix(".md").unwrap_or(path)
+// Messages name a note by its path, other files by their name.
+fn shown(file: &str) -> &str {
+    file.strip_suffix(".md").unwrap_or(file)
 }
 
+// Keyed by the file in the vault: a note's `<path>.md`, or a sync conflict copy as named.
 impl ReadLog {
-    pub fn record(&self, path: &str, text: &str) {
+    pub fn record(&self, file: &str, text: &str) {
         self.0
             .lock()
             .unwrap()
-            .insert(key(path).to_string(), fingerprint(text));
+            .insert(file.to_string(), fingerprint(text));
     }
 
-    pub fn forget(&self, path: &str) {
-        self.0.lock().unwrap().remove(key(path));
+    pub fn forget(&self, file: &str) {
+        self.0.lock().unwrap().remove(file);
     }
 
-    // A note missing on disk counts as current: the write itself reports it.
-    fn seen(&self, root: &Path, path: &str) -> Seen {
-        let Ok(text) = fs::read_to_string(root.join(format!("{path}.md"))) else {
+    // A file missing on disk counts as current: the write itself reports it.
+    fn seen(&self, root: &Path, file: &str) -> Seen {
+        let Ok(text) = fs::read_to_string(root.join(file)) else {
             return Seen::Current;
         };
-        match self.0.lock().unwrap().get(path) {
+        match self.0.lock().unwrap().get(file) {
             None => Seen::Unread(text),
             Some(&seen) if seen != fingerprint(&text) => Seen::Changed(text),
             Some(_) => Seen::Current,
         }
     }
 
-    pub fn check(&self, root: &Path, path: &str) -> Result<(), String> {
-        let path = key(path);
-        match self.seen(root, path) {
+    pub fn check(&self, root: &Path, file: &str) -> Result<(), String> {
+        let path = shown(file);
+        match self.seen(root, file) {
             Seen::Current => Ok(()),
             Seen::Unread(_) => Err(format!("read {path} first (memory_read), then change it")),
             Seen::Changed(_) => Err(format!(
@@ -61,30 +63,30 @@ impl ReadLog {
     }
 
     // A delete needs no edit of its own: the refusal shows the text and counts as reading it, so a retry goes through.
-    pub fn check_delete(&self, root: &Path, path: &str) -> Result<(), String> {
-        let path = key(path);
-        let (why, text) = match self.seen(root, path) {
+    pub fn check_delete(&self, root: &Path, file: &str) -> Result<(), String> {
+        let (why, text) = match self.seen(root, file) {
             Seen::Current => return Ok(()),
             Seen::Unread(text) => ("not read yet", text),
             Seen::Changed(text) => ("changed since you read it", text),
         };
-        self.record(path, &text);
+        self.record(file, &text);
         Err(format!(
-            "{path} {why}: its current text is below, now counted as read. Call memory_delete again if it should still go.\n\n{text}"
+            "{} {why}: its current text is below, now counted as read. Call memory_delete again if it should still go.\n\n{text}",
+            shown(file)
         ))
     }
 
     // After this session's own tool rewrote links in a note it had read, the new text counts as seen.
-    pub fn refresh(&self, root: &Path, path: &str) {
-        if self.0.lock().unwrap().contains_key(key(path)) {
-            self.record_file(root, path);
+    pub fn refresh(&self, root: &Path, file: &str) {
+        if self.0.lock().unwrap().contains_key(file) {
+            self.record_file(root, file);
         }
     }
 
-    pub fn record_file(&self, root: &Path, path: &str) {
-        match fs::read_to_string(root.join(format!("{}.md", key(path)))) {
-            Ok(text) => self.record(path, &text),
-            Err(_) => self.forget(path),
+    pub fn record_file(&self, root: &Path, file: &str) {
+        match fs::read_to_string(root.join(file)) {
+            Ok(text) => self.record(file, &text),
+            Err(_) => self.forget(file),
         }
     }
 }
@@ -100,35 +102,35 @@ mod tests {
         fs::write(&file, "v1").unwrap();
         let log = ReadLog::default();
 
-        let err = log.check(tmp.path(), "note").unwrap_err();
+        let err = log.check(tmp.path(), "note.md").unwrap_err();
         assert!(err.starts_with("read note first"), "{err}");
 
         log.record("note.md", "v1");
-        assert!(log.check(tmp.path(), "note").is_ok());
+        assert!(log.check(tmp.path(), "note.md").is_ok());
 
         fs::write(&file, "v2 from Obsidian").unwrap();
         let err = log.check(tmp.path(), "note.md").unwrap_err();
         assert!(err.contains("changed since you read it"), "{err}");
 
-        log.record_file(tmp.path(), "note");
-        assert!(log.check(tmp.path(), "note").is_ok());
+        log.record_file(tmp.path(), "note.md");
+        assert!(log.check(tmp.path(), "note.md").is_ok());
 
         fs::write(&file, "v3 from this session's own link rewrite").unwrap();
-        log.refresh(tmp.path(), "note");
+        log.refresh(tmp.path(), "note.md");
         assert!(
-            log.check(tmp.path(), "note").is_ok(),
+            log.check(tmp.path(), "note.md").is_ok(),
             "known notes are refreshed"
         );
         fs::write(tmp.path().join("unread.md"), "x").unwrap();
         log.refresh(tmp.path(), "unread.md");
         assert!(
-            log.check(tmp.path(), "unread").is_err(),
+            log.check(tmp.path(), "unread.md").is_err(),
             "unread notes stay unread"
         );
 
-        log.forget("note");
-        assert!(log.check(tmp.path(), "note").is_err());
-        assert!(log.check(tmp.path(), "missing").is_ok());
+        log.forget("note.md");
+        assert!(log.check(tmp.path(), "note.md").is_err());
+        assert!(log.check(tmp.path(), "missing.md").is_ok());
     }
 
     #[test]
@@ -138,16 +140,16 @@ mod tests {
         fs::write(&file, "v1").unwrap();
         let log = ReadLog::default();
 
-        let err = log.check_delete(tmp.path(), "note").unwrap_err();
+        let err = log.check_delete(tmp.path(), "note.md").unwrap_err();
         assert!(err.starts_with("note not read yet: "), "{err}");
         assert!(err.ends_with("\n\nv1"), "{err}");
         assert!(log.check_delete(tmp.path(), "note.md").is_ok());
 
         fs::write(&file, "v2 from Obsidian").unwrap();
-        let err = log.check_delete(tmp.path(), "note").unwrap_err();
+        let err = log.check_delete(tmp.path(), "note.md").unwrap_err();
         assert!(err.starts_with("note changed since you read it: "), "{err}");
         assert!(err.ends_with("v2 from Obsidian"), "{err}");
-        assert!(log.check_delete(tmp.path(), "note").is_ok());
-        assert!(log.check_delete(tmp.path(), "missing").is_ok());
+        assert!(log.check_delete(tmp.path(), "note.md").is_ok());
+        assert!(log.check_delete(tmp.path(), "missing.md").is_ok());
     }
 }

@@ -190,13 +190,24 @@ fn link_exists(vault: &Vault, target: &str) -> bool {
     vault.has_note(target) || vault.root.join(target).is_file()
 }
 
+// Syncthing keeps the most recently modified version under the original name, so a copy is the older one.
 fn conflict_issue(vault: &Vault, conflict: &Conflict) -> Issue {
-    let read = |path: &str| fs::read_to_string(vault.root.join(path)).unwrap_or_default();
-    let only_here = sync_conflict::lines_only_in(&read(&conflict.copy), &read(&conflict.original));
-    let message = format!(
-        "sync conflict copy of {} (lines only in this copy: {only_here}): merge what is worth keeping, then delete the copy",
-        conflict.original
-    );
+    let original = &conflict.original;
+    let message = match fs::read_to_string(vault.root.join(original)) {
+        _ if !conflict.in_note() => format!(
+            "older sync conflict copy of {original}: the newer version is in use, memory_delete the copy"
+        ),
+        Ok(text) => {
+            let copy = fs::read_to_string(vault.root.join(&conflict.copy)).unwrap_or_default();
+            let only_here = sync_conflict::lines_only_in(&copy, &text);
+            format!(
+                "older sync conflict copy of {original} (lines only in this copy: {only_here}): merge what is worth keeping into the note with memory_save, then memory_delete the copy"
+            )
+        }
+        Err(_) => format!(
+            "sync conflict copy of {original}, which was deleted on another machine: this copy is the only version left, restore it with memory_save or memory_delete it"
+        ),
+    };
     Issue {
         file: conflict.copy.clone(),
         level: match conflict.in_note() {
@@ -380,6 +391,7 @@ mod tests {
             "same\nonly\nhere\n",
         )
         .unwrap();
+        fs::write(root.join(format!("Preferences/gone{mark}.md")), "x\n").unwrap();
         fs::write(root.join(format!("{mark}.last-cleanup")), "1\n").unwrap();
         let conflicts: Vec<String> = check(&Vault::load(root).unwrap(), &limits())
             .iter()
@@ -390,10 +402,13 @@ mod tests {
             conflicts,
             [
                 format!(
-                    "{mark}.last-cleanup: warning: sync conflict copy of .last-cleanup (lines only in this copy: 1): merge what is worth keeping, then delete the copy"
+                    "{mark}.last-cleanup: warning: older sync conflict copy of .last-cleanup: the newer version is in use, memory_delete the copy"
                 ),
                 format!(
-                    "Preferences/a{mark}.md: error: sync conflict copy of Preferences/a.md (lines only in this copy: 2): merge what is worth keeping, then delete the copy"
+                    "Preferences/a{mark}.md: error: older sync conflict copy of Preferences/a.md (lines only in this copy: 2): merge what is worth keeping into the note with memory_save, then memory_delete the copy"
+                ),
+                format!(
+                    "Preferences/gone{mark}.md: error: sync conflict copy of Preferences/gone.md, which was deleted on another machine: this copy is the only version left, restore it with memory_save or memory_delete it"
                 ),
             ]
         );

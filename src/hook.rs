@@ -10,6 +10,7 @@ use crate::index;
 use crate::lock;
 use crate::stops;
 use crate::sync;
+use crate::sync_conflict::Conflict;
 use crate::update;
 use crate::usage;
 use crate::vault::Vault;
@@ -114,7 +115,11 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Vec<St
         false => String::new(),
     };
     Ok((
-        format!("{RULES}\n{}", index::for_project(&vault, project)),
+        format!(
+            "{RULES}\n{}{}",
+            index::for_project(&vault, project),
+            conflicts_context(&vault)
+        ),
         format!("{PEBBLE} {loaded} notes loaded ({scope}){over}"),
         conflicts_notice(&vault)
             .into_iter()
@@ -123,11 +128,41 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Vec<St
     ))
 }
 
+fn note_conflicts(vault: &Vault) -> Vec<&Conflict> {
+    vault.conflicts.iter().filter(|c| c.in_note()).collect()
+}
+
 fn conflicts_notice(vault: &Vault) -> Option<String> {
-    let count = vault.conflicts.iter().filter(|c| c.in_note()).count();
-    (count > 0).then(|| {
-        format!("{count} notes have a sync conflict copy: run `petit-poucet check` and merge them")
-    })
+    match note_conflicts(vault).len() {
+        0 => None,
+        1 => Some("1 note has a sync conflict: ask your agent to merge it".to_string()),
+        count => Some(format!(
+            "{count} notes have sync conflicts: ask your agent to merge them"
+        )),
+    }
+}
+
+// Syncthing keeps the most recently modified version under the note's name, so each copy is the older one.
+fn conflicts_context(vault: &Vault) -> String {
+    let conflicts = note_conflicts(vault);
+    if conflicts.is_empty() {
+        return String::new();
+    }
+    let lines: Vec<String> = conflicts
+        .iter()
+        .map(|c| match vault.root.join(&c.original).is_file() {
+            true => format!("- {} (older copy of {})", c.copy, c.original),
+            false => format!(
+                "- {} (the only version left: {} was deleted on another machine)",
+                c.copy, c.original
+            ),
+        })
+        .collect();
+    format!(
+        "\nSync conflicts: another machine changed these notes at the same time. Offer the user to merge each one: \
+         memory_read the note and its copy, save what is worth keeping into the note with memory_save, then memory_delete the copy.\n{}\n",
+        lines.join("\n")
+    )
 }
 
 // Reminds at the 3rd stop of a session, then every 10th; never without a session id to count by.

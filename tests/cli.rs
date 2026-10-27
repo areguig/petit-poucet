@@ -421,12 +421,17 @@ fn session_start_catches_up_with_files_synced_in() {
         .as_str()
         .unwrap();
     assert!(context.contains("arrived from the laptop"), "{context}");
-    assert!(!context.contains("sync-conflict"), "{context}");
+    assert!(
+        context.contains(&format!(
+            "- {copy} (older copy of Preferences/synced-in.md)"
+        )),
+        "the agent is told: {context}"
+    );
     assert!(
         reply["systemMessage"]
             .as_str()
             .unwrap()
-            .contains("1 notes have a sync conflict copy: run `petit-poucet check` and merge them"),
+            .contains("1 note has a sync conflict: ask your agent to merge it"),
         "{reply}"
     );
     assert!(
@@ -439,7 +444,7 @@ fn session_start_catches_up_with_files_synced_in() {
     assert!(!check.status.success());
     assert!(
         stdout(&check).contains(&format!(
-            "{copy}: error: sync conflict copy of Preferences/synced-in.md"
+            "{copy}: error: older sync conflict copy of Preferences/synced-in.md"
         )),
         "{}",
         stdout(&check)

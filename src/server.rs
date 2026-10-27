@@ -15,7 +15,7 @@ use crate::guard::ReadLog;
 use crate::move_note::{self, MoveRequest};
 use crate::note::Place;
 use crate::save::{self, SaveRequest};
-use crate::vault::Vault;
+use crate::vault::{Vault, note_file};
 use crate::{change, cleanup, hook, index, lock, review, search, usage};
 
 // Clients that don't run hooks (Copilot in JetBrains IDEs) never get the session-start context.
@@ -115,13 +115,19 @@ impl Server {
         Ok(format!("{}\n\n{view}", hook::RULES))
     }
 
-    #[tool(description = "Read one note.")]
+    #[tool(description = "Read one note, or a sync conflict copy of one.")]
     fn memory_read(&self, Parameters(req): Parameters<ReadRequest>) -> Result<String, String> {
         let vault = self.vault()?;
+        if let Some(conflict) = vault.conflict(&req.path) {
+            let text =
+                fs::read_to_string(vault.root.join(&conflict.copy)).map_err(|e| e.to_string())?;
+            self.reads.record(&conflict.copy, &text);
+            return Ok(text);
+        }
         let note = change::find_note(&vault, &req.path)?;
-        let text = fs::read_to_string(vault.root.join(format!("{}.md", note.path)))
-            .map_err(|e| e.to_string())?;
-        self.reads.record(&note.path, &text);
+        let file = note_file(&note.path);
+        let text = fs::read_to_string(vault.root.join(&file)).map_err(|e| e.to_string())?;
+        self.reads.record(&file, &text);
         let counted = self.lock().and_then(|_lock| {
             usage::record_read(&vault.root, &note.path, jiff::Zoned::now().date())
         });
@@ -167,15 +173,16 @@ impl Server {
         let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
         if let Some(path) = &req.path {
-            self.reads.check(&self.config.vault, path)?;
+            self.reads.check(&self.config.vault, &note_file(path))?;
         }
         let (path, reply) = save::save(&self.config, req, &agent)?;
-        self.reads.record_file(&self.config.vault, &path);
+        self.reads
+            .record_file(&self.config.vault, &note_file(&path));
         Ok(reply)
     }
 
     #[tool(
-        description = "Delete a wrong or obsolete note and unlink it everywhere. Deleting a `feedback` note needs the user's confirmation."
+        description = "Delete a wrong or obsolete note and unlink it everywhere, or a sync conflict copy once merged. Deleting a `feedback` note needs the user's confirmation."
     )]
     fn memory_delete(
         &self,
@@ -185,10 +192,18 @@ impl Server {
     ) -> Result<String, String> {
         let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
-        self.reads.check_delete(&self.config.vault, &req.path)?;
+        if let Some(conflict) = self.vault()?.conflict(&req.path) {
+            self.reads
+                .check_delete(&self.config.vault, &conflict.copy)?;
+            let reply = delete::delete_copy(&self.config.vault, conflict)?;
+            self.reads.forget(&conflict.copy);
+            return Ok(reply);
+        }
+        self.reads
+            .check_delete(&self.config.vault, &note_file(&req.path))?;
         let path = req.path.trim_end_matches(".md").to_string();
         let (reply, rewritten) = delete::delete(&self.config, req, &agent)?;
-        self.reads.forget(&path);
+        self.reads.forget(&note_file(&path));
         for file in &rewritten {
             self.reads.refresh(&self.config.vault, file);
         }
@@ -208,7 +223,7 @@ impl Server {
         let path = req.path.trim_end_matches(".md").to_string();
         let new_path = req.new_path.trim_end_matches(".md").to_string();
         let (reply, rewritten) = move_note::move_note(&self.config, req, &agent)?;
-        self.reads.forget(&path);
+        self.reads.forget(&note_file(&path));
         for file in &rewritten {
             self.reads.refresh(&self.config.vault, file);
         }
