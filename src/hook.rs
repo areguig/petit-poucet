@@ -179,4 +179,5 @@ pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
             &format!("{PEBBLE} checking whether this session is worth remembering"),
         )
     })
+    .flatten()
 }

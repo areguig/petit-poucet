@@ -718,7 +718,7 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
     );
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp, Hermes Agent)\n"
         ),
         "{out}"
     );
@@ -1070,7 +1070,7 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("vault: set your git identity"), "{out}");
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp, Hermes Agent)\n"
         ),
         "{out}"
     );

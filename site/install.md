@@ -2,7 +2,7 @@
 
 You are an AI agent, and your user asked you to install or update petit-poucet, a shared memory for coding agents. Run the commands yourself; ask your user only where a step says so. Each step says how to check it worked.
 
-petit-poucet is one binary. It installs in `~/.local/bin`, keeps memory in a Markdown folder (`~/agent-memory`) under local git, and wires itself into every coding agent on this machine: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode and omp.
+petit-poucet is one binary. It installs in `~/.local/bin`, keeps memory in a Markdown folder (`~/agent-memory`) under local git, and wires itself into every coding agent on this machine: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp and Hermes Agent.
 
 ## Before you start
 
@@ -65,6 +65,7 @@ You can't restart yourself, and memory loads at the start of a session. Tell you
 
 - **Restart each agent `setup` named**, this one included: memory loads in the next session.
 - **Codex:** open it once and trust the new hooks with `/hooks`.
+- **Hermes Agent:** open `hermes` once and approve petit-poucet's hook when it asks.
 - **Windows:** open a new terminal before typing `petit-poucet` by hand.
 - **Updates:** session start says when a new release is out; `petit-poucet update` installs it.
 

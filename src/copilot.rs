@@ -10,11 +10,6 @@ const AGENT: &str = "copilot";
 // Copilot event names, with the `petit-poucet hook` event each one runs.
 const EVENTS: [(&str, &str); 2] = [("sessionStart", "session-start"), ("agentStop", "stop")];
 
-// Copilot CLI and its IDE hosts (VS Code, IntelliJ, the desktop app) all read this folder.
-pub fn dir(home: &Path) -> PathBuf {
-    std::env::var_os("COPILOT_HOME").map_or_else(|| home.join(".copilot"), PathBuf::from)
-}
-
 // petit-poucet's own file: nothing else lives in it.
 fn hooks_file(dir: &Path) -> PathBuf {
     dir.join("hooks/petit-poucet.json")

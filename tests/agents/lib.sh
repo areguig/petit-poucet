@@ -4,17 +4,23 @@ set -eu
 pp="$PWD/target/release/petit-poucet"
 [ -x "$pp" ] || [ -x "$pp.exe" ] || { echo "build first: cargo build --release" >&2; exit 1; }
 repo="$PWD"
-# A throwaway HOME, so a local run never touches the real agents' config or vault.
+# A throwaway HOME, so a local run never touches the real agents' config or vault. The agents' own folder
+# variables would lead outside it: each points inside, Hermes's too, whose Windows default is under LOCALAPPDATA.
 HOME=$(mktemp -d)
-export HOME
-# On Windows (Git Bash), programs find the home folder through USERPROFILE.
+COPILOT_HOME="$HOME/.copilot"
+CODEX_HOME="$HOME/.codex"
+HERMES_HOME="$HOME/.hermes"
+export HOME COPILOT_HOME CODEX_HOME HERMES_HOME
+# On Windows (Git Bash), programs find the home folder through USERPROFILE, and take Windows paths.
 case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*)
     windows=1
     USERPROFILE=$(cygpath -w "$HOME")
+    COPILOT_HOME="$USERPROFILE\.copilot"
     # Codex finds the profile folder through Windows itself, not USERPROFILE.
     CODEX_HOME="$USERPROFILE\.codex"
-    export USERPROFILE CODEX_HOME
+    HERMES_HOME="$USERPROFILE\.hermes"
+    export USERPROFILE
     # A folder with a space, like many Windows profiles: the hooks must still find the binary.
     mkdir -p "$HOME/petit poucet"
     cp "$pp.exe" "$HOME/petit poucet/petit-poucet.exe"
@@ -46,9 +52,9 @@ start_model() {
   export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
 }
 
-# check_calls <tools marker>: what the session sent the model; see calls.mjs.
+# check_calls <tools marker> [calls.mjs options]: what the session sent the model; see calls.mjs.
 check_calls() {
-  node "$repo/tests/agents/calls.mjs" "$calls" "$1" || fail "petit-poucet didn't reach the model as expected"
+  node "$repo/tests/agents/calls.mjs" "$calls" "$@" || fail "petit-poucet didn't reach the model as expected"
 }
 
 # check_update: the update check that session start leaves running in the background outlived the agent's hook.

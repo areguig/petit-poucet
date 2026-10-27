@@ -34,6 +34,15 @@ pub fn posix(exe: &Path, event: &str, agent: &str) -> String {
     shlex::try_join(words).expect("a path has no NUL byte")
 }
 
+// For agents that split the line into arguments themselves, without a shell: Hermes splits it like
+// `shlex` on Unix, and on Windows only strips the quotes around each word.
+pub fn argv_line(exe: &Path, event: &str, agent: &str) -> String {
+    match cfg!(windows) {
+        true => format!("\"{}\"{}", exe.display(), args_line(event, agent)),
+        false => posix(exe, event, agent),
+    }
+}
+
 // PowerShell's rule: inside single quotes, a quote is doubled.
 pub fn powershell(exe: &Path, event: &str, agent: &str) -> String {
     let path = exe.display().to_string().replace('\'', "''");
@@ -116,6 +125,26 @@ mod tests {
         let path = ours.strip_suffix(" hook stop --agent codex").unwrap();
         assert!(!path.contains(' ') && !path.contains('"'), "{ours}");
         assert!(Path::new(path).is_file(), "{path} names the same file");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_argv_line_quotes_the_whole_path_on_windows() {
+        let exe = Path::new(r"C:\Users\a b\petit-poucet.exe");
+        assert_eq!(
+            argv_line(exe, "session-start", "hermes"),
+            r#""C:\Users\a b\petit-poucet.exe" hook session-start --agent hermes"#
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_argv_line_is_a_posix_command_line_off_windows() {
+        let exe = Path::new("/opt/my tools/pp");
+        assert_eq!(
+            argv_line(exe, "session-start", "hermes"),
+            posix(exe, "session-start", "hermes")
+        );
     }
 
     #[test]

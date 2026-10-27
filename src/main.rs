@@ -16,6 +16,7 @@ mod edit;
 mod fillers;
 mod git;
 mod guard;
+mod hermes;
 mod hook;
 mod hook_command;
 mod hooks_json;
