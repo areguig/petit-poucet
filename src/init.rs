@@ -36,16 +36,47 @@ const NOT_SYNCED: [&str; 5] = [
 
 pub fn ensure_vault_files(root: &Path) -> Result<(), String> {
     ensure_repo(root)?;
-    add_missing_lines(&root.join(STIGNORE), &NOT_SYNCED)
+    put_first(&root.join(STIGNORE), &NOT_SYNCED)
 }
 
-// Lines the user added, such as work projects an always-on machine must never receive; `//` starts a comment.
+// Syncthing's first matching pattern wins, so a user's `!` line above ours would sync them; only `#escape=`
+// must come before any pattern.
+fn put_first(file: &Path, entries: &[&str]) -> Result<(), String> {
+    let current = fs::read_to_string(file).unwrap_or_default();
+    let lines: Vec<&str> = current.lines().collect();
+    let header = lines
+        .iter()
+        .position(|line| line.trim().starts_with("#escape="))
+        .filter(|&at| {
+            lines[..at]
+                .iter()
+                .all(|line| line.trim().is_empty() || line.trim().starts_with("//"))
+        })
+        .map_or(0, |at| at + 1);
+    let own = lines[header..]
+        .iter()
+        .filter(|line| !entries.contains(line));
+    let text: String = lines[..header]
+        .iter()
+        .chain(entries)
+        .chain(own)
+        .map(|line| format!("{line}\n"))
+        .collect();
+    match text == current {
+        true => Ok(()),
+        false => write_atomic(file, &text),
+    }
+}
+
+// What the user left out, such as work projects an always-on machine must never receive: not comments (`//`),
+// directives (`#escape=`, `#include`) nor `!` lines, which include files back.
 pub fn own_ignore_lines(root: &Path) -> Vec<String> {
     fs::read_to_string(root.join(STIGNORE))
         .unwrap_or_default()
         .lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with("//") && !NOT_SYNCED.contains(line))
+        .filter(|line| !line.is_empty() && !["//", "#", "!"].iter().any(|p| line.starts_with(p)))
+        .filter(|line| !NOT_SYNCED.contains(line))
         .map(str::to_string)
         .collect()
 }
@@ -183,24 +214,43 @@ mod tests {
     #[test]
     fn stignore_keeps_the_user_s_lines_and_lets_usage_and_cleanup_time_sync() {
         let tmp = tempfile::tempdir().unwrap();
-        fs::write(tmp.path().join(STIGNORE), "/Index.md\ncustom").unwrap();
+        fs::write(
+            tmp.path().join(STIGNORE),
+            "!/.petit-poucet\n/Index.md\ncustom",
+        )
+        .unwrap();
         ensure_vault_files(tmp.path()).unwrap();
         ensure_vault_files(tmp.path()).unwrap();
         let text = fs::read_to_string(tmp.path().join(STIGNORE)).unwrap();
         assert_eq!(
             text,
-            "/Index.md\ncustom\n/.git\n/.petit-poucet\n/.obsidian/workspace*.json\n(?d).DS_Store\n"
+            "/.git\n/.petit-poucet\n/Index.md\n/.obsidian/workspace*.json\n(?d).DS_Store\n!/.petit-poucet\ncustom\n"
         );
         assert!(!text.contains(crate::usage::DIR) && !text.contains(".last-cleanup"));
     }
 
     #[test]
-    fn own_ignore_lines_leave_out_petit_poucet_s_lines_and_comments() {
+    fn stignore_keeps_an_escape_directive_above_every_pattern() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(STIGNORE),
+            "// mine\n#escape=\\\n!/Index.md\n",
+        )
+        .unwrap();
+        ensure_vault_files(tmp.path()).unwrap();
+        assert_eq!(
+            fs::read_to_string(tmp.path().join(STIGNORE)).unwrap(),
+            "// mine\n#escape=\\\n/.git\n/.petit-poucet\n/Index.md\n/.obsidian/workspace*.json\n(?d).DS_Store\n!/Index.md\n"
+        );
+    }
+
+    #[test]
+    fn own_ignore_lines_list_only_what_the_user_left_out() {
         let tmp = tempfile::tempdir().unwrap();
         assert_eq!(own_ignore_lines(tmp.path()), Vec::<String>::new());
         fs::write(
             tmp.path().join(STIGNORE),
-            "// work stays off this server\n/Projects/work\n\n/Index.md\n /Topics/work \n",
+            "#escape=\\\n// work stays off this server\n/Projects/work\n!/Projects/work/shared.md\n\n/Index.md\n /Topics/work \n",
         )
         .unwrap();
         ensure_vault_files(tmp.path()).unwrap();

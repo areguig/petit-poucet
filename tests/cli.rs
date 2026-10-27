@@ -765,10 +765,10 @@ fn sync_without_syncthing_says_how_to_install_it() {
         .args(["init", vault.to_str().unwrap()])
         .assert()
         .success();
-    // A line missing, so writing it back is a change to commit.
+    // A user's line above petit-poucet's, so putting theirs first is a change to commit.
     let stignore = vault.join(".stignore");
     let text = fs::read_to_string(&stignore).unwrap();
-    fs::write(&stignore, text.replacen("/.git\n", "", 1)).unwrap();
+    fs::write(&stignore, format!("!/Index.md\n{text}")).unwrap();
     let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
         .find(|dir| dir.join("git").is_file() || dir.join("git.exe").is_file())
         .unwrap();
@@ -787,9 +787,10 @@ fn sync_without_syncthing_says_how_to_install_it() {
         out.contains("\nSyncthing is not installed. Install it, start it at login, then run `petit-poucet sync` again:\n  "),
         "{out}"
     );
+    let written = fs::read_to_string(&stignore).unwrap();
     assert!(
-        vault.join(".stignore").is_file(),
-        "written before anything is shared"
+        written.starts_with("/.git\n") && written.ends_with("\n!/Index.md\n"),
+        "written before anything is shared, petit-poucet's lines first: {written}"
     );
 }
 

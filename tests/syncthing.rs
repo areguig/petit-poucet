@@ -231,6 +231,12 @@ fn edit_with_time(machine: &Machine, path: &str, text: &str, modified: std::time
 fn two_machines_share_one_vault_through_syncthing() {
     let mut laptop = Machine::new();
     let mut server = Machine::new();
+    // A user's include above petit-poucet's lines: Syncthing's first match wins, so `sync` puts its own first (#153).
+    for machine in [&laptop, &server] {
+        let stignore = machine.vault.join(".stignore");
+        let text = fs::read_to_string(&stignore).unwrap();
+        fs::write(&stignore, format!("!/Index.md\n{text}")).unwrap();
+    }
     let (ok, out) = laptop.sync(None);
     assert!(
         !ok && out.starts_with("Syncthing is installed but doesn't answer"),

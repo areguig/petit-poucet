@@ -51,7 +51,7 @@ Syncthing never syncs `.stignore`, so each machine can leave out more than the l
 /Topics/acme
 ```
 
-The server then neither receives these notes nor sends its own. `setup` and `sync` keep your lines, and `petit-poucet sync` lists them: `not synced with this machine (its .stignore): /Projects/acme-billing, /Topics/acme`.
+The server then neither receives these notes nor sends its own. `setup` and `sync` keep your lines below petit-poucet's own, which must come first since Syncthing applies the first line that matches, and `petit-poucet sync` lists them: `not synced with this machine (its .stignore): /Projects/acme-billing, /Topics/acme`.
 
 Limits:
 - Lines are paths, not rules: a new work project needs a new line, on each machine that must not have it.
