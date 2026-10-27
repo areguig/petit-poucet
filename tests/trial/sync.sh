@@ -1,6 +1,7 @@
 #!/bin/sh
-# Three Linux machines in containers, each with its own distro's Syncthing (v1 from apt and dnf, v2 from the
-# official release) and real Claude Code on Haiku, share one memory through `petit-poucet sync`.
+# Four Linux machines in containers, with their distro's Syncthing (v1 from apt and dnf, v2 from the official
+# release) and real Claude Code on Haiku, share one memory through `petit-poucet sync`. The fourth joins late,
+# paired only to a leaf, so what it gets crosses two hops: fedora - debian (the hub) - ubuntu - laptop.
 # Usage: sh tests/trial/sync.sh <petit-poucet binary for linux x86_64>
 # Needs Docker and a Claude Code token (`claude setup-token`) in ~/.config/pp-trial/claude-token or $TOKEN_FILE.
 # KEEP=1 leaves the containers running afterwards.
@@ -8,7 +9,7 @@ set -eu
 bin=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 here=$(cd "$(dirname "$0")" && pwd)
 token_file=${TOKEN_FILE:-$HOME/.config/pp-trial/claude-token}
-machines="debian fedora ubuntu"
+machines="debian fedora ubuntu laptop"
 net=pp-trial
 failures=0
 
@@ -39,6 +40,9 @@ wait_for() { # wait_for <what> <seconds> <command...>
   done
   echo "PASS $what (${waited}s)"
 }
+image_of() { if [ "$1" = laptop ]; then echo ubuntu; else echo "$1"; fi; }
+notes_on() { on "$1" "cd ~/agent-memory && find Preferences Projects -name '*.md' | sort"; }
+same_notes() { [ "$(notes_on "$1")" = "$(notes_on "$2")" ]; }
 has_file() { on "$1" "test -f ~/agent-memory/$2"; }
 conflict_on() { on "$1" "ls ~/agent-memory/Preferences | grep -q sync-conflict"; }
 no_conflict_on() { ! conflict_on "$1"; }
@@ -62,7 +66,7 @@ CLAUDE_CODE_OAUTH_TOKEN=$(tr -d "[:space:]" < "$token_file") # a copied token ma
 export CLAUDE_CODE_OAUTH_TOKEN
 for m in $machines; do
   docker run -d --name "pp-$m" --hostname "$m" --network "$net" --platform linux/amd64 \
-    -e CLAUDE_CODE_OAUTH_TOKEN -v "$bin:/usr/local/bin/petit-poucet:ro" "pp-trial-$m" sleep infinity >/dev/null
+    -e CLAUDE_CODE_OAUTH_TOKEN -v "$bin:/usr/local/bin/petit-poucet:ro" "pp-trial-$(image_of "$m")" sleep infinity >/dev/null
   echo "$m: $(on "$m" 'syncthing --version | cut -d" " -f1-2'), $(on "$m" 'claude --version')"
 done
 
@@ -114,6 +118,15 @@ forks=$(project_context debian /home/dev/forks/shop)
 check "another repo with the same folder name doesn't get it" sh -c '! printf %s "$1" | grep -q "make verify"' _ "$forks"
 check "ubuntu records its own checkout, which Syncthing leaves alone" sh -c \
   "docker exec -u dev pp-ubuntu cat /home/dev/agent-memory/.petit-poucet/checkouts.json | grep -q /home/dev/src/acme-shop"
+
+echo "== a fourth machine joins later, paired only to ubuntu"
+laptop=$(id_of laptop)
+on laptop "petit-poucet sync $ubuntu" >/dev/null
+on ubuntu "petit-poucet sync $laptop" >/dev/null
+wait_for "laptop has every note, two hops from fedora" 180 same_notes laptop fedora
+answer=$(claude_in laptop /home/dev/work "Without using any tool, answer only YES or NO: does your loaded memory say how Dockerfiles should pin base images?")
+check "Claude Code on laptop knows it at session start (answered: $answer)" contains "$answer" yes
+check "laptop committed what arrived" sh -c "docker exec -u dev pp-laptop git -C /home/dev/agent-memory log --format=%s | grep -q 'sync: notes changed outside petit-poucet'"
 
 echo "== the same note changed on fedora (sync paused, as offline) and on debian: a conflict, merged by the agent"
 # Pausing the folder, not the network: Claude Code on fedora still needs to reach its API.
