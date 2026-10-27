@@ -71,13 +71,19 @@ impl Machine {
         }
     }
 
-    // Only these two devices, on loopback: no discovery, relays or NAT.
-    fn share_with(&self, other: &Machine) {
-        let device = |m: &Machine| {
+    // Only these two devices, on loopback: no discovery, relays or NAT. Only one side dials: two machines
+    // dialing each other from their listening ports at the same moment merge into one TCP connection that
+    // both sides take as theirs, and the TLS handshake fails until their retries drift apart.
+    fn share_with(&self, other: &Machine, dials: bool) {
+        let device = |m: &Machine, address: String| {
             format!(
-                "<device id=\"{}\"><address>tcp://127.0.0.1:{}</address></device>",
-                m.device, m.port
+                "<device id=\"{}\"><address>{address}</address></device>",
+                m.device
             )
+        };
+        let other_address = match dials {
+            true => format!("tcp://127.0.0.1:{}", other.port),
+            false => "dynamic".to_string(),
         };
         let config = format!(
             r#"<configuration version="52">
@@ -103,8 +109,8 @@ impl Machine {
             self.vault.display(),
             self.device,
             other.device,
-            device(self),
-            device(other),
+            device(self, format!("tcp://127.0.0.1:{}", self.port)),
+            device(other, other_address),
             self.gui_port,
             self.port,
         );
@@ -210,8 +216,8 @@ fn edit_with_time(machine: &Machine, path: &str, text: &str, modified: std::time
 fn two_machines_share_one_vault_through_syncthing() {
     let mut laptop = Machine::new();
     let mut server = Machine::new();
-    laptop.share_with(&server);
-    server.share_with(&laptop);
+    laptop.share_with(&server, true);
+    server.share_with(&laptop, false);
     laptop.run();
     server.run();
 
@@ -246,10 +252,16 @@ fn two_machines_share_one_vault_through_syncthing() {
     drop(client);
     assert!(child.wait().unwrap().success());
     let cleanup = laptop.read(".last-cleanup");
+    // The laptop's usage file exists since its save: wait for the version that holds the read.
+    let usage = laptop.files(".usage").pop().unwrap();
+    let laptop_usage = laptop.read(&format!(".usage/{usage}"));
     wait_for(
         "the cleanup time and usage on the server",
         &[&laptop, &server],
-        || server.read(".last-cleanup") == cleanup && server.files(".usage").len() == 1,
+        || {
+            server.read(".last-cleanup") == cleanup
+                && server.read(&format!(".usage/{usage}")) == laptop_usage
+        },
     );
     save(&server, "Spaces", "spaces in YAML");
     let (mut child, mut client) = server.mcp();
