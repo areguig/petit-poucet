@@ -1,4 +1,4 @@
-# Installs the petit-poucet binary on Windows: the latest release, or $env:PETIT_POUCET_VERSION. Re-run it to upgrade.
+# Installs the petit-poucet binary on Windows: the latest release, or $env:PETIT_POUCET_VERSION. Once installed, `petit-poucet update` upgrades it.
 #   irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex
 $ErrorActionPreference = 'Stop'
 
@@ -46,6 +46,8 @@ try {
 
 Log "installed $(& $exe --version) in $dir"
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+# The full path until a new terminal has the folder on its Path, so the next step works as printed.
+$command = if (($env:Path -split ';') -contains $dir) { 'petit-poucet' } else { "& '$exe'" }
 if (-not (($userPath -split ';') -contains $dir)) {
     if ($env:PETIT_POUCET_NO_MODIFY_PATH) {
         Log "$dir is not on your PATH: add it to your user Path"
@@ -54,4 +56,4 @@ if (-not (($userPath -split ';') -contains $dir)) {
         Log "added $dir to your user Path: open a new terminal to use petit-poucet"
     }
 }
-Log 'next: run `petit-poucet setup` to create your memory vault and set up your agents'
+Log "next: run ``$command setup`` to create your memory vault and set up your agents"

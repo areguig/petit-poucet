@@ -81,7 +81,10 @@ fn install_script_installs_the_latest_release_then_a_chosen_version() {
     assert!(latest.status.success(), "{log}");
     assert!(log.contains("installed latest --version in "), "{log}");
     assert!(log.contains(".local/bin is not on your PATH"), "{log}");
-    assert!(log.contains("next: run `petit-poucet setup`"), "{log}");
+    assert!(
+        log.contains(&format!("next: run `{} setup`", installed.display())),
+        "the full path, which works without PATH: {log}"
+    );
     assert!(text(&latest).is_empty(), "messages go to stderr");
     let run = Command::new(&installed).output().unwrap();
     assert_eq!(text(&run), "latest\n");
@@ -120,6 +123,7 @@ fn install_script_honours_the_install_dir_and_knows_when_it_is_on_path() {
     assert!(output.status.success(), "{log}");
     assert!(dir.join("petit-poucet").is_file());
     assert!(!log.contains("not on your PATH"), "{log}");
+    assert!(log.contains("next: run `petit-poucet setup`"), "{log}");
 }
 
 #[test]

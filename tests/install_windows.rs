@@ -83,9 +83,13 @@ fn installs_the_latest_release_then_a_chosen_version() {
         assert!(exe.is_file(), "{shell}: {log}");
         assert!(log.contains("installed petit-poucet "), "{shell}: {log}");
         assert!(log.contains("is not on your PATH"), "{shell}: {log}");
+        let next = format!(
+            "next: run `& '{}' setup`",
+            home.path().join("bin").join("petit-poucet.exe").display()
+        );
         assert!(
-            log.contains("next: run `petit-poucet setup`"),
-            "{shell}: {log}"
+            log.contains(&next),
+            "{shell}: the full path, which works before a new terminal: {log}"
         );
 
         mirror(&home.path().join("mirror"), "download/v1.2.3", None);

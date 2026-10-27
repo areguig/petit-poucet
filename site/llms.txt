@@ -2,14 +2,17 @@
 
 > An MCP memory server for coding agents: one curated memory for every agent you switch between. Your rules, decisions and verified facts live in a Markdown folder you own, with every change in git, and Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor, Antigravity CLI, OpenCode and omp load it at the start of every session. One Rust binary for macOS, Linux and Windows; Apache-2.0.
 
-- Install: `curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh` (macOS, Linux) or `irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex` (Windows), then `petit-poucet setup`, which wires every agent it finds: MCP server, session-start and stop hooks, skills.
+- Asked to install or update it? Follow [the install guide for agents](https://areguig.github.io/petit-poucet/install.md): what to run, how to check, what to tell the user.
+- Install: `curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh` (macOS, Linux) or `irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex` (Windows), then `petit-poucet setup`, which wires every agent it finds: MCP server, session-start and stop hooks, skills. When `~/.local/bin` isn't on PATH, the script prints the full path to use.
+- Update: `petit-poucet update` checks and installs the latest release, then runs `setup` again; agents pick it up when restarted.
 - Memory is loaded by a session-start hook, not left to the model to look up; any other MCP client can use the tools.
 - Notes are saved on purpose, one fact each with its source; rules the user stated change only with their confirmation; secrets are refused.
 - The vault is plain Markdown (Obsidian-compatible) and a local git repository, never pushed.
-- Several machines share one vault through Syncthing, peer to peer: `petit-poucet sync` pairs them; petit-poucet never runs a cloud service.
+- Several machines share one vault through Syncthing, peer to peer: `petit-poucet sync` pairs them; a project is matched on each machine by its git remote, wherever it's checked out; petit-poucet never runs a cloud service.
 
 ## Docs
 
+- [Install guide for agents](https://areguig.github.io/petit-poucet/install.md): install or update, set up, check, what to tell the user
 - [How it works](https://areguig.github.io/petit-poucet/how-it-works.html): a session step by step, the note format, the checks, the cleanup review, the settings
 - [Install and set up](https://github.com/areguig/petit-poucet/blob/main/docs/setup.md): install options, what `setup` writes for each agent, settings, Obsidian, migrating
 - [Several machines](https://github.com/areguig/petit-poucet/blob/main/docs/syncthing.md): sharing the vault through Syncthing, conflicts, what syncs

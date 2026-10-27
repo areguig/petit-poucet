@@ -113,7 +113,7 @@ pub fn fetch() -> Option<String> {
 }
 
 pub fn notice(version: &str) -> String {
-    format!("{version} is out: run `petit-poucet update`")
+    format!("{version} is out: run `petit-poucet update`, or ask your agent to")
 }
 
 // For `petit-poucet check`.

@@ -1,5 +1,15 @@
 # Install and set up
 
+## Let your agent do it
+
+Paste this into your agent:
+
+```text
+Install petit-poucet for me: follow https://areguig.github.io/petit-poucet/install.md
+```
+
+[The guide](../site/install.md) walks the agent through installing or updating, `setup`, the check, and what to tell you.
+
 ## Install
 
 Needs `git`, and `curl` on macOS or Linux (Windows 10 and later ship it).
@@ -14,7 +24,15 @@ curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.s
 irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex
 ```
 
-The script installs the latest release in `~/.local/bin` after checking its SHA-256. To upgrade, run `petit-poucet update`: it checks the new release the same way, replaces the binary, then runs `setup` again (before 0.6, run the script again).
+The script installs the latest release in `~/.local/bin` after checking its SHA-256. When that folder isn't on your PATH yet, its last line gives the full path to run `setup` with.
+
+## Update
+
+```sh
+petit-poucet update
+```
+
+It checks the new release the same way, replaces the binary, then runs `setup` again; restart your agents afterwards. Session start tells you when a release is out: run `petit-poucet update`, or ask your agent to. Before 0.6, which has no `update`, run the install script again. A binary installed another way (Homebrew, `cargo install`) updates that way.
 
 | Variable | Effect |
 |---|---|

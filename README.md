@@ -28,6 +28,16 @@ How it compares with the agents' own memory: [comparison](docs/comparison.md).
 
 ## Install
 
+Ask your agent. Paste this into Claude Code, Codex, Copilot or any agent with a shell:
+
+```text
+Install petit-poucet for me: follow https://areguig.github.io/petit-poucet/install.md
+```
+
+[The guide](site/install.md) tells it what to run, how to check, and what to tell you: which agents to restart. It also updates an older install.
+
+Or by hand:
+
 ```sh
 # macOS, Linux
 curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
@@ -40,7 +50,7 @@ irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | ie
 petit-poucet setup
 ```
 
-Then restart your agent. Already keeping memory elsewhere? Ask your agent to run the `migrate-memory` skill. Details, per-agent notes and settings: [install and set up](docs/setup.md).
+Then restart your agents. To update later: `petit-poucet update`; session start tells you when a release is out. Already keeping memory elsewhere? Ask your agent to run the `migrate-memory` skill. Details, per-agent notes and settings: [install and set up](docs/setup.md).
 
 ## What your agent sees
 
