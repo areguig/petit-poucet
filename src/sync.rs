@@ -2,7 +2,7 @@ use std::fs;
 
 use crate::config::Config;
 use crate::vault::{INDEX_FILE, Vault, write_atomic};
-use crate::{git, index, lock, usage};
+use crate::{git, index, lock, project, usage};
 
 const MESSAGE: &str = "sync: notes changed outside petit-poucet";
 
@@ -22,11 +22,14 @@ pub fn catch_up(config: &Config) -> Result<Vault, String> {
 }
 
 fn behind(config: &Config, vault: &Vault) -> bool {
-    stale_index(vault).is_some() || config.git_autocommit && changed_outside(config)
+    vault.conflicts.iter().any(|c| c.in_identity())
+        || stale_index(vault).is_some()
+        || config.git_autocommit && changed_outside(config)
 }
 
 // Reloads first: another agent may have saved since the caller loaded the vault.
 fn update(config: &Config) -> Result<Vault, String> {
+    merge_identity_conflicts(&Vault::load(&config.vault)?)?;
     let vault = Vault::load(&config.vault)?;
     if let Some(index) = stale_index(&vault) {
         write_atomic(&vault.root.join(INDEX_FILE), &index)?;
@@ -35,6 +38,25 @@ fn update(config: &Config) -> Result<Vault, String> {
         git::commit(&vault.root, &["."], MESSAGE)?;
     }
     Ok(vault)
+}
+
+// A copy that doesn't parse, or whose project is gone, stays for `check` to report.
+fn merge_identity_conflicts(vault: &Vault) -> Result<(), String> {
+    for conflict in vault.conflicts.iter().filter(|c| c.in_identity()) {
+        let (kept, copy) = (
+            vault.root.join(&conflict.original),
+            vault.root.join(&conflict.copy),
+        );
+        let (Ok(kept_text), Ok(copy_text)) = (fs::read_to_string(&kept), fs::read_to_string(&copy))
+        else {
+            continue;
+        };
+        if let Ok(merged) = project::merge_identities(&kept_text, &copy_text) {
+            write_atomic(&kept, &merged)?;
+            fs::remove_file(&copy).map_err(|e| format!("{}: {e}", conflict.copy))?;
+        }
+    }
+    Ok(())
 }
 
 fn stale_index(vault: &Vault) -> Option<String> {

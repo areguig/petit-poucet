@@ -194,6 +194,9 @@ fn link_exists(vault: &Vault, target: &str) -> bool {
 fn conflict_issue(vault: &Vault, conflict: &Conflict) -> Issue {
     let original = &conflict.original;
     let message = match fs::read_to_string(vault.root.join(original)) {
+        _ if conflict.in_identity() => format!(
+            "sync conflict copy of {original} that petit-poucet could not merge: copy the remotes and folders it adds into {original} by hand, then delete the copy"
+        ),
         _ if !conflict.in_note() => format!(
             "older sync conflict copy of {original}: the newer version is in use, memory_delete the copy"
         ),
@@ -210,7 +213,7 @@ fn conflict_issue(vault: &Vault, conflict: &Conflict) -> Issue {
     };
     Issue {
         file: conflict.copy.clone(),
-        level: match conflict.in_note() {
+        level: match conflict.in_note() || conflict.in_identity() {
             true => Level::Error,
             false => Level::Warning,
         },

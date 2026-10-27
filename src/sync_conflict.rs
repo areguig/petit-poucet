@@ -3,6 +3,9 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::project::IDENTITY_FILE;
+use crate::vault::PROJECTS;
+
 // Syncthing inserts this before the extension; a dot-file's whole name counts as its extension.
 static MARKER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\.sync-conflict-\d{8}-\d{6}-[0-9A-Z]{7}").unwrap());
@@ -15,7 +18,15 @@ pub struct Conflict {
 impl Conflict {
     // Only a note's copy can hold a fact the agent would miss; other synced files are machine state.
     pub fn in_note(&self) -> bool {
-        self.original.ends_with(".md")
+        self.original.ends_with(".md") && !self.in_identity()
+    }
+
+    // petit-poucet merges these itself: the memory tools never open a project's identity file.
+    pub fn in_identity(&self) -> bool {
+        matches!(
+            self.original.split('/').collect::<Vec<_>>()[..],
+            [PROJECTS, _, IDENTITY_FILE]
+        )
     }
 }
 
