@@ -75,20 +75,34 @@ fn session_start_tells_of_a_newer_release_found_in_the_background() {
     let url = release(tmp.path(), "v99.0.0");
     let (home, latest) = home_with_vault(&url);
 
+    let claude_context =
+        |reply: &serde_json::Value| reply["hookSpecificOutput"]["additionalContext"].clone();
+    let unaware = session_start(
+        command(home.path(), &url).env("PETIT_POUCET_NO_UPDATE_CHECK", "1"),
+        "claude",
+    );
     session_start(&mut command(home.path(), &url), "claude");
     wait_for(&latest, "99.0.0");
 
     let claude = session_start(&mut command(home.path(), &url), "claude");
     let message = claude["systemMessage"].as_str().unwrap();
     assert!(
-        message.ends_with("\n🪨 petit-poucet · 99.0.0 is out: run `petit-poucet update`"),
+        message.ends_with(
+            "\n🪨 petit-poucet · 99.0.0 is out: run `petit-poucet update`, or ask your agent to"
+        ),
         "{message}"
+    );
+    // Claude Code adds a resumed session's context again unless it is unchanged: the memory would load twice.
+    assert_eq!(
+        claude_context(&claude),
+        claude_context(&unaware),
+        "the notice is for the user's line only"
     );
     let cursor = session_start(&mut command(home.path(), &url), "cursor");
     let context = cursor["additional_context"].as_str().unwrap();
     assert!(
         context.ends_with(
-            "Tell the user once, in one line: petit-poucet: 99.0.0 is out: run `petit-poucet update`."
+            "Tell the user once, in one line: petit-poucet: 99.0.0 is out: run `petit-poucet update`, or ask your agent to."
         ),
         "{context}"
     );
@@ -143,7 +157,7 @@ fn check_reports_the_latest_release() {
     let current = env!("CARGO_PKG_VERSION");
     assert!(
         stdout(&output).ends_with(&format!(
-            "petit-poucet {current}: 99.0.0 is out: run `petit-poucet update`\n"
+            "petit-poucet {current}: 99.0.0 is out: run `petit-poucet update`, or ask your agent to\n"
         )),
         "{}",
         stdout(&output)
