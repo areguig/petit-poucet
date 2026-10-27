@@ -6,11 +6,13 @@
 - Memory is loaded by a session-start hook, not left to the model to look up; any other MCP client can use the tools.
 - Notes are saved on purpose, one fact each with its source; rules the user stated change only with their confirmation; secrets are refused.
 - The vault is plain Markdown (Obsidian-compatible) and a local git repository, never pushed.
+- Several machines share one vault through Syncthing, peer to peer: `petit-poucet sync` pairs them; petit-poucet never runs a cloud service.
 
 ## Docs
 
 - [How it works](https://areguig.github.io/petit-poucet/how-it-works.html): a session step by step, the note format, the checks, the cleanup review, the settings
 - [Install and set up](https://github.com/areguig/petit-poucet/blob/main/docs/setup.md): install options, what `setup` writes for each agent, settings, Obsidian, migrating
+- [Several machines](https://github.com/areguig/petit-poucet/blob/main/docs/syncthing.md): sharing the vault through Syncthing, conflicts, what syncs
 - [Reference](https://github.com/areguig/petit-poucet/blob/main/docs/reference.md): the vault, the note format, tools, skills, commands, rules enforced in code
 - [Architecture](https://github.com/areguig/petit-poucet/blob/main/docs/architecture.md): files in the vault, usage across machines, the cleanup review, near-duplicates
 - [Compared with built-in memory](https://github.com/areguig/petit-poucet/blob/main/docs/comparison.md)

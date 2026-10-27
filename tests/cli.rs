@@ -742,6 +742,43 @@ fn setup_adds_the_sync_lines_to_an_older_vault_once() {
     assert!(git(&["status", "--porcelain"]).stdout.is_empty());
 }
 
+// Without Syncthing, `sync` says how to install and start it on this OS, after writing the vault's ignore files (#134).
+#[test]
+fn sync_without_syncthing_says_how_to_install_it() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // A line missing, so writing it back is a change to commit.
+    let stignore = vault.join(".stignore");
+    let text = fs::read_to_string(&stignore).unwrap();
+    fs::write(&stignore, text.replacen("/.git\n", "", 1)).unwrap();
+    let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .find(|dir| dir.join("git").is_file() || dir.join("git.exe").is_file())
+        .unwrap();
+    assert!(!git.join("syncthing").exists() && !git.join("syncthing.exe").exists());
+
+    // A fresh machine often has no git identity yet: the files are written all the same (#140).
+    let output = without_git_identity(&mut petit_poucet(home.path()))
+        .env("PATH", &git)
+        .arg("sync")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let out = stdout(&output);
+    assert!(out.starts_with("not committed: "), "{out}");
+    assert!(
+        out.contains("\nSyncthing is not installed. Install it, start it at login, then run `petit-poucet sync` again:\n  "),
+        "{out}"
+    );
+    assert!(
+        vault.join(".stignore").is_file(),
+        "written before anything is shared"
+    );
+}
+
 // A config written by an older version gets the settings added since, the user's own lines kept, as soon as it is read.
 #[test]
 fn an_older_config_gets_the_new_settings_written_in() {

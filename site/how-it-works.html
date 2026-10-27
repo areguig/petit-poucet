@@ -87,7 +87,7 @@ Commit each finished step locally; never push.
   <section>
     <p class="eyebrow">Several agents, several machines</p>
     <h2>No clobbering, full history</h2>
-    <p>Agents running at once take turns through a vault lock, so none loses another's write. Every change is a local git commit you can inspect or undo; nothing is ever pushed. Which notes are read, and where, is counted per machine inside the vault, so the cleanup knows what is used. Keeping one vault in sync across machines (Syncthing or git) comes next.</p>
+    <p>Agents running at once take turns through a vault lock, so none loses another's write. Every change is a local git commit you can inspect or undo; nothing is ever pushed. Which notes are read, and where, is counted per machine inside the vault, so the cleanup knows what is used. To share one vault between your machines, <code>petit-poucet sync</code> pairs them through Syncthing, peer to peer; notes changed on another machine are committed at the next session start, and a conflict is merged by your agent.</p>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>

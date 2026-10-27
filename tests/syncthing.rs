@@ -1,4 +1,4 @@
-// Two real Syncthing instances share one vault (#81). Run by the Syncthing CI job:
+// Two real Syncthing instances share one vault (#81), paired by `petit-poucet sync` (#134). Run by the Syncthing CI job:
 // SYNCTHING=<path to the binary> cargo test --test syncthing -- --ignored
 mod common;
 
@@ -12,11 +12,14 @@ use common::{Client, git_log, petit_poucet, review_pages, session_start, start};
 use serde_json::json;
 use tempfile::TempDir;
 
-const FOLDER: &str = "vault";
 const API_KEY: &str = "petit-poucet-test";
 
+fn syncthing_binary() -> PathBuf {
+    PathBuf::from(std::env::var_os("SYNCTHING").expect("SYNCTHING names the syncthing binary"))
+}
+
 fn syncthing() -> Command {
-    Command::new(std::env::var_os("SYNCTHING").expect("SYNCTHING names the syncthing binary"))
+    Command::new(syncthing_binary())
 }
 
 fn free_port() -> u16 {
@@ -32,7 +35,6 @@ struct Machine {
     home: TempDir,
     vault: PathBuf,
     syncthing_home: PathBuf,
-    device: String,
     port: u16,
     gui_port: u16,
     process: Option<Child>,
@@ -54,48 +56,13 @@ impl Machine {
             .output()
             .unwrap();
         assert!(generated.status.success(), "{generated:?}");
-        let device = syncthing()
-            .arg("device-id")
-            .arg(format!("--home={}", syncthing_home.display()))
-            .output()
-            .unwrap();
-        let device = String::from_utf8(device.stdout).unwrap().trim().to_string();
-        Machine {
-            home,
-            vault,
-            syncthing_home,
-            device,
-            port: free_port(),
-            gui_port: free_port(),
-            process: None,
-        }
-    }
-
-    // Only these two devices, on loopback: no discovery, relays or NAT. Only one side dials: two machines
-    // dialing each other from their listening ports at the same moment merge into one TCP connection that
-    // both sides take as theirs, and the TLS handshake fails until their retries drift apart.
-    fn share_with(&self, other: &Machine, dials: bool) {
-        let device = |m: &Machine, address: String| {
-            format!(
-                "<device id=\"{}\"><address>{address}</address></device>",
-                m.device
-            )
-        };
-        let other_address = match dials {
-            true => format!("tcp://127.0.0.1:{}", other.port),
-            false => "dynamic".to_string(),
-        };
+        let (port, gui_port) = (free_port(), free_port());
+        // Loopback only: no discovery, relays or NAT; `petit-poucet sync` adds the folder and the devices.
         let config = format!(
             r#"<configuration version="52">
-  <folder id="{FOLDER}" path="{}" type="sendreceive" rescanIntervalS="2" fsWatcherEnabled="true" fsWatcherDelayS="1">
-    <device id="{}"></device>
-    <device id="{}"></device>
-  </folder>
-  {}
-  {}
-  <gui enabled="true"><address>127.0.0.1:{}</address><apikey>{API_KEY}</apikey></gui>
+  <gui enabled="true"><address>127.0.0.1:{gui_port}</address><apikey>{API_KEY}</apikey></gui>
   <options>
-    <listenAddress>tcp://127.0.0.1:{}</listenAddress>
+    <listenAddress>tcp://127.0.0.1:{port}</listenAddress>
     <globalAnnounceEnabled>false</globalAnnounceEnabled>
     <localAnnounceEnabled>false</localAnnounceEnabled>
     <relaysEnabled>false</relaysEnabled>
@@ -105,16 +72,64 @@ impl Machine {
     <autoUpgradeIntervalH>0</autoUpgradeIntervalH>
   </options>
 </configuration>
-"#,
-            self.vault.display(),
-            self.device,
-            other.device,
-            device(self, format!("tcp://127.0.0.1:{}", self.port)),
-            device(other, other_address),
-            self.gui_port,
-            self.port,
+"#
         );
-        fs::write(self.syncthing_home.join("config.xml"), config).unwrap();
+        fs::write(syncthing_home.join("config.xml"), config).unwrap();
+        Machine {
+            home,
+            vault,
+            syncthing_home,
+            port,
+            gui_port,
+            process: None,
+        }
+    }
+
+    // `petit-poucet sync` as the user runs it: Syncthing on the PATH, found through its own home.
+    fn sync(&self, device: Option<&str>) -> (bool, String) {
+        let path = std::env::join_paths(
+            std::iter::once(syncthing_binary().parent().unwrap().to_path_buf())
+                .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+        )
+        .unwrap();
+        let output = petit_poucet(self.home.path())
+            .env("PATH", path)
+            .env("STHOMEDIR", &self.syncthing_home)
+            .arg("sync")
+            .args(device)
+            .output()
+            .unwrap();
+        (output.status.success(), common::stdout(&output))
+    }
+
+    fn answers(&self) -> bool {
+        syncthing()
+            .args(["cli", "show", "system"])
+            .env("STHOMEDIR", &self.syncthing_home)
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+
+    fn device_id(&self) -> String {
+        let (ok, out) = self.sync(None);
+        assert!(ok, "{out}");
+        let line = out.lines().last().unwrap();
+        line.strip_prefix("on another machine, run: petit-poucet sync ")
+            .unwrap_or_else(|| panic!("{out}"))
+            .to_string()
+    }
+
+    // What discovery does for real machines. Only one side dials: two machines dialing each other from their
+    // listening ports at the same moment merge into one TCP connection that both take as theirs, and the TLS
+    // handshake fails until their retries drift apart.
+    fn dial(&self, device: &str, other: &Machine) {
+        let added = syncthing()
+            .args(["cli", "config", "devices", device, "addresses", "add"])
+            .arg(format!("tcp://127.0.0.1:{}", other.port))
+            .env("STHOMEDIR", &self.syncthing_home)
+            .output()
+            .unwrap();
+        assert!(added.status.success(), "{added:?}");
     }
 
     fn run(&mut self) {
@@ -216,10 +231,39 @@ fn edit_with_time(machine: &Machine, path: &str, text: &str, modified: std::time
 fn two_machines_share_one_vault_through_syncthing() {
     let mut laptop = Machine::new();
     let mut server = Machine::new();
-    laptop.share_with(&server, true);
-    server.share_with(&laptop, false);
+    let (ok, out) = laptop.sync(None);
+    assert!(
+        !ok && out.starts_with("Syncthing is installed but doesn't answer"),
+        "{out}"
+    );
     laptop.run();
     server.run();
+    for machine in [&laptop, &server] {
+        wait_for("Syncthing to answer", &[&laptop, &server], || {
+            machine.answers()
+        });
+    }
+
+    // Pairing: each machine names the other once; running it again changes nothing.
+    let laptop_id = laptop.device_id();
+    let server_id = server.device_id();
+    let (ok, out) = server.sync(Some(&laptop_id));
+    assert!(
+        ok && out.contains(&format!("paired with {}", &laptop_id[..7])),
+        "{out}"
+    );
+    let (ok, out) = laptop.sync(Some(&server_id.to_lowercase()));
+    assert!(
+        ok && out.contains(&format!("paired with {}", &server_id[..7])),
+        "{out}"
+    );
+    let (ok, again) = laptop.sync(Some(&server_id));
+    assert!(
+        ok && !again.contains("paired with") && !again.contains("vault shared"),
+        "{again}"
+    );
+    assert!(laptop.vault.join(".stignore").is_file());
+    laptop.dial(&server_id, &server);
 
     // A note saved on the laptop reaches the server; git, the Index and petit-poucet's state stay on each machine.
     save(&laptop, "Tabs", "indent with tabs");

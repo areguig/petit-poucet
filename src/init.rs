@@ -60,6 +60,17 @@ fn add_missing_lines(file: &Path, entries: &[&str]) -> Result<(), String> {
     write_atomic(file, &text)
 }
 
+// A vault made by an older version gets the ignore lines added since, such as the Syncthing ones.
+// Returns the warning when they could not be committed.
+pub fn update_vault_files(config: &Config) -> Result<Option<String>, String> {
+    ensure_vault_files(&config.vault)?;
+    if !config.git_autocommit {
+        return Ok(None);
+    }
+    let committed = git::commit(&config.vault, &[GITIGNORE, STIGNORE], "setup: ignore files");
+    Ok(committed.err().map(|e| not_committed(&e)))
+}
+
 const DEFAULT_VAULT: &str = "agent-memory";
 
 pub fn init(path: Option<PathBuf>) -> Result<String, String> {

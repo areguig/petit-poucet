@@ -24,10 +24,11 @@ One binary plays three parts:
 |---|---|---|
 | `Preferences/`, `Projects/<key>/`, `Topics/<topic>/` | notes, one fact each | yes |
 | `Projects/<key>/_project.md` | the project's identity: git remotes and folder names | yes |
-| `Index.md` | generated from each note's `summary`; never edited by hand | yes |
+| `Index.md` | generated from each note's `summary`; never edited by hand | committed, never synced: each machine regenerates it |
 | `.last-cleanup` | when the last cleanup review was read to its end | yes |
 | `.usage/<machine-id>.json` | what one machine read and loaded | yes, with the next commit |
 | `.petit-poucet/` | this machine only: the vault lock, the machine id, the latest release seen, each project's checkout | no |
+| `.stignore` | what Syncthing leaves on each machine: `.git`, `Index.md`, `.petit-poucet/` ([several machines](syncthing.md)) | committed, never synced |
 
 Dot-files and dot-folders are skipped by the vault loader and by Obsidian.
 
