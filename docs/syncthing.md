@@ -42,6 +42,22 @@ The vault path can differ between machines: each one keeps its own in its config
 
 `.stignore` in the vault holds this list; `setup` and `sync` write it.
 
+## Keep some notes on one machine
+
+Syncthing never syncs `.stignore`, so each machine can leave out more than the list above. On an always-on server, for example, keep a work project and a work topic off it, and off the model provider its agent uses: add a line for each to the server's `.stignore`, in the vault.
+
+```text
+/Projects/acme-billing
+/Topics/acme
+```
+
+The server then neither receives these notes nor sends its own. `setup` and `sync` keep your lines, and `petit-poucet sync` lists them: `not synced with this machine (its .stignore): /Projects/acme-billing, /Topics/acme`.
+
+Limits:
+- Lines are paths, not rules: a new work project needs a new line, on each machine that must not have it.
+- A note that links to a left-out note shows a broken link in `petit-poucet check` on that machine.
+- A note saved under a left-out path on the server stays on the server.
+
 ## Conflicts
 
 When two machines change the same note before they sync, Syncthing keeps the most recent version and saves the other as `<note>.sync-conflict-<date>-<time>-<device>.md`. petit-poucet never loads the copy as a note. At the next session start your agent is told, and you see `1 note has a sync conflict: ask your agent to merge it`. The agent reads both, saves what's worth keeping into the note (asking you first for a rule you stated), and deletes the copy. `petit-poucet check` lists the copies too.

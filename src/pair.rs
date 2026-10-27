@@ -166,6 +166,13 @@ pub fn run(config: &Config, device: Option<&str>) -> Result<(Vec<String>, bool),
         true => "not shared with another machine yet".to_string(),
         false => format!("syncing with: {}", peers.join(", ")),
     });
+    let own = init::own_ignore_lines(&config.vault);
+    if !own.is_empty() {
+        lines.push(format!(
+            "not synced with this machine (its .stignore): {}",
+            own.join(", ")
+        ));
+    }
     lines.push(format!(
         "on another machine, run: petit-poucet sync {}",
         syncthing.my_id
