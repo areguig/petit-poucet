@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How petit-poucet works</title>
-<meta name="description" content="What petit-poucet does in a session, how it keeps your agents' memory clean, and where everything lives: the vault, the note format, the checks, the cleanup review and the settings.">
+<meta name="description" content="What petit-poucet does in a session, how it keeps your agents' memory clean, how it shares it between machines, and where everything lives: the vault, the note format, the checks, the cleanup review and the settings.">
+<meta name="theme-color" content="#08080a">
 <meta property="og:title" content="How petit-poucet works">
-<meta property="og:description" content="Session start, the cleanup review, the checks and the settings of petit-poucet, the shared memory for coding agents.">
+<meta property="og:description" content="Session start, the cleanup review, the checks, several machines and the settings of petit-poucet, the shared memory for coding agents.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://areguig.github.io/petit-poucet/how-it-works.html">
 <meta property="og:site_name" content="petit-poucet">
@@ -16,86 +17,101 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="backdrop" aria-hidden="true"></div>
+
+<nav class="nav">
+  <div class="shell">
+    <a class="brand" href="./"><img src="logo.svg" alt="">petit-poucet</a>
+    <ul>
+      <li class="hide-sm"><a href="./">Home</a></li>
+      <li><a href="./#install">Install</a></li>
+      <li><a href="https://github.com/areguig/petit-poucet">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
 <main>
-  <section class="hero">
-    <a href="./"><img src="logo.svg" alt="petit-poucet home"></a>
-    <p class="name">petit-poucet</p>
-    <h1>How it works</h1>
-    <p class="lead">For the curious: what happens in a session, how the memory stays clean, and where everything lives.</p>
-    <div class="buttons">
-      <a class="button primary" href="./#install">Install</a>
-      <a class="button" href="./">Home</a>
-      <a class="button" href="https://github.com/areguig/petit-poucet">GitHub</a>
+  <header class="hero shell">
+    <p class="eyebrow">How it works</p>
+    <h1>Small binary, <span class="accent">plain files.</span></h1>
+    <p class="lead" style="margin-top:32px">For the curious: what happens in a session, how the memory stays clean, how machines share it, and where everything lives.</p>
+  </header>
+
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section class="shell">
+    <p class="eyebrow"><b>01</b> / in a session</p>
+    <h2 class="title">Three moments, <span class="accent">one</span> binary.</h2>
+    <div class="rows">
+      <div class="row"><span class="n">01</span><h3>Session start</h3><p>A hook gives the agent the memory rules and the Index of what applies here: your preferences and the current repo's notes, one line each. You see a pebble line, and a reminder when a cleanup is due or a release is out.</p></div>
+      <div class="row"><span class="n">02</span><h3>While you work</h3><p>Through MCP tools, the agent opens only the notes a task needs, searches, and saves new facts on purpose, each with its source. Every change is checked, rewrites the Index and makes a local git commit.</p></div>
+      <div class="row"><span class="n">03</span><h3>Cleanup</h3><p>Ask to tidy your memory: a read-only subagent reviews the notes and the problems code found, and proposes merges, fixes and deletions. Your agent applies only what you confirm.</p></div>
     </div>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section>
-    <p class="eyebrow">In a session</p>
-    <h2>Three moments, one small binary</h2>
-    <div class="steps">
-      <div class="step"><h3>Session start</h3><p>A hook gives the agent the memory rules and the Index of what applies here: your preferences and the current repo's notes, one line each. You see a pebble line, and a reminder when a cleanup is due.</p></div>
-      <div class="step"><h3>While you work</h3><p>Through MCP tools, the agent opens only the notes a task needs, searches, and saves new facts on purpose, each with its source. Every change is checked, rewrites the Index and makes a local git commit.</p></div>
-      <div class="step"><h3>Cleanup</h3><p>Ask to tidy your memory: a read-only subagent reviews the notes and the problems code found, and proposes merges, fixes and deletions. Your agent applies only what you confirm.</p></div>
-    </div>
-  </section>
-
-  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
-
-  <section>
-    <p class="eyebrow">The vault</p>
-    <h2>Plain files, in three places</h2>
+  <section class="shell">
+    <p class="eyebrow"><b>02</b> / the vault</p>
+    <h2 class="title">Plain files, in <span class="accent">three</span> places.</h2>
+    <div class="split">
 <pre>~/agent-memory/
-├─ Index.md            <span class="dim">generated from the notes' summaries</span>
-├─ Preferences/        <span class="dim">your rules for every repo, loaded in every session</span>
-├─ Projects/&lt;repo&gt;/    <span class="dim">a repo's notes, loaded in that repo</span>
-└─ Topics/&lt;topic&gt;/     <span class="dim">no repo (a homelab, a server…), searched on demand</span></pre>
-    <p>A project is recognised by its git remote first, then its folder name. Each note is one short fact with its source:</p>
-<pre><span class="dim">---</span>
-type: feedback            <span class="dim"># user | feedback (a rule you stated) | project | reference</span>
+├─ Index.md            <span class="m">generated from the notes' summaries</span>
+├─ Preferences/        <span class="m">your rules for every repo, loaded in every session</span>
+├─ Projects/&lt;repo&gt;/    <span class="m">a repo's notes, loaded in that repo</span>
+└─ Topics/&lt;topic&gt;/     <span class="m">no repo (a homelab, a server…), searched on demand</span></pre>
+<pre><span class="m">---</span>
+type: feedback      <span class="m"># user | feedback | project | reference</span>
 scope: all repos
-summary: commit locally per step, 1-2 line message, never push
+summary: commit locally per step, never push
 created: 2026-09-14
 tags: [agent-memory, git]
-<span class="dim">---</span>
+<span class="m">---</span>
 
-# Commit rules
+<span class="b"># Commit rules</span>
 
 Commit each finished step locally; never push.
 
-**Why:** the user said so on 2026-09-14.
-**How to apply:** after each step.</pre>
+<span class="b">**Why:**</span> the user said so on 2026-09-14.
+<span class="b">**How to apply:**</span> after each step.</pre>
+    </div>
+    <p class="lead">A project is recognised by its git remote first, so a checkout in another folder, or on another machine, still matches; a folder without a remote matches by its name. Each note is one short fact with its source.</p>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section>
-    <p class="eyebrow">Staying clean</p>
-    <h2>Code finds the problems, you decide the fixes</h2>
+  <section class="shell">
+    <p class="eyebrow"><b>03</b> / staying clean</p>
+    <h2 class="title">Code finds the problems, <span class="accent">you</span> decide the fixes.</h2>
     <p class="lead">A memory is only useful if it stays right. petit-poucet checks what code can check, and leaves the judgement to an agent and to you.</p>
-    <div class="cards">
-      <div class="card"><h3>Checked on every save</h3><p>A valid type, a one-line summary, a source; secrets refused; links kept whole when notes move. A rule you stated changes only with your OK, and an edit you made meanwhile is never overwritten.</p></div>
-      <div class="card"><h3>Found across the vault</h3><p>Near-duplicates, notes naming files gone from the repo, notes nobody opened for months, summaries too long, and sessions loading too many notes. <code>petit-poucet check</code> lists them.</p></div>
-      <div class="card"><h3>Reviewed by an agent</h3><p>Up to 300 notes, every cleanup reviews them all. Above that, your preferences, the folders that changed and the ones you use come first; ask for a whole review any time.</p></div>
-      <div class="card"><h3>Reminded at session start</h3><p>When many notes changed or a month went by since the last cleanup, the session-start line says so. Nothing cleans up behind your back.</p></div>
+    <div class="grid">
+      <div class="card"><p class="kicker">every save</p><h3>Checked</h3><p>A valid type, a one-line summary, a source; secrets refused; links kept whole when notes move. A rule you stated changes only with your OK, and an edit you made meanwhile is never overwritten.</p></div>
+      <div class="card"><p class="kicker">the whole vault</p><h3>Found</h3><p>Near-duplicates, notes naming files gone from the repo, notes nobody opened for months, summaries too long, sessions loading too many notes. <code>petit-poucet check</code> lists them.</p></div>
+      <div class="card"><p class="kicker">cleanup</p><h3>Reviewed</h3><p>Up to 300 notes, every cleanup reviews them all. Above that, your preferences, the folders that changed and the ones you use come first; ask for a whole review any time.</p></div>
+      <div class="card"><p class="kicker">session start</p><h3>Reminded</h3><p>When many notes changed or a month went by since the last cleanup, the session-start line says so. Nothing cleans up behind your back.</p></div>
     </div>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section>
-    <p class="eyebrow">Several agents, several machines</p>
-    <h2>No clobbering, full history</h2>
-    <p>Agents running at once take turns through a vault lock, so none loses another's write. Every change is a local git commit you can inspect or undo; nothing is ever pushed. Which notes are read, and where, is counted per machine inside the vault, so the cleanup knows what is used. Keeping one vault in sync across machines (Syncthing or git) comes next.</p>
+  <section class="shell">
+    <p class="eyebrow"><b>04</b> / several agents, several machines</p>
+    <h2 class="title">No clobbering, <span class="accent">full</span> history.</h2>
+    <ul class="ticks" style="margin-top:48px;max-width:48rem">
+      <li><b>Agents at once.</b> Agents running together take turns through a vault lock, so none loses another's write.</li>
+      <li><b>Every change in git.</b> A local commit you can inspect or undo; nothing is ever pushed.</li>
+      <li><b>Machines, through Syncthing.</b> <code>petit-poucet sync</code> pairs them, peer to peer. Notes changed on another machine are committed at the next session start, each machine keeping its own history.</li>
+      <li><b>Conflicts, merged with you.</b> When two machines change a note at once, Syncthing keeps both; your agent is told, merges them with you, and deletes the copy.</li>
+      <li><b>Usage counted per machine.</b> Which notes are read, and where, is recorded inside the vault, so the cleanup knows what is used everywhere.</li>
+    </ul>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section>
-    <p class="eyebrow">Settings</p>
-    <h2>One file, every value in sight</h2>
-    <p><code>~/.config/petit-poucet/config.toml</code> holds the vault's path and every limit, with its value. A setting added by a newer version is written in with its default, keeping your own lines.</p>
+  <section class="shell">
+    <p class="eyebrow"><b>05</b> / settings</p>
+    <h2 class="title">One file, every value <span class="accent">in sight</span>.</h2>
+    <p class="lead"><code>~/.config/petit-poucet/config.toml</code> holds the vault's path and every limit, with its value. A setting added by a newer version is written in with its default, keeping your own lines.</p>
     <div class="table-wrap">
       <table>
         <colgroup><col class="setting"><col class="default"><col></colgroup>
@@ -115,20 +131,25 @@ Commit each finished step locally; never push.
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section>
-    <p class="eyebrow">Go deeper</p>
-    <h2>The details</h2>
-    <div class="cards">
-      <div class="card"><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/setup.md">Install and set up</a></h3><p>What <code>setup</code> writes for each agent, the install options, Obsidian, migrating old memory.</p></div>
-      <div class="card"><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/reference.md">Reference</a></h3><p>The tools, skills and commands, and the rules enforced in code.</p></div>
-      <div class="card"><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/architecture.md">Architecture</a></h3><p>The files in the vault, usage across machines, how the review is sized, how near-duplicates are found.</p></div>
-      <div class="card"><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/comparison.md">Compared with built-in memory</a></h3><p>Claude Code, Copilot and Codex memories side by side with petit-poucet.</p></div>
+  <section class="shell">
+    <p class="eyebrow"><b>06</b> / go deeper</p>
+    <h2 class="title">The <span class="accent">details</span>.</h2>
+    <div class="grid">
+      <div class="card"><p class="kicker">for agents</p><h3><a href="install.md">Install guide</a></h3><p>What an agent runs to install or update petit-poucet, how it checks, and what it tells you.</p></div>
+      <div class="card"><p class="kicker">setup</p><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/setup.md">Install and set up</a></h3><p>What <code>setup</code> writes for each agent, the install options, updating, Obsidian, migrating old memory.</p></div>
+      <div class="card"><p class="kicker">sync</p><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/syncthing.md">Several machines</a></h3><p>Installing Syncthing, pairing, what syncs and what stays on each machine, conflicts.</p></div>
+      <div class="card"><p class="kicker">reference</p><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/reference.md">Tools and commands</a></h3><p>The tools, skills and commands, and the rules enforced in code.</p></div>
+      <div class="card"><p class="kicker">internals</p><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/architecture.md">Architecture</a></h3><p>The files in the vault, usage across machines, how the review is sized, how near-duplicates are found.</p></div>
+      <div class="card"><p class="kicker">comparison</p><h3><a href="https://github.com/areguig/petit-poucet/blob/main/docs/comparison.md">Built-in memory</a></h3><p>Claude Code, Copilot and Codex memories side by side with petit-poucet.</p></div>
     </div>
   </section>
-
-  <footer>
-    <p><a href="./">Home</a> · Apache-2.0 · <a href="https://github.com/areguig/petit-poucet">github.com/areguig/petit-poucet</a> · <a href="https://github.com/areguig/petit-poucet/releases/latest">latest release</a></p>
-  </footer>
 </main>
+
+<footer>
+  <div class="shell" style="margin-top:96px">
+    <span>petit-poucet · Apache-2.0</span>
+    <span><a href="./">Home</a> · <a href="install.md">Install guide for agents</a> · <a href="https://github.com/areguig/petit-poucet/releases/latest">Latest release</a> · <a href="https://github.com/areguig/petit-poucet">GitHub</a></span>
+  </div>
+</footer>
 </body>
 </html>

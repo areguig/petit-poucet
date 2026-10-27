@@ -1,5 +1,15 @@
 # Install and set up
 
+## Let your agent do it
+
+Paste this into your agent:
+
+```text
+Install petit-poucet for me: follow https://areguig.github.io/petit-poucet/install.md
+```
+
+[The guide](../site/install.md) walks the agent through installing or updating, `setup`, the check, and what to tell you.
+
 ## Install
 
 Needs `git`, and `curl` on macOS or Linux (Windows 10 and later ship it).
@@ -14,7 +24,15 @@ curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.s
 irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex
 ```
 
-The script installs the latest release in `~/.local/bin` after checking its SHA-256. To upgrade, run `petit-poucet update`: it checks the new release the same way, replaces the binary, then runs `setup` again (before 0.6, run the script again).
+The script installs the latest release in `~/.local/bin` after checking its SHA-256. When that folder isn't on your PATH yet, its last line gives the full path to run `setup` with.
+
+## Update
+
+```sh
+petit-poucet update
+```
+
+It checks the new release the same way, replaces the binary, then runs `setup` again; restart your agents afterwards. Session start tells you when a release is out: run `petit-poucet update`, or ask your agent to. Before 0.6, which has no `update`, run the install script again. A binary installed another way (Homebrew, `cargo install`) updates that way.
 
 | Variable | Effect |
 |---|---|
@@ -35,7 +53,7 @@ petit-poucet setup
 
 - `setup --check` says what's missing.
 - `setup --uninstall` takes it all out again; your vault stays.
-- `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`, `opencode`, `omp`) limits either to one agent.
+- `--agent claude` (or `copilot`, `codex`, `cursor`, `antigravity`, `opencode`, `omp`, `hermes`) limits either to one agent.
 
 | Agent | What `setup` writes | Then |
 |---|---|---|
@@ -46,6 +64,7 @@ petit-poucet setup
 | Antigravity CLI | `~/.gemini/config/`: `mcp_config.json`, `hooks.json`, `skills`, `agents` | Memory reaches the model before each of its calls. Gemini CLI isn't supported: it no longer serves personal Google accounts, and Antigravity CLI replaces it. |
 | OpenCode 2 | `~/.config/opencode/`: `opencode.json`, `plugins/petit-poucet.js`, `agents`; `~/.agents/skills` | Restart OpenCode. OpenCode 1.x isn't supported: install OpenCode 2 (`curl -fsSL https://opencode.ai/v2/install \| bash`). OpenCode has no hooks: the plugin adds your memory to the system prompt of each model call and sends the save reminder when a session's turn ends. |
 | omp | `~/.omp/agent/`: `mcp.json`, `extensions/petit-poucet.js`, `agents`; `~/.agents/skills` | New sessions pick it up. Needs omp 18 (`bun install -g @oh-my-pi/pi-coding-agent`). omp has no hook commands: the extension adds your memory to each model call and sends the save reminder when a turn ends. |
+| Hermes Agent | `~/.hermes/config.yaml`, through `hermes config set` so your comments stay: the MCP server, a `pre_llm_call` hook, and `hooks.output_spill.max_chars` raised so the memory reaches the model whole; `~/.hermes/skills` (`HERMES_HOME` replaces `~/.hermes`; on Windows, `%LOCALAPPDATA%\hermes`) | Open `hermes` once and approve petit-poucet's hook when it asks: the gateway and cron use that approval. Memory joins your first message of each session. Hermes has no hook after an answer, so there is no save reminder, and its subagents come from no file, so there is no `tidy-memory` skill: tidy from another agent. Uninstalling leaves the raised output limit. |
 
 Coming from the 0.2 plugin for Claude Code or Copilot? `setup` removes it with the agent's own command, so its hooks don't run twice.
 

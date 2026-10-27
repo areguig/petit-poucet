@@ -38,11 +38,11 @@ Commit each finished step locally; never push.
 | Tool | What it does |
 |---|---|
 | `memory_index` | Preferences, the current project and the topic names; with `topic`, that topic's notes |
-| `memory_read` | One note |
+| `memory_read` | One note, or a sync conflict copy of one |
 | `memory_search` | Word search over preferences, the current project and all topics (every note when the folder is no known project): notes matching the most words first, rare words before common ones, and none matching under half the words when others match more |
 | `memory_save` | Create or update a note; the Index and a git commit follow |
 | `memory_move` | Rename or re-scope a note, rewriting every link to it |
-| `memory_delete` | Delete a note (with a reason) and unlink it everywhere |
+| `memory_delete` | Delete a note (with a reason) and unlink it everywhere, or a sync conflict copy once merged |
 | `memory_review` | For the cleanup agent: the notes to review and the problems found in the whole vault, in pages small enough for every agent ([how](architecture.md#the-cleanup-review-memory_review)) |
 
 ## Skills
@@ -57,6 +57,7 @@ Commit each finished step locally; never push.
 |---|---|
 | `petit-poucet setup` | Set up memory for every agent on this machine and create the vault if there's none; `--check` reports what's missing, `--uninstall` removes petit-poucet from the agents (never the vault), `--agent <name>` limits it to one |
 | `petit-poucet update` | Install the latest release over the binary the install script placed, after checking its SHA-256, then run `setup` with it |
+| `petit-poucet sync [device id]` | Share the vault through the Syncthing installed on this machine; with another machine's device ID, pair with it. Lists the machines it syncs with, and this machine's own `.stignore` lines. Without Syncthing, says how to install and start it ([guide](syncthing.md)) |
 | `petit-poucet check` | Validate the vault: frontmatter, summaries and their length, scopes, links, secrets, near-duplicates, file names whose title changed, paths gone from a project's checkout, the Index and its size per session; and report the latest release |
 | `petit-poucet init [path]` | Create a vault (default `~/agent-memory`) and the config file |
 | `petit-poucet migrate` | Upgrade a hand-maintained vault: summaries from its old Index, full-path links, project identities, git |

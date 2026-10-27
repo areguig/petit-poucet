@@ -1,0 +1,49 @@
+name: Syncthing
+
+# Two real Syncthing instances share one vault on each OS (#81).
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  SYNCTHING_VERSION: v2.1.6
+
+jobs:
+  sync:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: syncthing-linux-amd64
+            archive: tar.gz
+            sha256: 524ef4e1df1850b719e2378c8369956f4e5f2ab9a46fdf7f45f2b925012147aa
+          - os: macos-latest
+            asset: syncthing-macos-arm64
+            archive: zip
+            sha256: f86bfa0bdbb5b1b13229a7e5643e898e3c4e017a4fff6dd525994ebaf28ff6e2
+          - os: windows-latest
+            asset: syncthing-windows-amd64
+            archive: zip
+            sha256: 589098269cabb9a5a1703a934305b4153609d7623e978e1c94f0f49d77ae5e9f
+    name: syncthing (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - name: Download Syncthing
+        run: |
+          file=${{ matrix.asset }}-$SYNCTHING_VERSION.${{ matrix.archive }}
+          curl -fsSL --retry 3 -o "$file" "https://github.com/syncthing/syncthing/releases/download/$SYNCTHING_VERSION/$file"
+          # Compared by hand: macOS's BSD sha256sum can't read a checksum list from stdin.
+          sum=$(command -v sha256sum || echo "shasum -a 256")
+          test "$($sum "$file" | cut -d' ' -f1)" = "${{ matrix.sha256 }}"
+          # cmake reads zip and tar.gz alike on every runner.
+          cmake -E tar xf "$file"
+          # The workspace path in the OS's own form: Git Bash's /d/a/... would not open from Rust on Windows.
+          echo "SYNCTHING=${{ github.workspace }}/${{ matrix.asset }}-$SYNCTHING_VERSION/syncthing${{ runner.os == 'Windows' && '.exe' || '' }}" >> "$GITHUB_ENV"
+      - run: cargo test --test syncthing -- --ignored

@@ -41,6 +41,26 @@ pub fn commit(dir: &Path, paths: &[&str], message: &str) -> Result<(), String> {
     git(dir, &commit).map(drop)
 }
 
+// Files with uncommitted changes. Takes no git lock, so it never collides with a commit running beside it.
+pub fn changed(dir: &Path) -> Result<Vec<String>, String> {
+    let out = git(
+        dir,
+        &[
+            "--no-optional-locks",
+            "status",
+            "--porcelain",
+            "-z",
+            "--untracked-files=all",
+        ],
+    )?;
+    Ok(out
+        .split('\0')
+        .filter_map(|entry| entry.get(3..))
+        .filter(|path| !path.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
 pub fn toplevel(dir: &Path) -> Option<String> {
     git(dir, &["rev-parse", "--show-toplevel"])
         .ok()

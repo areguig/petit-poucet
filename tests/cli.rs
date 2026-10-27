@@ -215,7 +215,7 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
     assert!(read("Projects/alpha/_project.md").contains("type: project-identity"));
     assert_eq!(
         read(".gitignore"),
-        ".obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n"
+        ".obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n*.sync-conflict-*\n"
     );
 
     let check = petit_poucet(home.path())
@@ -391,6 +391,108 @@ fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
             .unwrap()
             .ends_with("(preferences)")
     );
+}
+
+// Syncthing drops files into the vault without petit-poucet: session start indexes and commits them, and names conflicts (#81).
+#[test]
+fn session_start_catches_up_with_files_synced_in() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    fs::write(
+        vault.join("Preferences/synced-in.md"),
+        "---\ntype: user\nscope: all repos\nsummary: arrived from the laptop\ncreated: 2026-10-26\ntags: [agent-memory]\n---\n**Why:** x\n",
+    )
+    .unwrap();
+    let copy = "Preferences/synced-in.sync-conflict-20261026-101112-ABCDEF7.md";
+    fs::write(vault.join(copy), "older version\n").unwrap();
+
+    let reply: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        "{}",
+    ))
+    .unwrap();
+    let context = reply["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("arrived from the laptop"), "{context}");
+    assert!(
+        context.contains(&format!(
+            "- {copy} (older copy of Preferences/synced-in.md)"
+        )),
+        "the agent is told: {context}"
+    );
+    assert!(
+        reply["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("1 note has a sync conflict: ask your agent to merge it"),
+        "{reply}"
+    );
+    assert!(
+        git_log(&vault).starts_with("sync: notes changed outside petit-poucet\ninit: vault\n"),
+        "{}",
+        git_log(&vault)
+    );
+
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(!check.status.success());
+    assert!(
+        stdout(&check).contains(&format!(
+            "{copy}: error: older sync conflict copy of Preferences/synced-in.md"
+        )),
+        "{}",
+        stdout(&check)
+    );
+}
+
+// Two machines changed a project's identity at once: session start keeps the remotes and folders of both, which the
+// memory tools could not, and `check` says how to finish a copy it can't read (#153).
+#[test]
+fn session_start_merges_a_project_identity_conflict() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let alpha = "Projects/alpha/_project.sync-conflict-20261026-101112-ABCDEF7.md";
+    fs::write(
+        vault.join(alpha),
+        "---\ntype: project-identity\nremotes: [github.com/example/alpha, gitlab.com/example/alpha-mirror]\nfolders: [alpha, alpha-old]\n---\n",
+    )
+    .unwrap();
+    let beta = "Projects/beta/_project.sync-conflict-20261026-101112-ABCDEF7.md";
+    fs::write(vault.join(beta), "half written").unwrap();
+
+    let reply = hook(home.path(), &["session-start", "--agent", "claude"], "{}");
+    assert!(!reply.contains("sync conflict"), "{reply}");
+    let identity = fs::read_to_string(vault.join("Projects/alpha/_project.md")).unwrap();
+    assert!(
+        identity.contains("gitlab.com/example/alpha-mirror") && identity.contains("alpha-old"),
+        "{identity}"
+    );
+    assert!(!vault.join(alpha).exists());
+    assert!(
+        git_log(&vault).starts_with("sync: notes changed outside petit-poucet\n"),
+        "{}",
+        git_log(&vault)
+    );
+
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    let out = stdout(&check);
+    assert!(!check.status.success());
+    assert!(
+        out.contains(&format!("{beta}: error: sync conflict copy of Projects/beta/_project.md that petit-poucet could not merge: copy the remotes and folders it adds into Projects/beta/_project.md by hand, then delete the copy")),
+        "{out}"
+    );
+    assert!(!out.contains(alpha), "{out}");
 }
 
 // A cleanup that is due is announced at session start, to the user or through the agent, until one is done (#84).
@@ -569,7 +671,7 @@ fn init_without_a_path_uses_agent_memory_in_home_and_says_how_to_change_it() {
     assert_eq!(
         stdout(&output),
         format!(
-            "vault ready at {} (0 notes)\nto use another folder, change `vault` in {}\n",
+            "vault created at {} (0 notes)\nto use another folder, change `vault` in {}\n",
             vault.display(),
             config.display()
         )
@@ -588,21 +690,35 @@ fn write(home: &Path, path: &str, text: &str) {
 }
 
 #[test]
+fn setup_says_it_found_a_vault_already_in_place() {
+    let home = TempDir::new().unwrap();
+    write(
+        home.path(),
+        "agent-memory/Preferences/rule.md",
+        "---\ntype: feedback\nscope: all repos\nsummary: s\ncreated: 2026-10-27\ntags: [agent-memory]\n---\n\n# Rule\n",
+    );
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
+    assert!(
+        out.starts_with(&format!("vault: found at {} (1 notes)", vault.display())),
+        "{out}"
+    );
+}
+
+#[test]
 fn setup_creates_the_vault_once_and_reports_each_agent() {
     let home = TempDir::new().unwrap();
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
     let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
     assert!(
-        out.starts_with(&format!(
-            "vault: created, vault ready at {}",
-            vault.display()
-        )),
+        out.starts_with(&format!("vault: created at {} (0 notes)", vault.display())),
         "{out}"
     );
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp, Hermes Agent)\n"
         ),
         "{out}"
     );
@@ -630,6 +746,95 @@ fn setup_creates_the_vault_once_and_reports_each_agent() {
         git_log(&vault),
         "init: vault\n",
         "the vault is created once"
+    );
+}
+
+// A vault made before 0.7 gets the Syncthing lines from `setup`, which `update` runs (#81).
+#[test]
+fn setup_adds_the_sync_lines_to_an_older_vault_once() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    fs::remove_file(vault.join(".stignore")).unwrap();
+    let gitignore = vault.join(".gitignore");
+    let older = fs::read_to_string(&gitignore)
+        .unwrap()
+        .replace("*.sync-conflict-*\n", "");
+    fs::write(&gitignore, &older).unwrap();
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&vault)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "--quiet",
+        "-am",
+        "older",
+    ]);
+
+    for _ in 0..2 {
+        let (ok, out) = setup(home.path(), &[]);
+        assert!(ok, "{out}");
+    }
+    assert_eq!(
+        fs::read_to_string(&gitignore).unwrap(),
+        format!("{older}*.sync-conflict-*\n")
+    );
+    assert!(
+        fs::read_to_string(vault.join(".stignore"))
+            .unwrap()
+            .contains("/.git\n")
+    );
+    assert_eq!(git_log(&vault), "setup: ignore files\nolder\ninit: vault\n");
+    assert!(git(&["status", "--porcelain"]).stdout.is_empty());
+}
+
+// Without Syncthing, `sync` says how to install and start it on this OS, after writing the vault's ignore files (#134).
+#[test]
+fn sync_without_syncthing_says_how_to_install_it() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // A user's line above petit-poucet's, so putting theirs first is a change to commit.
+    let stignore = vault.join(".stignore");
+    let text = fs::read_to_string(&stignore).unwrap();
+    fs::write(&stignore, format!("!/Index.md\n{text}")).unwrap();
+    let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .find(|dir| dir.join("git").is_file() || dir.join("git.exe").is_file())
+        .unwrap();
+    assert!(!git.join("syncthing").exists() && !git.join("syncthing.exe").exists());
+
+    // A fresh machine often has no git identity yet: the files are written all the same (#140).
+    let output = without_git_identity(&mut petit_poucet(home.path()))
+        .env("PATH", &git)
+        .arg("sync")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let out = stdout(&output);
+    assert!(out.starts_with("not committed: "), "{out}");
+    assert!(
+        out.contains("\nSyncthing is not installed. Install it, start it at login, then run `petit-poucet sync` again:\n  "),
+        "{out}"
+    );
+    let written = fs::read_to_string(&stignore).unwrap();
+    assert!(
+        written.starts_with("/.git\n") && written.ends_with("\n!/Index.md\n"),
+        "written before anything is shared, petit-poucet's lines first: {written}"
     );
 }
 
@@ -865,11 +1070,31 @@ fn init_and_setup_work_without_a_git_identity() {
     assert!(out.contains("vault: set your git identity"), "{out}");
     assert!(
         out.ends_with(
-            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp)\n"
+            "agents: none found (supported: Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp, Hermes Agent)\n"
         ),
         "{out}"
     );
     assert!(home.path().join("agent-memory/Index.md").is_file());
+
+    // Again on the existing vault, which now lacks a line `setup` adds (#140).
+    fs::remove_file(home.path().join("agent-memory/.stignore")).unwrap();
+    let output = without_git_identity(&mut petit_poucet(home.path()))
+        .arg("setup")
+        .output()
+        .unwrap();
+    let out = stdout(&output);
+    assert!(output.status.success(), "{out}");
+    assert!(
+        out.starts_with(&format!(
+            "vault: {} (0 notes)\nvault: not committed: ",
+            dunce::canonicalize(home.path().join("agent-memory"))
+                .unwrap()
+                .display()
+        )),
+        "{out}"
+    );
+    assert!(out.contains("vault: set your git identity"), "{out}");
+    assert!(home.path().join("agent-memory/.stignore").is_file());
 
     // A home of its own: no config left by the setup above.
     let home = TempDir::new().unwrap();

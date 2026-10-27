@@ -16,6 +16,7 @@ mod edit;
 mod fillers;
 mod git;
 mod guard;
+mod hermes;
 mod hook;
 mod hook_command;
 mod hooks_json;
@@ -27,6 +28,7 @@ mod move_note;
 mod note;
 mod omp;
 mod opencode;
+mod pair;
 mod priority;
 mod project;
 mod review;
@@ -39,6 +41,9 @@ mod skills;
 mod stale_paths;
 mod state;
 mod stops;
+mod sync;
+mod sync_conflict;
+mod syncthing;
 mod unused;
 mod update;
 mod upgrade;
@@ -90,6 +95,8 @@ enum Command {
     },
     /// Install the latest release, then set up every agent with it
     Update,
+    /// Share the vault through Syncthing; with another machine's device ID, pair with it
+    Sync { device: Option<String> },
     /// Record the latest release's version: session start runs it in the background
     #[command(hide = true)]
     UpdateCheck,
@@ -121,6 +128,14 @@ fn main() -> ExitCode {
             uninstall,
         } => run_setup(agent, check, uninstall),
         Command::Update => run_update(),
+        Command::Sync { device } => Config::load()
+            .and_then(|config| pair::run(&config, device.as_deref()))
+            .map(|(lines, ok)| {
+                for line in lines {
+                    println!("{line}");
+                }
+                ok
+            }),
         Command::Hook { event, agent } => {
             run_hook(event, agent);
             Ok(true)

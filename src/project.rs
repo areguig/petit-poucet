@@ -45,6 +45,25 @@ pub fn render_identity(remotes: &[String], folders: &[String]) -> Result<String,
     crate::note::render(&identity, "")
 }
 
+// Two machines that each learned a remote or a folder for the project keep both.
+pub fn merge_identities(kept: &str, copy: &str) -> Result<String, String> {
+    let (kept, copy) = (Identity::parse(kept)?, Identity::parse(copy)?);
+    let mut remotes = kept.remotes;
+    for remote in copy.remotes {
+        let normal = normalise_remote(&remote);
+        if !remotes.iter().any(|r| normalise_remote(r) == normal) {
+            remotes.push(remote);
+        }
+    }
+    let mut folders = kept.folders;
+    for folder in copy.folders {
+        if !folders.contains(&folder) {
+            folders.push(folder);
+        }
+    }
+    render_identity(&remotes, &folders)
+}
+
 // A project created without a checkout at hand (e.g. by `migrate`) has no remote yet: learn it from one.
 // Projects that already list remotes are left alone, so a same-named folder of another repo is never merged in.
 pub fn missing_remotes(project: &Project, dir: &Path) -> Option<Vec<String>> {
@@ -113,6 +132,23 @@ pub fn key_from_remote(remote: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merging_identities_keeps_each_remote_and_folder_once() {
+        let kept = render_identity(&["git@github.com:me/api.git".into()], &["api".into()]).unwrap();
+        let copy = render_identity(
+            &[
+                "https://github.com/me/api".into(),
+                "gitlab.com/me/api".into(),
+            ],
+            &["api".into(), "api-old".into()],
+        )
+        .unwrap();
+        let merged = Identity::parse(&merge_identities(&kept, &copy).unwrap()).unwrap();
+        assert_eq!(merged.remotes, ["github.com/me/api", "gitlab.com/me/api"]);
+        assert_eq!(merged.folders, ["api", "api-old"]);
+        assert!(merge_identities(&kept, "not an identity").is_err());
+    }
 
     #[test]
     fn normalises_remotes() {

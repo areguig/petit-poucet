@@ -9,6 +9,8 @@ use crate::config::Config;
 use crate::index;
 use crate::lock;
 use crate::stops;
+use crate::sync;
+use crate::sync_conflict::Conflict;
 use crate::update;
 use crate::usage;
 use crate::vault::Vault;
@@ -44,11 +46,11 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
         return None;
     }
     update::start();
-    let (mut context, mut message, cleanup) = match memory_context(agent, event) {
+    let (mut context, mut message, notices) = match memory_context(agent, event) {
         _ if !Config::is_set() => (
             setup_context(),
             format!("{PEBBLE} no vault yet: the agent will offer to create one"),
-            None,
+            Vec::new(),
         ),
         Ok(loaded) => loaded,
         Err(e) => (
@@ -57,11 +59,11 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
                  and do not write memory anywhere else."
             ),
             format!("{PEBBLE} memory unavailable: {e}"),
-            None,
+            Vec::new(),
         ),
     };
     let release = update::newer().map(|version| update::notice(&version));
-    for notice in cleanup.into_iter().chain(release) {
+    for notice in notices.into_iter().chain(release) {
         match agent.shows_hook_messages() {
             true => message.push_str(&format!("\n{PEBBLE} {notice}")),
             false => context.push_str(&format!(
@@ -89,10 +91,10 @@ fn record_session(vault: &Vault, project: &str) {
     }
 }
 
-// Returns the context for the agent, the line shown to the user, and why a cleanup is due if it is.
-fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Option<String>), String> {
+// Returns the context for the agent, the line shown to the user, and what the user should hear about.
+fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Vec<String>), String> {
     let config = Config::load()?;
-    let vault = Vault::load(&config.vault)?;
+    let vault = sync::catch_up(&config)?;
     let dir = agent
         .working_dir(event)
         .or_else(|| std::env::current_dir().ok());
@@ -113,10 +115,54 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Option
         false => String::new(),
     };
     Ok((
-        format!("{RULES}\n{}", index::for_project(&vault, project)),
+        format!(
+            "{RULES}\n{}{}",
+            index::for_project(&vault, project),
+            conflicts_context(&vault)
+        ),
         format!("{PEBBLE} {loaded} notes loaded ({scope}){over}"),
-        cleanup::due(&vault, &config.limits, SystemTime::now()),
+        conflicts_notice(&vault)
+            .into_iter()
+            .chain(cleanup::due(&vault, &config.limits, SystemTime::now()))
+            .collect(),
     ))
+}
+
+fn note_conflicts(vault: &Vault) -> Vec<&Conflict> {
+    vault.conflicts.iter().filter(|c| c.in_note()).collect()
+}
+
+fn conflicts_notice(vault: &Vault) -> Option<String> {
+    match note_conflicts(vault).len() {
+        0 => None,
+        1 => Some("1 note has a sync conflict: ask your agent to merge it".to_string()),
+        count => Some(format!(
+            "{count} notes have sync conflicts: ask your agent to merge them"
+        )),
+    }
+}
+
+// Syncthing keeps the most recently modified version under the note's name, so each copy is the older one.
+fn conflicts_context(vault: &Vault) -> String {
+    let conflicts = note_conflicts(vault);
+    if conflicts.is_empty() {
+        return String::new();
+    }
+    let lines: Vec<String> = conflicts
+        .iter()
+        .map(|c| match vault.root.join(&c.original).is_file() {
+            true => format!("- {} (older copy of {})", c.copy, c.original),
+            false => format!(
+                "- {} (the only version left: {} was deleted on another machine)",
+                c.copy, c.original
+            ),
+        })
+        .collect();
+    format!(
+        "\nSync conflicts: another machine changed these notes at the same time. Offer the user to merge each one: \
+         memory_read the note and its copy, save what is worth keeping into the note with memory_save, then memory_delete the copy.\n{}\n",
+        lines.join("\n")
+    )
 }
 
 // Reminds at the 3rd stop of a session, then every 10th; never without a session id to count by.
@@ -133,4 +179,5 @@ pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
             &format!("{PEBBLE} checking whether this session is worth remembering"),
         )
     })
+    .flatten()
 }

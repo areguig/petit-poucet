@@ -8,16 +8,85 @@ use crate::{git, index};
 pub const GITIGNORE: &str = ".gitignore";
 
 // Obsidian rewrites its workspace files constantly; only the notes belong in the history.
-const IGNORED: [&str; 4] = [".obsidian/", ".trash/", ".DS_Store", ".petit-poucet/"];
+const IGNORED: [&str; 5] = [
+    ".obsidian/",
+    ".trash/",
+    ".DS_Store",
+    ".petit-poucet/",
+    "*.sync-conflict-*",
+];
 
 pub fn ensure_repo(root: &Path) -> Result<(), String> {
     if !git::is_repo(root) {
         git::init(root)?;
     }
-    let gitignore = root.join(GITIGNORE);
-    let mut text = fs::read_to_string(&gitignore).unwrap_or_default();
-    let missing: Vec<&str> = IGNORED
-        .into_iter()
+    add_missing_lines(&root.join(GITIGNORE), &IGNORED)
+}
+
+// Syncthing never syncs `.stignore`, so every machine writes its own, even before Syncthing is installed.
+// Git history, the generated Index and machine state stay per machine; `.usage` and `.last-cleanup` must sync.
+pub const STIGNORE: &str = ".stignore";
+const NOT_SYNCED: [&str; 5] = [
+    "/.git",
+    "/.petit-poucet",
+    "/Index.md",
+    "/.obsidian/workspace*.json",
+    "(?d).DS_Store",
+];
+
+pub fn ensure_vault_files(root: &Path) -> Result<(), String> {
+    ensure_repo(root)?;
+    put_first(&root.join(STIGNORE), &NOT_SYNCED)
+}
+
+// Syncthing's first matching pattern wins, so a user's `!` line above ours would sync them; only `#escape=`
+// must come before any pattern.
+fn put_first(file: &Path, entries: &[&str]) -> Result<(), String> {
+    let current = fs::read_to_string(file).unwrap_or_default();
+    let lines: Vec<&str> = current.lines().collect();
+    let header = lines
+        .iter()
+        .position(|line| line.trim().starts_with("#escape="))
+        .filter(|&at| {
+            lines[..at]
+                .iter()
+                .all(|line| line.trim().is_empty() || line.trim().starts_with("//"))
+        })
+        .map_or(0, |at| at + 1);
+    let own = lines[header..]
+        .iter()
+        .filter(|line| !entries.contains(line));
+    let text: String = lines[..header]
+        .iter()
+        .chain(entries)
+        .chain(own)
+        .map(|line| format!("{line}\n"))
+        .collect();
+    match text == current {
+        true => Ok(()),
+        false => write_atomic(file, &text),
+    }
+}
+
+// What the user left out, such as work projects an always-on machine must never receive: not comments (`//`),
+// directives (`#escape=`, `#include`) nor `!` lines, which include files back.
+pub fn own_ignore_lines(root: &Path) -> Vec<String> {
+    fs::read_to_string(root.join(STIGNORE))
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !["//", "#", "!"].iter().any(|p| line.starts_with(p)))
+        .filter(|line| !NOT_SYNCED.contains(line))
+        .map(str::to_string)
+        .collect()
+}
+
+// The user's own lines are kept; each entry is added once.
+fn add_missing_lines(file: &Path, entries: &[&str]) -> Result<(), String> {
+    let mut text = fs::read_to_string(file).unwrap_or_default();
+    let missing: Vec<&str> = entries
+        .iter()
+        .copied()
         .filter(|entry| !text.lines().any(|line| line == *entry))
         .collect();
     if missing.is_empty() {
@@ -30,7 +99,18 @@ pub fn ensure_repo(root: &Path) -> Result<(), String> {
         text.push_str(entry);
         text.push('\n');
     }
-    write_atomic(&gitignore, &text)
+    write_atomic(file, &text)
+}
+
+// A vault made by an older version gets the ignore lines added since, such as the Syncthing ones.
+// Returns the warning when they could not be committed.
+pub fn update_vault_files(config: &Config) -> Result<Option<String>, String> {
+    ensure_vault_files(&config.vault)?;
+    if !config.git_autocommit {
+        return Ok(None);
+    }
+    let committed = git::commit(&config.vault, &[GITIGNORE, STIGNORE], "setup: ignore files");
+    Ok(committed.err().map(|e| not_committed(&e)))
 }
 
 const DEFAULT_VAULT: &str = "agent-memory";
@@ -42,6 +122,7 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
             .ok_or("cannot find the home folder")?
             .join(DEFAULT_VAULT),
     };
+    let found = path.exists();
     for dir in [PREFERENCES, PROJECTS] {
         fs::create_dir_all(path.join(dir)).map_err(|e| format!("{}: {e}", path.display()))?;
     }
@@ -68,31 +149,54 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
         }
     };
 
-    ensure_repo(&root)?;
+    ensure_vault_files(&root)?;
     let vault = Vault::load(&root)?;
     write_atomic(&root.join(INDEX_FILE), &index::generate(&vault))?;
     // The vault works without its first commit, so a refused one (no git identity) only warns.
     let committed = match config.git_autocommit {
-        true => git::commit(&root, &[INDEX_FILE, GITIGNORE], "init: vault").err(),
+        true => git::commit(&root, &[INDEX_FILE, GITIGNORE, STIGNORE], "init: vault").err(),
         false => None,
     };
     let mut reply = format!(
-        "vault ready at {} ({} notes)\nto use another folder, change `vault` in {}",
+        "vault {} at {} ({} notes)\nto use another folder, change `vault` in {}",
+        if found { "found" } else { "created" },
         root.display(),
         vault.notes.len(),
         config_path.display()
     );
     if let Some(e) = committed {
-        reply.push_str(&format!(
-            "\nnot committed: {e}\nset your git identity (`git config --global user.name …`, `git config --global user.email …`) so the vault keeps its history"
-        ));
+        reply.push_str(&format!("\n{}", not_committed(&e)));
     }
     Ok(reply)
+}
+
+// The vault works without git history, so a refused commit (no git identity) only warns.
+pub fn not_committed(error: &str) -> String {
+    // Git's own advice runs over a dozen lines; its last line names the cause.
+    let cause = error
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or(error);
+    format!(
+        "not committed: {cause}\nset your git identity (`git config --global user.name …`, `git config --global user.email …`) so the vault keeps its history"
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn not_committed_keeps_only_the_cause_of_git_s_advice() {
+        let error = "git commit --quiet -m init: vault -- Index.md: Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n\nfatal: unable to auto-detect email address (got 'dev@debian.(none)')";
+        assert_eq!(
+            not_committed(error).lines().next(),
+            Some(
+                "not committed: fatal: unable to auto-detect email address (got 'dev@debian.(none)')"
+            )
+        );
+    }
 
     #[test]
     fn ensure_repo_adds_only_the_missing_ignore_lines() {
@@ -102,8 +206,57 @@ mod tests {
         ensure_repo(tmp.path()).unwrap();
         assert_eq!(
             fs::read_to_string(tmp.path().join(GITIGNORE)).unwrap(),
-            "custom\n.obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n"
+            "custom\n.obsidian/\n.trash/\n.DS_Store\n.petit-poucet/\n*.sync-conflict-*\n"
         );
         assert!(git::is_repo(tmp.path()));
+    }
+
+    #[test]
+    fn stignore_keeps_the_user_s_lines_and_lets_usage_and_cleanup_time_sync() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(STIGNORE),
+            "!/.petit-poucet\n/Index.md\ncustom",
+        )
+        .unwrap();
+        ensure_vault_files(tmp.path()).unwrap();
+        ensure_vault_files(tmp.path()).unwrap();
+        let text = fs::read_to_string(tmp.path().join(STIGNORE)).unwrap();
+        assert_eq!(
+            text,
+            "/.git\n/.petit-poucet\n/Index.md\n/.obsidian/workspace*.json\n(?d).DS_Store\n!/.petit-poucet\ncustom\n"
+        );
+        assert!(!text.contains(crate::usage::DIR) && !text.contains(".last-cleanup"));
+    }
+
+    #[test]
+    fn stignore_keeps_an_escape_directive_above_every_pattern() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(STIGNORE),
+            "// mine\n#escape=\\\n!/Index.md\n",
+        )
+        .unwrap();
+        ensure_vault_files(tmp.path()).unwrap();
+        assert_eq!(
+            fs::read_to_string(tmp.path().join(STIGNORE)).unwrap(),
+            "// mine\n#escape=\\\n/.git\n/.petit-poucet\n/Index.md\n/.obsidian/workspace*.json\n(?d).DS_Store\n!/Index.md\n"
+        );
+    }
+
+    #[test]
+    fn own_ignore_lines_list_only_what_the_user_left_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(own_ignore_lines(tmp.path()), Vec::<String>::new());
+        fs::write(
+            tmp.path().join(STIGNORE),
+            "#escape=\\\n// work stays off this server\n/Projects/work\n!/Projects/work/shared.md\n\n/Index.md\n /Topics/work \n",
+        )
+        .unwrap();
+        ensure_vault_files(tmp.path()).unwrap();
+        assert_eq!(
+            own_ignore_lines(tmp.path()),
+            ["/Projects/work", "/Topics/work"]
+        );
     }
 }

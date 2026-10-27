@@ -12,7 +12,7 @@
 
 In the French tale *Le Petit Poucet*, a boy drops white pebbles along the path so he can find his way home. **petit-poucet** does the same for AI coding agents: it keeps a small, curated memory of your rules, decisions and verified facts, and every agent you switch between starts each session with it.
 
-Works with **Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor, Antigravity CLI, OpenCode and omp**, on macOS, Linux and Windows.
+Works with **Claude Code, GitHub Copilot (CLI, VS Code, IntelliJ, the Copilot app), Codex, Cursor, Antigravity CLI, OpenCode, omp and Hermes Agent**, on macOS, Linux and Windows.
 
 ## Why
 
@@ -28,6 +28,16 @@ How it compares with the agents' own memory: [comparison](docs/comparison.md).
 
 ## Install
 
+Ask your agent. Paste this into Claude Code, Codex, Copilot or any agent with a shell:
+
+```text
+Install petit-poucet for me: follow https://areguig.github.io/petit-poucet/install.md
+```
+
+[The guide](site/install.md) tells it what to run, how to check, and what to tell you: which agents to restart. It also updates an older install.
+
+Or by hand:
+
 ```sh
 # macOS, Linux
 curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
@@ -40,7 +50,7 @@ irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | ie
 petit-poucet setup
 ```
 
-Then restart your agent. Already keeping memory elsewhere? Ask your agent to run the `migrate-memory` skill. Details, per-agent notes and settings: [install and set up](docs/setup.md).
+Then restart your agents. To update later: `petit-poucet update`; session start tells you when a release is out. Already keeping memory elsewhere? Ask your agent to run the `migrate-memory` skill. Details, per-agent notes and settings: [install and set up](docs/setup.md).
 
 ## What your agent sees
 
@@ -59,9 +69,14 @@ At the start of every session, the agent gets your rules and an Index of what ap
 - [[Projects/chargepath-api/prod-db-no-postgis]] — the prod database has no PostGIS: spatial queries must work without it
 ```
 
+## On several machines
+
+Share one memory between your machines with [Syncthing](https://syncthing.net), peer to peer and without a cloud: install it, then pair the machines with `petit-poucet sync`, one command on each side. Step by step: [several machines](docs/syncthing.md).
+
 ## Learn more
 
 - [Install and set up](docs/setup.md): agents, settings, Obsidian, migrating
+- [Several machines](docs/syncthing.md): sharing the vault through Syncthing
 - [Reference](docs/reference.md): the vault, the note format, tools, skills, commands
 - [How it works](docs/architecture.md): session start, the cleanup review, the checks, usage across machines
 - [Compared with built-in memory](docs/comparison.md)
