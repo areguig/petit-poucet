@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the petit-poucet binary: the latest release, or PETIT_POUCET_VERSION. Re-run it to upgrade.
+# Installs the petit-poucet binary: the latest release, or PETIT_POUCET_VERSION. Once installed, `petit-poucet update` upgrades it.
 #   curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
 set -eu
 
@@ -41,8 +41,9 @@ mv -f "$tmp" "$dir/petit-poucet"
 trap - EXIT
 
 log "installed $("$dir/petit-poucet" --version) in $dir"
+# The full path when it's not on PATH, so the next step works as printed, from this shell or an agent's.
 case ":$PATH:" in
-  *":$dir:"*) ;;
-  *) log "$dir is not on your PATH: add it to your shell profile" ;;
+  *":$dir:"*) command=petit-poucet ;;
+  *) command="$dir/petit-poucet"; log "$dir is not on your PATH: add it to your shell profile" ;;
 esac
-log "next: run \`petit-poucet setup\` to create your memory vault and set up your agents"
+log "next: run \`$command setup\` to create your memory vault and set up your agents"
