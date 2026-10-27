@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>petit-poucet: one memory for every coding agent you switch between</title>
-<meta name="description" content="An MCP memory server for coding agents: one curated memory for Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode and omp: your rules, decisions and verified facts in a Markdown folder you own, loaded at the start of every session, with every change in git.">
+<meta name="description" content="An MCP memory server for coding agents: one curated memory for Claude Code, GitHub Copilot, Codex, Cursor, Antigravity CLI, OpenCode and omp: your rules, decisions and verified facts in a Markdown folder you own, loaded at the start of every session, with every change in git. Ask your agent to install it.">
+<meta name="theme-color" content="#08080a">
 <meta property="og:title" content="petit-poucet: one memory for every coding agent you switch between">
 <meta property="og:description" content="Your rules, decisions and verified facts in a Markdown folder you own, loaded by Claude Code, Copilot, Codex, Cursor, Antigravity CLI, OpenCode and omp at the start of every session.">
 <meta property="og:type" content="website">
@@ -17,6 +18,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="https://areguig.github.io/petit-poucet/">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="alternate" type="text/markdown" href="install.md" title="Install guide for AI agents">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -28,6 +30,7 @@
   "operatingSystem": "macOS, Linux, Windows",
   "license": "https://www.apache.org/licenses/LICENSE-2.0",
   "downloadUrl": "https://github.com/areguig/petit-poucet/releases/latest",
+  "installUrl": "https://areguig.github.io/petit-poucet/install.md",
   "sameAs": "https://github.com/areguig/petit-poucet",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
@@ -35,80 +38,157 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main>
-  <section class="hero">
-    <img src="logo.svg" alt="">
-    <p class="name">petit-poucet</p>
-    <h1>One memory for every agent you switch between</h1>
-    <p class="lead">Your rules, decisions and verified facts live in a Markdown folder you own, served by a small MCP memory server. One command wires it into each coding agent on your machine, and every session starts with it: switch from Claude Code to Codex, Copilot or Cursor, and none of them starts from zero.</p>
-    <div class="buttons">
-      <a class="button primary" href="#install">Install</a>
-      <a class="button" href="#compare">Why not built-in memory?</a>
-      <a class="button" href="https://github.com/areguig/petit-poucet">GitHub</a>
-    </div>
-    <ul class="clients" aria-label="Works with">
-      <li>Claude Code</li><li>Copilot CLI</li><li>Copilot in VS Code</li><li>Copilot in IntelliJ</li><li>GitHub Copilot app</li><li>Codex</li><li>Cursor</li><li>Antigravity CLI</li><li>OpenCode</li><li>omp</li><li>any MCP client</li>
+<div class="backdrop" aria-hidden="true"></div>
+
+<nav class="nav">
+  <div class="shell">
+    <a class="brand" href="./"><img src="logo.svg" alt="">petit-poucet</a>
+    <ul>
+      <li class="hide-sm"><a href="how-it-works.html">How it works</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="https://github.com/areguig/petit-poucet">GitHub</a></li>
     </ul>
-  </section>
+  </div>
+</nav>
 
-  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+<main>
+  <header class="hero shell">
+    <p class="eyebrow">Open source · MCP memory server · named after a French tale</p>
+    <h1>One memory for every agent <span class="dimmed">you</span> <span class="accent">switch between.</span></h1>
+    <p class="tagline">Leaves pebbles so your coding agents find their way back.</p>
+    <div class="hero-grid">
+      <div>
+        <p class="lead">Your rules, decisions and verified facts live in a Markdown folder you own. Claude Code, Copilot, Codex, Cursor and the others start every session with them, on every machine you pair. Switch agents, and none of them starts from zero.</p>
+        <div class="buttons">
+          <a class="button primary" href="#install">Ask your agent to install it</a>
+          <a class="button" href="https://github.com/areguig/petit-poucet">GitHub</a>
+        </div>
+      </div>
+      <div class="terminal glow" role="img" aria-label="An agent installs petit-poucet by following the install guide">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>claude code</span></div>
+<pre><span class="e">&gt;</span> <span class="b">Install petit-poucet for me: follow areguig.github.io/petit-poucet/install.md</span>
 
-  <section>
-    <p class="eyebrow">The problem</p>
-    <h2>Your agents forget, each in its own way</h2>
-    <div class="problems">
-      <div class="problem"><h3>Every session starts from zero</h3><p>You explain your commit rules, the database quirk and the deploy steps again, to a new session that never heard them.</p></div>
-      <div class="problem"><h3>Every tool keeps its own memory</h3><p>What Claude Code learned stays in Claude Code. Switch to Codex, Copilot or Cursor and you teach it all over again, in another format, in another place.</p></div>
-      <div class="problem"><h3>Memory you can't really check</h3><p>Built-in memories are written for you, not with you: hard to review, easy to drift, and sometimes gone after a few weeks.</p></div>
+<span class="vd">●</span> Fetch  install.md
+<span class="vd">●</span> Bash   curl -fsSL …/install.sh | sh
+<span class="vd">●</span> Bash   ~/.local/bin/petit-poucet setup
+<span class="m">         Claude Code: set up · Codex: set up · Copilot: set up</span>
+<span class="vd">●</span> Bash   ~/.local/bin/petit-poucet setup --check
+
+<span class="v">✓</span> <span class="b">Installed. Restart Claude Code, Codex and Copilot: each
+  session will start with your memory. In Codex, trust the
+  new hooks once with /hooks.</span></pre>
+      </div>
+    </div>
+  </header>
+
+  <div class="marquee">
+    <ul aria-label="Works with">
+      <li>Claude Code</li><li>Copilot CLI</li><li>Copilot in VS Code</li><li>Copilot in IntelliJ</li><li>GitHub Copilot app</li><li>Codex</li><li>Cursor</li><li>Antigravity CLI</li><li>OpenCode</li><li>omp</li><li>any MCP client</li>
+      <li aria-hidden="true">Claude Code</li><li aria-hidden="true">Copilot CLI</li><li aria-hidden="true">Copilot in VS Code</li><li aria-hidden="true">Copilot in IntelliJ</li><li aria-hidden="true">GitHub Copilot app</li><li aria-hidden="true">Codex</li><li aria-hidden="true">Cursor</li><li aria-hidden="true">Antigravity CLI</li><li aria-hidden="true">OpenCode</li><li aria-hidden="true">omp</li><li aria-hidden="true">any MCP client</li>
+    </ul>
+  </div>
+
+  <section class="shell tale">
+    <p class="eyebrow">The tale</p>
+    <blockquote>Lost in the forest at night, Le Petit Poucet follows the white pebbles he dropped on the way. <span class="dimmed">They shine in the moonlight, and lead him home.</span></blockquote>
+    <div class="grid">
+      <div class="card"><p class="kicker">a pebble</p><h3>One fact, one line</h3><p>A rule, a decision or a verified fact, saved on purpose with where it came from.</p></div>
+      <div class="card"><p class="kicker">the path</p><h3>The Index</h3><p>Every session starts with the line of pebbles that apply here: your preferences, this repo's notes.</p></div>
+      <div class="card"><p class="kicker">home</p><h3>Your own way of working</h3><p>Whichever agent wakes up, on whichever machine, it finds its way back to how you work.</p></div>
     </div>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section id="different">
-    <p class="eyebrow">What makes it different</p>
-    <h2>Memory that follows you, not one tool</h2>
+  <section class="shell">
+    <p class="eyebrow"><b>01</b> / the problem</p>
+    <h2 class="title">Your agents forget, each in <span class="accent">its own</span> way.</h2>
+    <div class="grid">
+      <div class="card"><p class="kicker">every session</p><h3>Starts from zero</h3><p>You explain your commit rules, the database quirk and the deploy steps again, to a new session that never heard them.</p></div>
+      <div class="card"><p class="kicker">every tool</p><h3>Keeps its own memory</h3><p>What Claude Code learned stays in Claude Code. Switch to Codex, Copilot or Cursor and you teach it all over again, in another format, in another place.</p></div>
+      <div class="card"><p class="kicker">every machine</p><h3>Knows something else</h3><p>The laptop, the desktop and the home server each grew their own memory. None of them has the whole picture.</p></div>
+    </div>
+  </section>
+
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section class="shell">
+    <p class="eyebrow"><b>02</b> / what makes it different</p>
+    <h2 class="title">Memory that follows <span class="accent">you</span>, not one tool.</h2>
     <p class="lead">Built-in memories are tied to one agent. A memory server on its own waits for the model to decide to call it. petit-poucet is wired into each agent, so the memory is already there when the session starts.</p>
-    <div class="cards">
-      <div class="card"><div class="icon" aria-hidden="true">🔀</div><h3>One vault, every agent</h3><p>Claude Code, Copilot, Codex, Cursor, Antigravity CLI, OpenCode and omp read and write the same notes. A rule you gave one of them, the others follow.</p></div>
-      <div class="card"><div class="icon" aria-hidden="true">⚡</div><h3>Loaded, not just available</h3><p>A session-start hook hands the agent your rules and the Index before your first message: there's no tool call for the model to forget.</p></div>
-      <div class="card"><div class="icon" aria-hidden="true">🛠️</div><h3>One command to set up</h3><p><code>petit-poucet setup</code> finds your agents and writes their config: MCP server, hooks, skills. <code>--check</code> and <code>--uninstall</code> do what they say.</p></div>
+    <div class="rows">
+      <div class="row"><span class="n">01</span><h3>One vault, every agent</h3><p>Claude Code, Copilot, Codex, Cursor, Antigravity CLI, OpenCode and omp read and write the same notes. A rule you gave one of them, the others follow.</p></div>
+      <div class="row"><span class="n">02</span><h3>Loaded, not just available</h3><p>A session-start hook hands the agent your rules and the Index before your first message: there's no tool call for the model to forget.</p></div>
+      <div class="row"><span class="n">03</span><h3>Your agent sets it up</h3><p>Paste one line, and your agent installs it, runs <code>setup</code>, checks it, and tells you what to restart. Later, <code>petit-poucet update</code> keeps it current.</p></div>
+      <div class="row"><span class="n">04</span><h3>On all your machines</h3><p><code>petit-poucet sync</code> pairs your machines through Syncthing, peer to peer and without a cloud. A project is found by its git remote, wherever it's checked out.</p></div>
     </div>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section>
-    <p class="eyebrow">How it works</p>
-    <h2>A short Index at the start, the details on demand</h2>
-    <p class="lead">In the French tale, Le Petit Poucet drops white pebbles to find his way home. petit-poucet leaves pebbles for your agents: one line per fact, the full note only when a task needs it.</p>
-    <div class="steps">
-      <div class="step"><h3>Session starts</h3><p>A hook gives the agent the memory rules and the Index of what applies here: your preferences and this repo's notes.</p></div>
-      <div class="step"><h3>Agent works</h3><p>It opens only the notes the task needs, and searches the rest, including topics tied to no repo.</p></div>
-      <div class="step"><h3>Agent learns</h3><p>A decision, a correction or a verified fact is saved on purpose, with where it came from, and committed to git.</p></div>
-    </div>
-    <div class="terminal">
-      <div class="bar" aria-hidden="true"><span></span><span></span><span></span></div>
-<pre><span class="pebble">🪨 petit-poucet · 20 notes loaded (preferences + chargepath-api)</span>
+  <section class="shell">
+    <p class="eyebrow"><b>03</b> / how it works</p>
+    <h2 class="title">A short Index at the start, the details <span class="accent">on demand</span>.</h2>
+    <p class="lead">Like the pebbles of the tale: your agent sees one line per fact, and picks up the full note only when a task needs it.</p>
+    <div class="split">
+      <ul class="ticks">
+        <li><b>Session starts.</b> A hook gives the agent the memory rules and the Index of what applies here: your preferences and this repo's notes.</li>
+        <li><b>Agent works.</b> It opens only the notes the task needs, and searches the rest, including topics tied to no repo.</li>
+        <li><b>Agent learns.</b> A decision, a correction or a verified fact is saved on purpose, with where it came from, and committed to git.</li>
+        <li><b>Memory stays clean.</b> Checks catch duplicates, stale facts and unused notes; a cleanup review proposes fixes you confirm.</li>
+      </ul>
+      <div class="terminal">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>session start</span></div>
+<pre><span class="v">🪨 petit-poucet · 20 notes loaded (preferences + chargepath-api)</span>
 
-<span class="dim">## Preferences (all repos)</span>
+<span class="m">## Preferences (all repos)</span>
 - [[Preferences/commit-rules]] — commit locally per step, never push
 - [[Preferences/never-read-secrets]] — pipe secret values, never print them
 
-<span class="dim">## Projects / chargepath-api</span>
+<span class="m">## Projects / chargepath-api</span>
 - [[Projects/chargepath-api/prod-db-no-postgis]] — spatial queries must work without PostGIS
 
-<span class="dim">Topics (searched on demand): homelab (8), work-mac (3)</span>
+<span class="m">Topics (searched on demand): homelab (8), work-mac (3)</span>
 
-<span class="dim">› memory_save</span> <span class="ok">saved Projects/chargepath-api/deploy-needs-vpn</span></pre>
+<span class="vd">●</span> memory_save  <span class="v">saved Projects/chargepath-api/deploy-needs-vpn</span></pre>
+      </div>
     </div>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section id="compare">
-    <p class="eyebrow">Compared with built-in memory</p>
-    <h2>What petit-poucet adds to your agent's own memory</h2>
+  <section class="shell" id="machines">
+    <p class="eyebrow"><b>04</b> / several machines</p>
+    <h2 class="title">The laptop, the desktop, the home server: <span class="accent">one</span> memory.</h2>
+    <p class="lead">petit-poucet sets up the <a href="https://syncthing.net">Syncthing</a> you install, and stays safe while it changes files: notes that arrive are committed at the next session start, and a conflict is merged by your agent, with you.</p>
+    <div class="split">
+<pre><span class="m"># on the first machine</span>
+<span class="v">$</span> <span class="b">petit-poucet sync</span>
+on another machine, run: petit-poucet sync <span class="b">AAAAAAA-…</span>
+
+<span class="m"># on the second</span>
+<span class="v">$</span> <span class="b">petit-poucet sync AAAAAAA-…</span>
+paired with AAAAAAA: run the command below on it too
+on another machine, run: petit-poucet sync <span class="b">BBBBBBB-…</span>
+
+<span class="m"># back on the first</span>
+<span class="v">$</span> <span class="b">petit-poucet sync BBBBBBB-…</span>
+syncing with: BBBBBBB (connected)</pre>
+      <ul class="ticks">
+        <li><b>Peer to peer, encrypted.</b> No cloud, no account; each machine names the other, so nobody joins without a command on both.</li>
+        <li><b>Projects match anywhere.</b> A repo is recognised by its git remote, so <code>~/work/shop</code> here and <code>~/src/acme-shop</code> there share their notes.</li>
+        <li><b>History stays local.</b> Each machine keeps its own git history and records what arrived.</li>
+        <li><b>Conflicts are merged, not lost.</b> When two machines change a note at once, your agent is told and merges it with you.</li>
+      </ul>
+    </div>
+    <p class="note">Step by step: <a href="https://github.com/areguig/petit-poucet/blob/main/docs/syncthing.md">several machines</a>.</p>
+  </section>
+
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section class="shell" id="compare">
+    <p class="eyebrow"><b>05</b> / compared with built-in memory</p>
+    <h2 class="title">What petit-poucet <span class="accent">adds</span> to your agent's own memory.</h2>
     <p class="lead">Claude Code, Copilot and Codex now remember things on their own, and that's useful. They differ in where the memory lives, who can read it, and how much say you have in it.</p>
     <div class="table-wrap">
       <table>
@@ -117,7 +197,7 @@
           <tr><th></th><th>Claude Code auto memory</th><th>GitHub Copilot Memory</th><th>Codex memories</th><th class="us">petit-poucet</th></tr>
         </thead>
         <tbody>
-          <tr><th>Where it lives</th><td>Markdown in <code>~/.claude/projects/&lt;repo&gt;/memory/</code>, on this machine</td><td>Stored by GitHub (in VS Code: local memory files)</td><td>Generated files in <code>~/.codex/memories/</code></td><td class="us">A folder you choose, plain Markdown, Obsidian-compatible</td></tr>
+          <tr><th>Where it lives</th><td>Markdown in <code>~/.claude/projects/&lt;repo&gt;/memory/</code>, on this machine</td><td>Stored by GitHub (in VS Code: local memory files)</td><td>Generated files in <code>~/.codex/memories/</code></td><td class="us">A folder you choose, plain Markdown, Obsidian-compatible, on every machine you pair</td></tr>
           <tr><th>Other agents</th><td>Claude Code only</td><td>Copilot only</td><td>Codex only</td><td class="us">Claude Code, Copilot, Codex, Cursor, Antigravity CLI, OpenCode, omp, any MCP client</td></tr>
           <tr><th>Scope</th><td>One repo; rules for all repos go in <code>CLAUDE.md</code>, by hand</td><td>One repo</td><td>Global</td><td class="us">Preferences for every repo, notes per repo (matched by git remote), and topics tied to no repo</td></tr>
           <tr><th>How notes are made</th><td>Claude decides what to save</td><td>The agent saves while working</td><td>Summarised in the background from past chats</td><td class="us">Saved on purpose, one fact per note, each with its source</td></tr>
@@ -127,95 +207,105 @@
         </tbody>
       </table>
     </div>
-    <p class="sources">From each vendor's documentation, October 2026: <a href="https://code.claude.com/docs/en/memory">Claude Code memory</a>, <a href="https://github.blog/changelog/2026-03-04-copilot-memory-now-on-by-default-for-pro-and-pro-users-in-public-preview/">Copilot Memory</a>, <a href="https://code.visualstudio.com/docs/copilot/agents/memory">memory in VS Code</a>, <a href="https://developers.openai.com/codex/memories">Codex memories</a>. These features change often: check the links for the current behaviour.</p>
-    <div class="verdict">
-      <div>
-        <h3>Built-in memory is enough when</h3>
-        <ul>
-          <li>you use one agent, and are happy with what it remembers;</li>
-          <li>you don't need to review or undo what it learned.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>petit-poucet helps when</h3>
-        <ul>
-          <li>you switch between Claude Code, Copilot, Codex, Cursor, Antigravity, OpenCode or omp, or use several;</li>
-          <li>you want one place to read, edit and correct what agents know;</li>
-          <li>your rules must not drift, expire or be rewritten silently.</li>
-        </ul>
-      </div>
-    </div>
-    <p class="note">Already have built-in memory? The <code>migrate-memory</code> skill moves it in, one confirmed fact at a time, and leaves the old files untouched.</p>
+    <p class="sources">From each vendor's documentation, October 2026: <a href="https://code.claude.com/docs/en/memory">Claude Code memory</a>, <a href="https://github.blog/changelog/2026-03-04-copilot-memory-now-on-by-default-for-pro-and-pro-users-in-public-preview/">Copilot Memory</a>, <a href="https://code.visualstudio.com/docs/copilot/agents/memory">memory in VS Code</a>, <a href="https://developers.openai.com/codex/memories">Codex memories</a>. These features change often: check the links for the current behaviour. Already have built-in memory? The <code>migrate-memory</code> skill moves it in, one confirmed fact at a time, and leaves the old files untouched.</p>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section>
-    <p class="eyebrow">What you get</p>
-    <h2>Small, plain, and on your side</h2>
-    <div class="cards">
-      <div class="card"><div class="icon" aria-hidden="true">📝</div><h3>Plain Markdown</h3><p>A folder of short notes you can read and edit in Obsidian or any editor. No database, no cloud, nothing pushed anywhere.</p></div>
-      <div class="card"><div class="icon" aria-hidden="true">🎯</div><h3>Curated, not recorded</h3><p>Agents save a decision, a correction or a verified fact on purpose, with its source. Nothing is scraped from transcripts.</p></div>
-      <div class="card"><div class="icon" aria-hidden="true">🔒</div><h3>Rules enforced in code</h3><p>Note format, sources and the Index are checked by the server. Secrets are refused. Your stated rules need your OK to change.</p></div>
-      <div class="card"><div class="icon" aria-hidden="true">🕰️</div><h3>Every change in git</h3><p>A local commit after each change: inspect or undo any agent edit. Several agents at once never clobber each other.</p></div>
-      <div class="card"><div class="icon" aria-hidden="true">🧹</div><h3>Keeps itself tidy</h3><p>The <code>tidy-memory</code> skill has a read-only agent propose merges, fixes and deletions. You confirm, it applies.</p></div>
-      <div class="card"><div class="icon" aria-hidden="true">🪶</div><h3>One small binary</h3><p>A Rust MCP server and its hooks, for macOS, Linux and Windows. No runtime, no service to keep running; it tells you when a new release is out.</p></div>
+  <section class="shell">
+    <p class="eyebrow"><b>06</b> / what you get</p>
+    <h2 class="title">Small, plain, and <span class="accent">on your side</span>.</h2>
+    <div class="grid">
+      <div class="card"><p class="kicker">plain markdown</p><h3>A folder you can read</h3><p>Short notes you can read and edit in Obsidian or any editor. No database, no cloud, nothing pushed anywhere.</p></div>
+      <div class="card"><p class="kicker">curated</p><h3>Saved on purpose</h3><p>Agents save a decision, a correction or a verified fact, with its source. Nothing is scraped from transcripts.</p></div>
+      <div class="card"><p class="kicker">enforced in code</p><h3>Rules that hold</h3><p>Note format, sources and the Index are checked by the server. Secrets are refused. Your stated rules need your OK to change.</p></div>
+      <div class="card"><p class="kicker">git</p><h3>Every change committed</h3><p>A local commit after each change: inspect or undo any agent edit. Several agents at once never clobber each other.</p></div>
+      <div class="card"><p class="kicker">tidy</p><h3>Keeps itself clean</h3><p>The <code>tidy-memory</code> skill has a read-only agent propose merges, fixes and deletions. You confirm, it applies.</p></div>
+      <div class="card"><p class="kicker">one binary</p><h3>Nothing to run</h3><p>A Rust MCP server and its hooks, for macOS, Linux and Windows. No runtime, no service; it tells you when a release is out.</p></div>
     </div>
   </section>
 
   <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section>
-    <p class="eyebrow">The vault</p>
-    <h2>A folder you can read</h2>
-<pre>Claude Code ─┐
-Copilot     ─┤
-Codex       ─┤
-Cursor      ─┼─ MCP tools + hooks ─▶ petit-poucet ─▶ ~/agent-memory/ (Markdown + git)
-Antigravity ─┤                                       ├─ Index.md           generated
-OpenCode    ─┤                                       ├─ Preferences/       every repo
-omp         ─┘                                       ├─ Projects/&lt;repo&gt;/   that repo
-                                                     └─ Topics/&lt;topic&gt;/    searched on demand</pre>
-    <p class="note">Want to know more? <a href="how-it-works.html">How it works</a>: a session step by step, the note format, how the memory stays clean, and the settings.</p>
-  </section>
-
-  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
-
-  <section id="install">
-    <p class="eyebrow">Install</p>
-    <h2>Two commands, then start a session</h2>
+  <section class="shell" id="install">
+    <p class="eyebrow"><b>07</b> / install</p>
+    <h2 class="title">Paste <span class="accent">one line</span> into your agent.</h2>
+    <p class="lead">Claude Code, Codex, Copilot or any agent with a shell. <a href="install.md">The guide</a> tells it what to run, how to check it worked, and what to tell you. It also updates an older install.</p>
     <div class="install">
-      <div>
-        <h3>macOS or Linux</h3>
+      <div class="card featured">
+        <p class="kicker">ask your agent</p>
+        <h3>Recommended</h3>
+        <div class="copy">
+<pre id="prompt">Install petit-poucet for me: follow https://areguig.github.io/petit-poucet/install.md</pre>
+        </div>
+        <p class="note" style="margin-top:16px">Then restart your agents: memory loads at the start of a session. In Codex, trust the new hooks once with <code>/hooks</code>.</p>
+      </div>
+      <div class="card">
+        <p class="kicker">macOS or Linux</p>
+        <div class="copy">
 <pre>curl -fsSL https://raw.githubusercontent.com/areguig/petit-poucet/main/install.sh | sh
 petit-poucet setup</pre>
+        </div>
       </div>
-      <div>
-        <h3>Windows <span class="note">(PowerShell)</span></h3>
+      <div class="card">
+        <p class="kicker">Windows · PowerShell</p>
+        <div class="copy">
 <pre>irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | iex
 petit-poucet setup</pre>
+        </div>
       </div>
     </div>
-    <p class="note">The script installs the binary in <code>~/.local/bin</code> after checking its checksum; on Windows, open a new terminal before <code>setup</code>. <code>setup</code> creates your vault in <code>~/agent-memory</code> and wires every agent it finds, keeping a backup of each file it changes. Restart your agents; in Codex, trust the new hooks once with <code>/hooks</code>. Needs <code>git</code>.</p>
+    <p class="note" style="margin-top:20px">The script installs the binary in <code>~/.local/bin</code> after checking its checksum, and prints the full path to use when that folder isn't on your PATH yet. <code>setup</code> creates your vault in <code>~/agent-memory</code> and wires every agent it finds, keeping a backup of each file it changes. Needs <code>git</code>. To update: <code>petit-poucet update</code>.</p>
   </section>
 
-  <section>
-    <p class="eyebrow">Questions</p>
-    <h2>Good to know</h2>
+  <div class="trail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section class="shell">
+    <p class="eyebrow"><b>08</b> / questions</p>
+    <h2 class="title">Good to <span class="accent">know</span>.</h2>
+    <details><summary>Is it safe to let my agent install it?</summary><p>The <a href="install.md">guide</a> keeps it to the install script, <code>setup</code> and its check: no <code>sudo</code>, nothing outside your home folder, no hand edits to your agents' config, and it asks you before setting your git identity. The script checks the binary's SHA-256 before installing it. Read the guide first: it's short.</p></details>
+    <details><summary>How do I update?</summary><p>Run <code>petit-poucet update</code>, or ask your agent to: once a day, session start checks for a new release in the background and tells you when one is out. It checks the download, replaces the binary and runs <code>setup</code> again. Before 0.6, run the install script again.</p></details>
     <details><summary>Does my memory leave my machine?</summary><p>petit-poucet sends none of it anywhere: the vault is a local folder and a local git repository, never pushed. If you pair your own machines with <code>petit-poucet sync</code>, Syncthing copies the vault between them, peer to peer and encrypted. Its only network call is a daily look at the latest release on GitHub (<code>PETIT_POUCET_NO_UPDATE_CHECK=1</code> turns it off). Like any file your agent reads, the Index and the notes it opens become part of the conversation with its model.</p></details>
+    <details><summary>Can I keep some notes off a machine?</summary><p>Yes: Syncthing never syncs <code>.stignore</code>, so each machine can leave out folders, such as work projects on a home server. <a href="https://github.com/areguig/petit-poucet/blob/main/docs/syncthing.md">Several machines</a> shows how.</p></details>
     <details><summary>Do I need Obsidian?</summary><p>No. Obsidian is a nice way to browse and edit the vault, but petit-poucet doesn't need it running. Your edits are picked up on the next tool call.</p></details>
     <details><summary>What stops an agent from saving nonsense, or a secret?</summary><p>Every note needs a type, a one-line summary and a source; tokens, keys and passwords are refused; a near-duplicate is reported so the agent updates the existing note. Rules you stated can't be changed without your confirmation.</p></details>
     <details><summary>What does <code>setup</code> change on my machine?</summary><p>Only petit-poucet's own entries in each agent's user-level config (MCP server, hooks, skills, the <code>memory-cleanup</code> subagent), with a <code>.petit-poucet.bak</code> copy of each file it changed. <code>petit-poucet setup --uninstall</code> takes them out again and keeps your vault.</p></details>
-    <details><summary>I use the 0.2 plugin for Claude Code or Copilot</summary><p>Install the binary and run <code>petit-poucet setup</code>: it removes the plugin with the agent's own command and wires the agent directly. Your vault doesn't change.</p></details>
-    <details><summary>How do I update?</summary><p>Run <code>petit-poucet update</code> (before 0.6, run the install script again). Once a day, session start checks for a new release in the background and tells you when one is out.</p></details>
     <details><summary>My agent isn't supported yet</summary><p>Any MCP client can already use the tools: point it at <code>petit-poucet serve</code>. For hooks and skills in yours, <a href="https://github.com/areguig/petit-poucet/issues">open an issue</a>: the votes decide what comes first.</p></details>
-    <details><summary>Can I use my memory on several machines?</summary><p>Yes, through <a href="https://syncthing.net">Syncthing</a>, peer to peer and without a cloud: install it on each machine, then run <code>petit-poucet sync</code> on one and the command it prints on the other. <a href="https://github.com/areguig/petit-poucet/blob/main/docs/syncthing.md">Step by step</a>.</p></details>
     <details><summary>Can my team share one memory?</summary><p>Not by design: each person keeps their own vault. Knowledge the whole team needs belongs in the repository, in <code>AGENTS.md</code> or <code>CLAUDE.md</code>.</p></details>
   </section>
 
-  <footer>
-    <p><a href="how-it-works.html">How it works</a> · Apache-2.0 · <a href="https://github.com/areguig/petit-poucet">github.com/areguig/petit-poucet</a> · <a href="https://github.com/areguig/petit-poucet/releases/latest">latest release</a> · built with <a href="https://claude.com/claude-code">Claude Code</a></p>
-  </footer>
+  <div class="shell">
+    <div class="cta">
+      <h2>Stop teaching your agents the <span class="accent">same thing twice</span>.</h2>
+      <div class="buttons">
+        <a class="button primary" href="#install">Install</a>
+        <a class="button" href="how-it-works.html">How it works</a>
+      </div>
+    </div>
+  </div>
 </main>
+
+<footer>
+  <div class="shell">
+    <span>petit-poucet · Apache-2.0 · built with <a href="https://claude.com/claude-code">Claude Code</a></span>
+    <span><a href="how-it-works.html">How it works</a> · <a href="install.md">Install guide for agents</a> · <a href="llms.txt">llms.txt</a> · <a href="https://github.com/areguig/petit-poucet/releases/latest">Latest release</a> · <a href="https://github.com/areguig/petit-poucet">GitHub</a></span>
+  </div>
+</footer>
+
+<script>
+// Copy buttons: the commands stay readable and selectable without JavaScript.
+document.querySelectorAll('.copy').forEach(function (box) {
+  var button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = 'copy';
+  button.addEventListener('click', function () {
+    navigator.clipboard.writeText(box.querySelector('pre').textContent.trim()).then(function () {
+      button.textContent = 'copied';
+      setTimeout(function () { button.textContent = 'copy'; }, 1500);
+    });
+  });
+  box.appendChild(button);
+});
+</script>
 </body>
 </html>
