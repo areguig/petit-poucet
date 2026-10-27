@@ -56,35 +56,45 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         let kept = format!("vault: kept at {}", config.vault.display());
         return Ok((vec![kept], true));
     }
-    if mode == Mode::Setup
-        && let Err(e) = update_vault_files(&config)
-    {
-        return Ok((vec![format!("vault: {e}")], false));
-    }
+    let warning = match mode {
+        Mode::Setup => match update_vault_files(&config) {
+            Ok(warning) => warning,
+            Err(e) => return Ok((vec![format!("vault: {e}")], false)),
+        },
+        _ => None,
+    };
     Ok(match Vault::load(&config.vault) {
-        Ok(vault) => (
-            vec![format!(
+        Ok(vault) => {
+            let mut lines = vec![format!(
                 "vault: {} ({} notes)",
                 config.vault.display(),
                 vault.notes.len()
-            )],
-            true,
-        ),
+            )];
+            lines.extend(
+                warning
+                    .iter()
+                    .flat_map(|w| w.lines())
+                    .map(|l| format!("vault: {l}")),
+            );
+            (lines, true)
+        }
         Err(e) => (vec![format!("vault: {e}")], false),
     })
 }
 
 // A vault made by an older version gets the ignore lines added since, such as the Syncthing ones.
-fn update_vault_files(config: &Config) -> Result<(), String> {
+// Returns the warning when they could not be committed.
+fn update_vault_files(config: &Config) -> Result<Option<String>, String> {
     init::ensure_vault_files(&config.vault)?;
-    match config.git_autocommit {
-        true => git::commit(
-            &config.vault,
-            &[init::GITIGNORE, init::STIGNORE],
-            "setup: ignore files",
-        ),
-        false => Ok(()),
+    if !config.git_autocommit {
+        return Ok(None);
     }
+    let committed = git::commit(
+        &config.vault,
+        &[init::GITIGNORE, init::STIGNORE],
+        "setup: ignore files",
+    );
+    Ok(committed.err().map(|e| init::not_committed(&e)))
 }
 
 // An agent not on this machine is only mentioned when the user named it.

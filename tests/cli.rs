@@ -980,6 +980,26 @@ fn init_and_setup_work_without_a_git_identity() {
     );
     assert!(home.path().join("agent-memory/Index.md").is_file());
 
+    // Again on the existing vault, which now lacks a line `setup` adds (#140).
+    fs::remove_file(home.path().join("agent-memory/.stignore")).unwrap();
+    let output = without_git_identity(&mut petit_poucet(home.path()))
+        .arg("setup")
+        .output()
+        .unwrap();
+    let out = stdout(&output);
+    assert!(output.status.success(), "{out}");
+    assert!(
+        out.starts_with(&format!(
+            "vault: {} (0 notes)\nvault: not committed: ",
+            dunce::canonicalize(home.path().join("agent-memory"))
+                .unwrap()
+                .display()
+        )),
+        "{out}"
+    );
+    assert!(out.contains("vault: set your git identity"), "{out}");
+    assert!(home.path().join("agent-memory/.stignore").is_file());
+
     // A home of its own: no config left by the setup above.
     let home = TempDir::new().unwrap();
     let vault = home.path().join("vault");
