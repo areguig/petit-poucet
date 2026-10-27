@@ -38,10 +38,10 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
         return match mode {
             Mode::Setup => {
                 let created = init::init(None)?;
-                let lines = created.lines().enumerate().map(|(i, line)| match i {
-                    0 => format!("vault: created, {line}"),
-                    _ => format!("vault: {line}"),
-                });
+                // init's first line names the vault itself: "vault found at …" becomes "vault: found at …".
+                let lines = created
+                    .lines()
+                    .map(|line| format!("vault: {}", line.strip_prefix("vault ").unwrap_or(line)));
                 Ok((lines.collect(), true))
             }
             Mode::Check => Ok((
