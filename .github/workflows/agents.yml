@@ -33,8 +33,8 @@ jobs:
           # On Windows, the v2026.9.24 installer can't switch to a pinned commit (checkout aborts on "local changes"):
           # the current installer runs instead, which takes Hermes's latest stable release.
           - agent: hermes
-            install: curl -fsSL "https://raw.githubusercontent.com/NousResearch/hermes-agent/$HERMES_COMMIT/scripts/install.sh" | bash -s -- --commit "$HERMES_COMMIT" --non-interactive --skip-browser --skip-computer-use && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            install-windows: "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1))) -NonInteractive -SkipComputerUse"
+            install: curl -fsSL --retry 5 "https://raw.githubusercontent.com/NousResearch/hermes-agent/$HERMES_COMMIT/scripts/install.sh" | bash -s -- --commit "$HERMES_COMMIT" --non-interactive --skip-browser --skip-computer-use && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: "& ([scriptblock]::Create((irm -MaximumRetryCount 5 -RetryIntervalSec 10 https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1))) -NonInteractive -SkipComputerUse"
           - agent: antigravity
             # Its server sometimes sends the script gzip-compressed (seen 2026-10-04): --compressed decodes it.
             install: curl -fsSL --compressed --retry 3 https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
