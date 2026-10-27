@@ -80,6 +80,7 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
             .ok_or("cannot find the home folder")?
             .join(DEFAULT_VAULT),
     };
+    let found = path.exists();
     for dir in [PREFERENCES, PROJECTS] {
         fs::create_dir_all(path.join(dir)).map_err(|e| format!("{}: {e}", path.display()))?;
     }
@@ -115,7 +116,8 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
         false => None,
     };
     let mut reply = format!(
-        "vault ready at {} ({} notes)\nto use another folder, change `vault` in {}",
+        "vault {} at {} ({} notes)\nto use another folder, change `vault` in {}",
+        if found { "found" } else { "created" },
         root.display(),
         vault.notes.len(),
         config_path.display()

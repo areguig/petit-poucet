@@ -627,7 +627,7 @@ fn init_without_a_path_uses_agent_memory_in_home_and_says_how_to_change_it() {
     assert_eq!(
         stdout(&output),
         format!(
-            "vault ready at {} (0 notes)\nto use another folder, change `vault` in {}\n",
+            "vault created at {} (0 notes)\nto use another folder, change `vault` in {}\n",
             vault.display(),
             config.display()
         )
@@ -646,16 +646,30 @@ fn write(home: &Path, path: &str, text: &str) {
 }
 
 #[test]
+fn setup_says_it_found_a_vault_already_in_place() {
+    let home = TempDir::new().unwrap();
+    write(
+        home.path(),
+        "agent-memory/Preferences/rule.md",
+        "---\ntype: feedback\nscope: all repos\nsummary: s\ncreated: 2026-10-27\ntags: [agent-memory]\n---\n\n# Rule\n",
+    );
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
+    assert!(
+        out.starts_with(&format!("vault: found at {} (1 notes)", vault.display())),
+        "{out}"
+    );
+}
+
+#[test]
 fn setup_creates_the_vault_once_and_reports_each_agent() {
     let home = TempDir::new().unwrap();
     let (ok, out) = setup(home.path(), &[]);
     assert!(ok, "{out}");
     let vault = dunce::canonicalize(home.path().join("agent-memory")).unwrap();
     assert!(
-        out.starts_with(&format!(
-            "vault: created, vault ready at {}",
-            vault.display()
-        )),
+        out.starts_with(&format!("vault: created at {} (0 notes)", vault.display())),
         "{out}"
     );
     assert!(
