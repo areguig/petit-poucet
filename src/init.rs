@@ -110,16 +110,38 @@ pub fn init(path: Option<PathBuf>) -> Result<String, String> {
         config_path.display()
     );
     if let Some(e) = committed {
-        reply.push_str(&format!(
-            "\nnot committed: {e}\nset your git identity (`git config --global user.name …`, `git config --global user.email …`) so the vault keeps its history"
-        ));
+        reply.push_str(&format!("\n{}", not_committed(&e)));
     }
     Ok(reply)
+}
+
+// The vault works without git history, so a refused commit (no git identity) only warns.
+pub fn not_committed(error: &str) -> String {
+    // Git's own advice runs over a dozen lines; its last line names the cause.
+    let cause = error
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or(error);
+    format!(
+        "not committed: {cause}\nset your git identity (`git config --global user.name …`, `git config --global user.email …`) so the vault keeps its history"
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn not_committed_keeps_only_the_cause_of_git_s_advice() {
+        let error = "git commit --quiet -m init: vault -- Index.md: Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n\nfatal: unable to auto-detect email address (got 'dev@debian.(none)')";
+        assert_eq!(
+            not_committed(error).lines().next(),
+            Some(
+                "not committed: fatal: unable to auto-detect email address (got 'dev@debian.(none)')"
+            )
+        );
+    }
 
     #[test]
     fn ensure_repo_adds_only_the_missing_ignore_lines() {
