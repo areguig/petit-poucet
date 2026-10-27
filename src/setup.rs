@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::agent::Agent;
+use crate::agent::{Agent, Dirs};
 use crate::config::Config;
 use crate::init;
 use crate::vault::Vault;
@@ -16,10 +16,11 @@ pub enum Mode {
 // One line per item; false when something needs the user (check fails on it, setup only reports it).
 pub fn run(mode: Mode, only: Option<Agent>) -> Result<(Vec<String>, bool), String> {
     let home = std::env::home_dir().ok_or("cannot find the home folder")?;
+    let dirs = Dirs::from_env(home);
     let (mut lines, mut ok) = vault(mode)?;
     let before = lines.len();
     for agent in only.map_or(Agent::ALL.to_vec(), |a| vec![a]) {
-        let (agent_lines, agent_ok) = report(agent, mode, &home, only.is_some());
+        let (agent_lines, agent_ok) = report(agent, mode, &dirs, only.is_some());
         ok &= agent_ok;
         lines.extend(agent_lines);
     }
@@ -83,30 +84,30 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
 }
 
 // An agent not on this machine is only mentioned when the user named it.
-fn report(agent: Agent, mode: Mode, home: &Path, named: bool) -> (Vec<String>, bool) {
+fn report(agent: Agent, mode: Mode, dirs: &Dirs, named: bool) -> (Vec<String>, bool) {
     let name = agent.name();
-    if !agent.installed(home) {
+    if !agent.installed(dirs) {
         let line = named.then(|| format!("{name}: not found on this machine"));
         return (line.into_iter().collect(), true);
     }
     let mut lines = Vec::new();
-    if let Some((line, ok)) = old_plugin(agent, mode, home) {
+    if let Some((line, ok)) = old_plugin(agent, mode, dirs) {
         lines.push(format!("{name}: {line}"));
         // Its hooks would run next to the new ones.
         if !ok {
             return (lines, false);
         }
     }
-    let (line, ok) = by_config(agent, mode, home).unwrap_or_else(|e| (e, false));
-    let (skills, skills_ok) = by_skills(agent, mode, home).unwrap_or_else(|e| (e, false));
+    let (line, ok) = by_config(agent, mode, dirs).unwrap_or_else(|e| (e, false));
+    let (skills, skills_ok) = by_skills(agent, mode, dirs).unwrap_or_else(|e| (e, false));
     lines.push(format!("{name}: {line}"));
     lines.push(format!("{name} skills: {skills}"));
     (lines, ok && skills_ok)
 }
 
-fn old_plugin(agent: Agent, mode: Mode, home: &Path) -> Option<(String, bool)> {
+fn old_plugin(agent: Agent, mode: Mode, dirs: &Dirs) -> Option<(String, bool)> {
     let command = agent.old_plugin()?;
-    if !agent.plugin_installed(home) {
+    if !agent.plugin_installed(dirs) {
         return None;
     }
     if mode == Mode::Check {
@@ -136,14 +137,15 @@ fn old_plugin(agent: Agent, mode: Mode, home: &Path) -> Option<(String, bool)> {
     })
 }
 
-fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), String> {
+fn by_config(agent: Agent, mode: Mode, dirs: &Dirs) -> Result<(String, bool), String> {
     let exe = || std::env::current_exe().map_err(|e| e.to_string());
+    let home = &dirs.home;
     let (setup, check, uninstall, dir): (Setup, Check, Uninstall, _) = match agent {
         Agent::Codex => (
             codex::setup,
             codex::check,
             codex::uninstall,
-            codex::dir(home),
+            dirs.codex.clone(),
         ),
         Agent::Cursor => (
             cursor::setup,
@@ -167,7 +169,7 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
             copilot::setup,
             copilot::check,
             copilot::uninstall,
-            copilot::dir(home),
+            dirs.copilot.clone(),
         ),
         Agent::Opencode => (
             opencode::setup,
@@ -180,7 +182,7 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
             hermes::setup,
             hermes::check,
             hermes::uninstall,
-            hermes::dir(home),
+            dirs.hermes.clone(),
         ),
     };
     match mode {
@@ -190,11 +192,11 @@ fn by_config(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), St
     }
 }
 
-fn by_skills(agent: Agent, mode: Mode, home: &Path) -> Result<(String, bool), String> {
+fn by_skills(agent: Agent, mode: Mode, dirs: &Dirs) -> Result<(String, bool), String> {
     match mode {
-        Mode::Setup => Ok((skills::setup(agent, home)?, true)),
-        Mode::Check => Ok(skills::check(agent, home)),
-        Mode::Uninstall => Ok((skills::uninstall(agent, home)?, true)),
+        Mode::Setup => Ok((skills::setup(agent, dirs)?, true)),
+        Mode::Check => Ok(skills::check(agent, dirs)),
+        Mode::Uninstall => Ok((skills::uninstall(agent, dirs)?, true)),
     }
 }
 

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::json;
 use toml_edit::{DocumentMut, Item, Table, value};
@@ -11,10 +11,6 @@ const AGENT: &str = "codex";
 // Codex event names, with the `petit-poucet hook` event each one runs.
 const EVENTS: [(&str, &str); 2] = [("SessionStart", "session-start"), ("Stop", "stop")];
 const TRUST: &str = "open Codex and trust its hooks once with /hooks";
-
-pub fn dir(home: &Path) -> PathBuf {
-    std::env::var_os("CODEX_HOME").map_or_else(|| home.join(".codex"), PathBuf::from)
-}
 
 fn read_config(dir: &Path) -> Result<DocumentMut, String> {
     let path = dir.join("config.toml");

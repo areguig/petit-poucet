@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use serde_json::{Value, json};
@@ -19,18 +19,6 @@ const DEFAULT_SPILL: u64 = 10_000;
 // A generous note path in an Index line, before its summary.
 const PATH_CHARS: usize = 100;
 const APPROVE: &str = "open `hermes` once and approve petit-poucet's hook when it asks";
-
-pub fn dir(home: &Path) -> PathBuf {
-    if let Some(dir) = std::env::var_os("HERMES_HOME") {
-        return PathBuf::from(dir);
-    }
-    match cfg!(windows) {
-        true => std::env::var_os("LOCALAPPDATA")
-            .map_or_else(|| home.join("AppData/Local"), PathBuf::from)
-            .join("hermes"),
-        false => home.join(".hermes"),
-    }
-}
 
 #[derive(Debug, PartialEq)]
 enum Change {
@@ -202,6 +190,8 @@ pub fn uninstall(dir: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn limits() -> Limits {
