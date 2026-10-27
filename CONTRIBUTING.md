@@ -18,6 +18,8 @@ Try a local build before any release: `cargo build --release && ./target/release
 
 `tests/syncthing.rs` runs two real Syncthing instances, pairs them with `petit-poucet sync` and checks what syncs, what doesn't, and how a conflict is reported. It needs a Syncthing binary, so `cargo test` skips it: run `SYNCTHING=/path/to/syncthing cargo test --test syncthing -- --ignored` whenever you change sync, conflicts, `check` messages, usage or session start. The Syncthing workflow runs it on Linux, macOS and Windows with a pinned release.
 
+Before a release, `sh tests/trial/sync.sh <petit-poucet built for linux x86_64>` runs the whole flow with real Claude Code on Haiku: three containers (Debian and Fedora with their own Syncthing v1, Ubuntu with Syncthing v2) set up, pair with `petit-poucet sync`, share a note, and have the agent merge a conflict made while one machine was offline. It needs Docker and a token from `claude setup-token` in `~/.config/pp-trial/claude-token`.
+
 ## Releasing
 
 Only after the change was tried locally:
