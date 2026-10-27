@@ -59,9 +59,14 @@ At the start of every session, the agent gets your rules and an Index of what ap
 - [[Projects/chargepath-api/prod-db-no-postgis]] — the prod database has no PostGIS: spatial queries must work without it
 ```
 
+## On several machines
+
+Share one memory between your machines with [Syncthing](https://syncthing.net), peer to peer and without a cloud: install it, then pair the machines with `petit-poucet sync`, one command on each side. Step by step: [several machines](docs/syncthing.md).
+
 ## Learn more
 
 - [Install and set up](docs/setup.md): agents, settings, Obsidian, migrating
+- [Several machines](docs/syncthing.md): sharing the vault through Syncthing
 - [Reference](docs/reference.md): the vault, the note format, tools, skills, commands
 - [How it works](docs/architecture.md): session start, the cleanup review, the checks, usage across machines
 - [Compared with built-in memory](docs/comparison.md)

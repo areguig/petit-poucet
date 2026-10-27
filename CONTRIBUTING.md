@@ -16,6 +16,8 @@ Each supported agent has a script in `tests/agents/` that installs petit-poucet 
 
 Try a local build before any release: `cargo build --release && ./target/release/petit-poucet setup` points every agent at that build. Run `setup` from the installed binary afterwards to point them back.
 
+`tests/syncthing.rs` runs two real Syncthing instances, pairs them with `petit-poucet sync` and checks what syncs, what doesn't, and how a conflict is reported. It needs a Syncthing binary, so `cargo test` skips it: run `SYNCTHING=/path/to/syncthing cargo test --test syncthing -- --ignored` whenever you change sync, conflicts, `check` messages, usage or session start. The Syncthing workflow runs it on Linux, macOS and Windows with a pinned release.
+
 ## Releasing
 
 Only after the change was tried locally:
