@@ -3,12 +3,28 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::vault::write_atomic;
+use crate::vault::write_atomic_mode;
 
 pub fn backup_path(path: &Path) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(".petit-poucet.bak");
     path.with_file_name(name)
+}
+
+// An agent's file can hold secrets: its rewrite and backup are never more readable than it was.
+#[cfg(unix)]
+fn mode(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path).map_or(0o644, |m| m.permissions().mode() & 0o777)
+}
+
+#[cfg(not(unix))]
+fn mode(_: &Path) -> u32 {
+    0o644
+}
+
+pub fn back_up(path: &Path, old: &str) -> Result<(), String> {
+    write_atomic_mode(&backup_path(path), old, mode(path))
 }
 
 // For agents' own files: writes only a real change, and keeps the version it replaces next to it.
@@ -18,11 +34,11 @@ pub fn replace(path: &Path, text: &str) -> Result<bool, String> {
         return Ok(false);
     }
     if let Some(old) = old {
-        write_atomic(&backup_path(path), &old)?;
+        back_up(path, &old)?;
     }
     let dir = path.parent().ok_or("no parent folder")?;
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    write_atomic(path, text)?;
+    write_atomic_mode(path, text, mode(path))?;
     Ok(true)
 }
 
@@ -78,6 +94,25 @@ mod tests {
         assert!(replace(&file, "v2").unwrap());
         assert_eq!(fs::read_to_string(&file).unwrap(), "v2");
         assert_eq!(fs::read_to_string(&backup).unwrap(), "v1");
+    }
+
+    // An agent's file can hold secrets (#169).
+    #[cfg(unix)]
+    #[test]
+    fn rewrites_and_backups_keep_the_file_s_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("config.toml");
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+        assert!(replace(&file, "v1").unwrap());
+        assert_eq!(mode(&file), 0o644, "a new file is readable like a note");
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+        for text in ["v2", "v3"] {
+            assert!(replace(&file, text).unwrap());
+            assert_eq!(mode(&file), 0o600);
+            assert_eq!(mode(&backup_path(&file)), 0o600);
+        }
     }
 
     #[test]

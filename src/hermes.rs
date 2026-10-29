@@ -5,7 +5,6 @@ use std::process::Command;
 use serde_json::{Value, json};
 
 use crate::config::{Config, Limits};
-use crate::vault::write_atomic;
 use crate::{edit, hook, hook_command, note};
 
 const AGENT: &str = "hermes";
@@ -135,7 +134,7 @@ fn run(change: &Change) -> Result<(), String> {
 fn apply(dir: &Path, changes: &[Change]) -> Result<(), String> {
     let config = dir.join("config.yaml");
     if let (false, Ok(old)) = (changes.is_empty(), fs::read_to_string(&config)) {
-        write_atomic(&edit::backup_path(&config), &old)?;
+        edit::back_up(&config, &old)?;
     }
     changes.iter().try_for_each(run)
 }
