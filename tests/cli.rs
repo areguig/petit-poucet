@@ -919,6 +919,41 @@ fn setup_for_one_agent_and_uninstall_keep_the_vault() {
     assert!(!conflict.status.success());
 }
 
+// An agent's config can hold secrets: setup, uninstall and the backups keep it as private as it was (#169).
+#[cfg(unix)]
+#[test]
+fn setup_and_uninstall_keep_a_private_agent_config_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = TempDir::new().unwrap();
+    let config = home.path().join(".claude.json");
+    let backup = home.path().join(".claude.json.petit-poucet.bak");
+    let mine = "{\n  \"mcpServers\": {\n    \"other\": {\n      \"command\": \"other\",\n      \"env\": {\n        \"TOKEN\": \"synthetic\"\n      }\n    }\n  }\n}\n";
+    fs::create_dir(home.path().join(".claude")).unwrap();
+    fs::write(&config, mine).unwrap();
+    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+    // A backup an older version left readable.
+    fs::write(&backup, "old").unwrap();
+    fs::set_permissions(&backup, fs::Permissions::from_mode(0o644)).unwrap();
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+    for args in [
+        &["--agent", "claude"][..],
+        &["--agent", "claude"],
+        &["--uninstall"],
+    ] {
+        let (ok, out) = setup(home.path(), args);
+        assert!(ok, "{out}");
+        assert_eq!(mode(&config), 0o600, "{args:?}");
+        assert_eq!(mode(&backup), 0o600, "{args:?}");
+    }
+    assert_eq!(fs::read_to_string(&config).unwrap(), mine);
+    let replaced = fs::read_to_string(&backup).unwrap();
+    assert!(
+        replaced.contains("\"TOKEN\": \"synthetic\"") && replaced.contains("petit-poucet"),
+        "the backup holds what uninstall replaced: {replaced}"
+    );
+}
+
 #[test]
 fn setup_wires_codex_in_and_out() {
     let home = TempDir::new().unwrap();
