@@ -4,6 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 
 export REVIEW_TOOL=memory_review REVIEW_NAMESPACE=mcp__petit_poucet
+node --test "$repo/tests/agents/calls.test.mjs"
 start_model
 # The mock as Codex's model provider; top-level keys go before the tables `setup` adds.
 mkdir -p "$HOME/.codex"
@@ -29,6 +30,16 @@ for turn in two three; do
   MOCK_API_KEY=dummy codex exec resume --last --dangerously-bypass-hook-trust --skip-git-repo-check "$turn" </dev/null >/dev/null
 done
 cd "$repo"
+# Diagnostic for #159, names and booleans only, a failure never fails the run: which skills the model was sent and which are on disk.
+if ! node "$repo/tests/agents/calls.mjs" "$calls" x --presence=memory,migrate-memory,tidy-memory; then
+  echo "presence diagnostic unavailable, continuing"
+fi
+for skill in memory migrate-memory tidy-memory; do
+  dir="$HOME/.agents/skills/$skill"
+  [ -d "$dir" ] && has_dir=true || has_dir=false
+  [ -f "$dir/SKILL.md" ] && has_file=true || has_file=false
+  echo "skill $skill: dir $has_dir, SKILL.md $has_file"
+done
 # Codex offers MCP tools through its tool search, which lists each server with its instructions.
 check_calls "petit-poucet holds the user's memory"
 check_update
