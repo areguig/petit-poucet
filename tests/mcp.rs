@@ -1248,3 +1248,150 @@ fn search_drops_notes_matching_under_half_the_terms() {
     drop(client);
     assert!(child.wait().unwrap().success());
 }
+
+fn git(vault: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(vault)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    stdout(&output)
+}
+
+// A committed note, a note linking to it and to `draft`, `draft` added outside petit-poucet and not in git yet,
+// and the user's work in progress: a staged file and an untracked one.
+fn vault_with_an_uncommitted_note(home: &Path) -> std::path::PathBuf {
+    let vault = home.join("vault");
+    petit_poucet(home)
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = |summary: &str, body: &str| {
+        format!(
+            "---\ntype: reference\nscope: all repos\nsummary: {summary}\ncreated: 2026-10-30\ntags: [agent-memory]\n---\n# {summary}\n\n{body}\n"
+        )
+    };
+    let write = |path: &str, text: &str| std::fs::write(vault.join(path), text).unwrap();
+    write("Preferences/kept.md", &note("kept", "Kept."));
+    write(
+        "Preferences/links.md",
+        &note(
+            "links",
+            "See [[Preferences/kept]] and [[Preferences/draft]].",
+        ),
+    );
+    git(&vault, &["add", "Preferences"]);
+    git(&vault, &["commit", "--quiet", "-m", "user: notes"]);
+    write("Preferences/draft.md", &note("draft", "Draft."));
+    write("staged.txt", "staged");
+    git(&vault, &["add", "staged.txt"]);
+    write("untracked.txt", "untracked");
+    vault
+}
+
+// Usage rides with any commit, so it is left out.
+fn last_commit_files(vault: &Path) -> Vec<String> {
+    let mut files: Vec<String> = git(
+        vault,
+        &["show", "--no-renames", "--name-only", "--format=", "HEAD"],
+    )
+    .lines()
+    .filter(|f| !f.starts_with(".usage/"))
+    .map(str::to_string)
+    .collect();
+    files.sort();
+    files
+}
+
+fn assert_user_work_untouched(vault: &Path) {
+    let pending: Vec<String> = git_status(vault)
+        .lines()
+        .filter(|l| !l.contains(".usage/"))
+        .map(str::to_string)
+        .collect();
+    assert_eq!(pending, ["A  staged.txt", "?? untracked.txt"]);
+}
+
+// Moving a note git has never seen commits its new place and the rewritten links, nothing of the user's (#172).
+#[test]
+fn a_move_commits_only_its_own_changes_whether_the_note_was_committed_or_not() {
+    let home = TempDir::new().unwrap();
+    let vault = vault_with_an_uncommitted_note(home.path());
+    let (mut child, mut client, _) = start(home.path());
+
+    let (is_error, reply) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/draft", "new_path": "Preferences/final"}),
+    );
+    assert!(!is_error && !reply.contains("not committed"), "{reply}");
+    assert_eq!(
+        git(&vault, &["log", "-1", "--format=%s"]),
+        "move: Preferences/draft -> Preferences/final (test-agent)\n"
+    );
+    assert_eq!(
+        last_commit_files(&vault),
+        ["Index.md", "Preferences/final.md", "Preferences/links.md"]
+    );
+    assert_user_work_untouched(&vault);
+
+    let (is_error, reply) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/kept", "new_path": "Preferences/renamed"}),
+    );
+    assert!(!is_error && !reply.contains("not committed"), "{reply}");
+    assert_eq!(
+        last_commit_files(&vault),
+        [
+            "Index.md",
+            "Preferences/kept.md",
+            "Preferences/links.md",
+            "Preferences/renamed.md"
+        ]
+    );
+    assert_user_work_untouched(&vault);
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// A note git has never seen has no history: its delete commits the unlinked notes and the Index, with the reason (#172).
+#[test]
+fn a_delete_commits_its_reason_and_only_its_own_changes_whether_the_note_was_committed_or_not() {
+    let home = TempDir::new().unwrap();
+    let vault = vault_with_an_uncommitted_note(home.path());
+    let (mut child, mut client, _) = start(home.path());
+
+    for (note, reason, expected) in [
+        (
+            "Preferences/draft",
+            "the draft was wrong",
+            &["Index.md", "Preferences/links.md"][..],
+        ),
+        (
+            "Preferences/kept",
+            "kept is obsolete",
+            &["Index.md", "Preferences/kept.md", "Preferences/links.md"],
+        ),
+    ] {
+        client.call("memory_read", json!({"path": note}));
+        let (is_error, reply) =
+            client.call("memory_delete", json!({"path": note, "reason": reason}));
+        assert!(!is_error && !reply.contains("not committed"), "{reply}");
+        assert_eq!(
+            git(&vault, &["log", "-1", "--format=%B"]),
+            format!("delete: {note} (test-agent)\n\n{reason}\n\n")
+        );
+        assert_eq!(last_commit_files(&vault), expected);
+        assert_user_work_untouched(&vault);
+    }
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
