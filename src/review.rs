@@ -37,48 +37,64 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
         )
         .collect();
     let limits = &config.limits;
-    let mut items = match full || vault.notes.len() <= limits.full_review_max_notes {
-        true => vault.notes.iter().map(|n| item(n, &activity)).collect(),
-        false => by_priority(&vault, &changed, &activity, limits, today, &findings),
+    let root = vault.root.display().to_string();
+    let scope_of = |shown| {
+        scope(
+            since,
+            changed.len(),
+            shown,
+            vault.notes.len(),
+            limits.review_max_pages,
+        )
     };
-    let shown = items.len();
-    items.extend(findings);
-    let pages = paginate(&items);
+    // The page numbers are reserved at their widest, so the whole response fits whatever the page count.
+    let pages_of = |shown: &[Item]| {
+        let reserved = header(&root, &scope_of(shown.len()), usize::MAX, usize::MAX).len()
+            + more(usize::MAX, full).len();
+        let items: Vec<Item> = shown.iter().chain(&findings).cloned().collect();
+        paginate(&items, PAGE_BYTES.saturating_sub(reserved))
+    };
+    let shown: Vec<Item> = match full || vault.notes.len() <= limits.full_review_max_notes {
+        true => vault.notes.iter().map(|n| item(n, &activity)).collect(),
+        false => by_priority(&vault, &changed, &activity, limits, today, |items| {
+            pages_of(items).len()
+        }),
+    };
+    let pages = pages_of(&shown);
     let Some(body) = pages.get(page.wrapping_sub(1)) else {
         return Err(format!(
             "no page {page}: the review has {} pages",
             pages.len()
         ));
     };
-    let scope = scope(
-        since,
-        changed.len(),
-        shown,
-        vault.notes.len(),
-        limits.review_max_pages,
-    );
-    let mut out = format!(
-        "vault: {}\n{scope}, then the problems found in the whole vault\npage {page} of {} ({LEGEND})\n{body}",
-        vault.root.display(),
-        pages.len()
-    );
+    let mut out = header(&root, &scope_of(shown.len()), page, pages.len()) + body;
     if page < pages.len() {
-        let full = if full { " and full=true" } else { "" };
-        writeln!(out, "more: call memory_review with page={}{full}", page + 1).unwrap();
+        out.push_str(&more(page + 1, full));
     } else {
         cleanup::record(config, started, agent)?;
     }
     Ok(out)
 }
 
-// Whole folders in priority order, the optional ones only while the pages, findings included, stay within the budget.
+fn header(root: &str, scope: &str, page: usize, pages: usize) -> String {
+    format!(
+        "vault: {root}\n{scope}, then the problems found in the whole vault\npage {page} of {pages} ({LEGEND})\n"
+    )
+}
+
+fn more(next: usize, full: bool) -> String {
+    let full = if full { " and full=true" } else { "" };
+    format!("more: call memory_review with page={next}{full}\n")
+}
+
+// Whole folders in priority order, the optional ones only while their pages, findings included, stay within the budget.
 fn by_priority(
     vault: &Vault,
     changed: &[&Note],
     activity: &Activity,
     limits: &Limits,
     today: Date,
-    findings: &[Item],
+    count_pages: impl Fn(&[Item]) -> usize,
 ) -> Vec<Item> {
     let mut notes: BTreeMap<&str, Vec<&Note>> = BTreeMap::new();
     for note in &vault.notes {
@@ -98,8 +114,7 @@ fn by_priority(
     for f in then {
         let before = items.len();
         items.extend(items_of(f));
-        let with_findings: Vec<Item> = items.iter().chain(findings).cloned().collect();
-        if paginate(&with_findings).len() > limits.review_max_pages {
+        if count_pages(&items) > limits.review_max_pages {
             items.truncate(before);
             break;
         }
@@ -129,23 +144,36 @@ fn scope(
     }
 }
 
-// Items are (section, line); a page that continues a section repeats its heading.
-fn paginate(items: &[Item]) -> Vec<String> {
+// Items are (section, line); a page that continues a section repeats its heading, and a line too long for a page goes on over the next ones.
+fn paginate(items: &[Item], budget: usize) -> Vec<String> {
     let mut pages = vec![String::new()];
     let mut heading = "";
     for (section, line) in items {
-        let starts = section != heading;
-        let size = line.len() + 1 + if starts { section.len() + 4 } else { 0 };
-        let current = pages.last().unwrap();
-        if !current.is_empty() && current.len() + size > PAGE_BYTES {
+        let mut rest = line.as_str();
+        loop {
+            let page = pages.last_mut().unwrap();
+            let starts = page.is_empty() || section != heading;
+            let title = if starts { section.len() + 4 } else { 0 };
+            let room = budget.saturating_sub(page.len() + title + 1);
+            if rest.len() > room && !page.is_empty() {
+                pages.push(String::new());
+                continue;
+            }
+            // One character at least, so a budget too small for anything still moves on.
+            let end = rest
+                .floor_char_boundary(room)
+                .max(rest.ceil_char_boundary(1));
+            if starts {
+                writeln!(page, "## {section}").unwrap();
+                heading = section;
+            }
+            writeln!(page, "{}", &rest[..end]).unwrap();
+            rest = &rest[end..];
+            if rest.is_empty() {
+                break;
+            }
             pages.push(String::new());
         }
-        let page = pages.last_mut().unwrap();
-        if starts || page.is_empty() {
-            writeln!(page, "## {section}").unwrap();
-            heading = section;
-        }
-        writeln!(page, "{line}").unwrap();
     }
     pages
 }
@@ -416,6 +444,41 @@ mod tests {
     }
 
     #[test]
+    fn oversized_summary_is_paginated_without_loss() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("Preferences")).unwrap();
+        let summary = "résumé ".repeat(714) + "ok";
+        fs::write(
+            tmp.path().join("Preferences/big.md"),
+            note("all repos", "").replace("summary: s", &format!("summary: {summary}")),
+        )
+        .unwrap();
+        let config = Config {
+            git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
+        };
+
+        let mut lines = String::new();
+        for page in 1.. {
+            let text = review(&config, page, false, "test").unwrap();
+            assert!(
+                text.len() <= PAGE_BYTES,
+                "page {page}: {} bytes",
+                text.len()
+            );
+            let body = text.split_once(&format!("({LEGEND})\n")).unwrap().1;
+            lines.extend(
+                body.lines()
+                    .filter(|l| !l.starts_with("## ") && !l.starts_with("more: ")),
+            );
+            if !text.contains("more:") {
+                break;
+            }
+        }
+        assert!(lines.contains(&summary), "{lines}");
+    }
+
+    #[test]
     fn pages_fit_the_budget_repeat_their_heading_and_keep_every_line_in_order() {
         let items: Vec<(String, String)> = (0..150)
             .map(|i| {
@@ -427,7 +490,7 @@ mod tests {
             })
             .collect();
 
-        let pages = paginate(&items);
+        let pages = paginate(&items, PAGE_BYTES);
         assert!(pages.len() > 2);
         let mut lines = Vec::new();
         for page in &pages {
@@ -437,5 +500,25 @@ mod tests {
         }
         let expected: Vec<&str> = items.iter().map(|(_, line)| line.as_str()).collect();
         assert_eq!(lines, expected);
+    }
+
+    #[test]
+    fn a_line_too_long_for_its_page_goes_on_after_the_repeated_heading_between_characters() {
+        let section = format!("Projects/{}", "a".repeat(100));
+        let long = format!("- x{}", "é".repeat(200));
+        let items = vec![
+            (section.clone(), "- short".to_string()),
+            (section.clone(), long.clone()),
+        ];
+
+        let pages = paginate(&items, 300);
+        assert!(pages.len() > 2);
+        let mut text = String::new();
+        for page in &pages {
+            assert!(page.len() <= 300, "{} bytes: {page}", page.len());
+            let body = page.strip_prefix(&format!("## {section}\n")).unwrap();
+            text.extend(body.lines());
+        }
+        assert_eq!(text, format!("- short{long}"));
     }
 }
