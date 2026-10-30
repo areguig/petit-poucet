@@ -253,6 +253,12 @@ fn target_folder(
         .ok_or(format!("no folder name in {}", dir.display()))?
         .to_string_lossy()
         .into_owned();
+    // The vault scan skips dot folders, so such a project would be invisible.
+    if folder.starts_with('.') {
+        return Err(format!(
+            "`{folder}` cannot name a project: pass scope to save in an existing project"
+        ));
+    }
     let remotes = git::remote_urls(dir);
     let key = match vault.projects.iter().find(|p| p.key == folder) {
         // Another repo already owns this folder name (resolve didn't match it): name the project after the remote.
