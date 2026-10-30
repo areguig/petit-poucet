@@ -393,6 +393,58 @@ fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
     );
 }
 
+// Two SSH endpoints on one host that differ only by port are two repos (#182).
+#[test]
+fn session_start_tells_ssh_ports_apart() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    write(
+        &vault,
+        "Projects/app/_project.md",
+        "---\ntype: project-identity\nremotes: [\"ssh://git@git.example.test:2222/team/app.git\"]\nfolders: [app-2222]\n---\n",
+    );
+    write(
+        &vault,
+        "Projects/app/port-rule.md",
+        "---\ntype: project\nscope: app\nsummary: the app on port 2222\ncreated: 2026-10-30\n---\n\n# Port rule\n",
+    );
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let loads_app = |port: &str| {
+        let checkout = home.path().join(format!("checkout-{port}"));
+        fs::create_dir(&checkout).unwrap();
+        let remote = format!("ssh://git@git.example.test:{port}/team/app.git");
+        for args in [
+            &["init", "--quiet"][..],
+            &["remote", "add", "origin", &remote],
+        ] {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&checkout)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+        let event = serde_json::json!({"cwd": checkout}).to_string();
+        let claude: serde_json::Value = serde_json::from_str(&hook(
+            home.path(),
+            &["session-start", "--agent", "claude"],
+            &event,
+        ))
+        .unwrap();
+        let context = claude["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        context.contains("[[Projects/app/port-rule]]")
+    };
+    assert!(!loads_app("2223"));
+    assert!(loads_app("2222"));
+}
+
 // Syncthing drops files into the vault without petit-poucet: session start indexes and commits them, and names conflicts (#81).
 #[test]
 fn session_start_catches_up_with_files_synced_in() {
