@@ -81,29 +81,37 @@ pub fn list(files: &[String]) -> String {
 
 // The project a working directory belongs to; records its git remote when the project has none yet.
 pub fn identify(config: &Config, vault: &Vault, dir: &Path, agent: &str) -> Option<String> {
-    let key = project::resolve(&vault.projects, dir)?.to_string();
-    let found = vault.projects.iter().find(|p| p.key == key)?;
+    let root = &vault.root;
+    // Another session may have recorded a remote since `vault` was loaded: resolve again under the lock.
+    let _lock = match lock::vault(root) {
+        Ok(lock) => lock,
+        Err(e) => {
+            eprintln!("petit-poucet: project not identified from the vault on disk: {e}");
+            return None;
+        }
+    };
+    let fresh = match Vault::load(root) {
+        Ok(vault) => vault,
+        Err(e) => {
+            eprintln!("petit-poucet: project not identified from the vault on disk: {e}");
+            return None;
+        }
+    };
+    let key = project::resolve(&fresh.projects, dir)?.to_string();
+    let found = fresh.projects.iter().find(|p| p.key == key)?;
     // Only a session in the project knows where it is checked out: `check` resolves the paths its notes name there.
     let checkout = git::toplevel(dir).map_or_else(|| dir.to_path_buf(), PathBuf::from);
-    let recorded =
-        lock::vault(&vault.root).and_then(|_lock| checkouts::record(&vault.root, &key, &checkout));
-    if let Err(e) = recorded {
+    if let Err(e) = checkouts::record(root, &key, &checkout) {
         eprintln!("petit-poucet: checkout of {key} not recorded: {e}");
     }
     if let (Some(remotes), Ok(identity)) = (project::missing_remotes(found, dir), &found.identity) {
         let file = format!("{PROJECTS}/{key}/{IDENTITY_FILE}");
-        let saved = lock::vault(&vault.root).and_then(|_lock| {
-            project::render_identity(&remotes, &identity.folders)
-                .and_then(|text| write_atomic(&vault.root.join(&file), &text))
-                .and_then(|()| match config.git_autocommit {
-                    true => git::commit(
-                        &vault.root,
-                        &[&file],
-                        &format!("identify: {file} ({agent})"),
-                    ),
-                    false => Ok(()),
-                })
-        });
+        let saved = project::render_identity(&remotes, &identity.folders)
+            .and_then(|text| write_atomic(&root.join(&file), &text))
+            .and_then(|()| match config.git_autocommit {
+                true => git::commit(root, &[&file], &format!("identify: {file} ({agent})")),
+                false => Ok(()),
+            });
         if let Err(e) = saved {
             eprintln!("petit-poucet: remote of {key} not recorded: {e}");
         }
@@ -170,5 +178,64 @@ mod tests {
         identify(&config, &vault, &other, "test");
         let text = fs::read_to_string(root.join("Projects/known/_project.md")).unwrap();
         assert!(!text.contains("someone/else"), "{text}");
+    }
+
+    fn two_stale_vaults(root: &Path) -> (Config, Vault, Vault) {
+        identity(root, "app", "[]");
+        let config = Config {
+            git_autocommit: false,
+            ..Config::new(root.to_path_buf())
+        };
+        (
+            config,
+            Vault::load(root).unwrap(),
+            Vault::load(root).unwrap(),
+        )
+    }
+
+    fn toplevel(dir: &Path) -> PathBuf {
+        PathBuf::from(git::toplevel(dir).unwrap())
+    }
+
+    #[test]
+    fn a_stale_vault_does_not_claim_a_project_another_remote_identified() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("vault");
+        let (config, first, stale) = two_stale_vaults(&root);
+        let a = checkout(&tmp.path().join("one"), "app", "git@github.com:me/app.git");
+        assert_eq!(
+            identify(&config, &first, &a, "test").as_deref(),
+            Some("app")
+        );
+
+        let b = checkout(
+            &tmp.path().join("two"),
+            "app",
+            "git@github.com:other/app.git",
+        );
+        assert_eq!(identify(&config, &stale, &b, "test"), None);
+        let text = fs::read_to_string(root.join("Projects/app/_project.md")).unwrap();
+        assert!(text.contains("github.com/me/app"), "{text}");
+        assert!(!text.contains("other/app"), "{text}");
+        assert_eq!(checkouts::load(&root).get("app"), Some(&toplevel(&a)));
+    }
+
+    #[test]
+    fn a_stale_vault_still_records_another_checkout_of_the_same_remote() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("vault");
+        let (config, first, stale) = two_stale_vaults(&root);
+        let a = checkout(&tmp.path().join("one"), "app", "git@github.com:me/app.git");
+        assert_eq!(
+            identify(&config, &first, &a, "test").as_deref(),
+            Some("app")
+        );
+
+        let b = checkout(&tmp.path().join("two"), "app", "https://github.com/me/app");
+        assert_eq!(
+            identify(&config, &stale, &b, "test").as_deref(),
+            Some("app")
+        );
+        assert_eq!(checkouts::load(&root).get("app"), Some(&toplevel(&b)));
     }
 }
