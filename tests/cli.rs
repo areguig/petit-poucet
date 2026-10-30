@@ -393,6 +393,58 @@ fn session_start_ignores_a_project_of_another_repo_with_the_same_folder_name() {
     );
 }
 
+// Two SSH endpoints on one host that differ only by port are two repos (#182).
+#[test]
+fn session_start_tells_ssh_ports_apart() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    copy_dir(Path::new(FIXTURE), &vault);
+    write(
+        &vault,
+        "Projects/app/_project.md",
+        "---\ntype: project-identity\nremotes: [\"ssh://git@git.example.test:2222/team/app.git\"]\nfolders: [app-2222]\n---\n",
+    );
+    write(
+        &vault,
+        "Projects/app/port-rule.md",
+        "---\ntype: project\nscope: app\nsummary: the app on port 2222\ncreated: 2026-10-30\n---\n\n# Port rule\n",
+    );
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let loads_app = |port: &str| {
+        let checkout = home.path().join(format!("checkout-{port}"));
+        fs::create_dir(&checkout).unwrap();
+        let remote = format!("ssh://git@git.example.test:{port}/team/app.git");
+        for args in [
+            &["init", "--quiet"][..],
+            &["remote", "add", "origin", &remote],
+        ] {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&checkout)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+        let event = serde_json::json!({"cwd": checkout}).to_string();
+        let claude: serde_json::Value = serde_json::from_str(&hook(
+            home.path(),
+            &["session-start", "--agent", "claude"],
+            &event,
+        ))
+        .unwrap();
+        let context = claude["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        context.contains("[[Projects/app/port-rule]]")
+    };
+    assert!(!loads_app("2223"));
+    assert!(loads_app("2222"));
+}
+
 // Syncthing drops files into the vault without petit-poucet: session start indexes and commits them, and names conflicts (#81).
 #[test]
 fn session_start_catches_up_with_files_synced_in() {
@@ -984,6 +1036,133 @@ fn setup_wires_codex_in_and_out() {
         !ok && out.contains("Codex: missing the MCP server"),
         "{out}"
     );
+}
+
+#[test]
+fn setup_uninstall_keeps_the_users_files_in_a_shared_skill_folder() {
+    let home = TempDir::new().unwrap();
+    fs::create_dir(home.path().join(".codex")).unwrap();
+    fs::create_dir(home.path().join(".cursor")).unwrap();
+    assert!(setup(home.path(), &[]).0);
+    let skills = home.path().join(".agents/skills");
+    write(home.path(), ".agents/skills/memory/notes.md", "the user's");
+
+    let (ok, out) = setup(home.path(), &["--uninstall", "--agent", "codex"]);
+    assert!(ok && out.ends_with("skills kept for Cursor\n"), "{out}");
+    assert!(skills.join("memory/SKILL.md").is_file());
+
+    let (ok, out) = setup(home.path(), &["--uninstall", "--agent", "cursor"]);
+    assert!(ok && out.ends_with("Cursor skills: removed\n"), "{out}");
+    assert!(!skills.join("memory/SKILL.md").exists());
+    assert_eq!(
+        fs::read_to_string(skills.join("memory/notes.md")).unwrap(),
+        "the user's"
+    );
+    assert!(!skills.join("migrate-memory").exists());
+    assert!(!skills.join("tidy-memory").exists());
+
+    let (ok, out) = setup(home.path(), &["--uninstall", "--agent", "cursor"]);
+    assert!(
+        ok && out.ends_with("Cursor skills: nothing to remove\n"),
+        "{out}"
+    );
+    assert!(skills.join("memory/notes.md").is_file());
+}
+
+#[test]
+fn setup_uninstall_preserves_foreign_hooks() {
+    use serde_json::{Value, json};
+
+    let home = TempDir::new().unwrap();
+    fs::create_dir(home.path().join(".claude")).unwrap();
+    fs::create_dir(home.path().join(".codex")).unwrap();
+    assert!(setup(home.path(), &[]).0);
+
+    let foreign = json!({"type": "command", "command": "notify"});
+    let hookless = json!({"matcher": "Bash"});
+    let null_hooks = json!({"matcher": "Edit", "hooks": null});
+    let scalar_hooks = json!({"matcher": "Read", "hooks": "keep"});
+    let only_foreign = json!({"matcher": "Write", "hooks": [foreign]});
+    let scalar_group = json!("not a group");
+    let array_group = json!(["not", "a", "group"]);
+    let mixed_foreign = json!({"matcher": "*", "timeout": 5, "hooks": [foreign]});
+    let files = [".claude/settings.json", ".codex/hooks.json"];
+    for file in files {
+        let path = home.path().join(file);
+        let mut settings: Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let ours = settings["hooks"]["Stop"][0]["hooks"][0].clone();
+        let mut mixed = mixed_foreign.clone();
+        mixed["hooks"].as_array_mut().unwrap().push(ours);
+        settings["hooks"]["Stop"].as_array_mut().unwrap().extend([
+            mixed,
+            hookless.clone(),
+            null_hooks.clone(),
+            scalar_hooks.clone(),
+            only_foreign.clone(),
+            scalar_group.clone(),
+            array_group.clone(),
+        ]);
+        settings["hooks"]["Notification"] = json!("scalar event");
+        settings["model"] = json!("keep");
+        fs::write(&path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+    }
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    for file in files {
+        let text = fs::read_to_string(home.path().join(file)).unwrap();
+        let settings: Value = serde_json::from_str(&text).unwrap();
+        let stop = settings["hooks"]["Stop"].as_array().unwrap();
+        let ours = |group: &&Value| group.to_string().contains("petit-poucet");
+        assert_eq!(stop.iter().filter(ours).count(), 1, "{file}: {text}");
+        assert!(stop.contains(&mixed_foreign), "{file}: {text}");
+        for kept in [
+            &hookless,
+            &null_hooks,
+            &scalar_hooks,
+            &only_foreign,
+            &scalar_group,
+            &array_group,
+        ] {
+            assert!(stop.contains(kept), "{file}: {kept}");
+        }
+        assert_eq!(settings["hooks"]["Notification"], "scalar event", "{file}");
+        assert_eq!(settings["model"], "keep", "{file}");
+    }
+
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(ok, "{out}");
+    let expected = json!({
+        "hooks": {
+            "Stop": [
+                mixed_foreign, hookless, null_hooks, scalar_hooks, only_foreign,
+                scalar_group, array_group
+            ],
+            "Notification": "scalar event"
+        },
+        "model": "keep"
+    });
+    for file in files {
+        let text = fs::read_to_string(home.path().join(file)).unwrap();
+        assert!(!text.contains("petit-poucet"), "{file}: {text}");
+        assert_eq!(
+            serde_json::from_str::<Value>(&text).unwrap(),
+            expected,
+            "{file}"
+        );
+    }
+
+    let after_first: Vec<String> = files
+        .iter()
+        .map(|file| fs::read_to_string(home.path().join(file)).unwrap())
+        .collect();
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(ok, "{out}");
+    for (file, before) in files.iter().zip(&after_first) {
+        let text = fs::read_to_string(home.path().join(file)).unwrap();
+        assert_eq!(&text, before, "{file}");
+    }
 }
 
 #[test]

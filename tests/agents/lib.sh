@@ -11,6 +11,8 @@ COPILOT_HOME="$HOME/.copilot"
 CODEX_HOME="$HOME/.codex"
 HERMES_HOME="$HOME/.hermes"
 export HOME COPILOT_HOME CODEX_HOME HERMES_HOME
+# An inherited vault would lead outside HOME too: the default vault is $HOME/agent-memory.
+unset PETIT_POUCET_VAULT
 # On Windows (Git Bash), programs find the home folder through USERPROFILE, and take Windows paths.
 case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*)

@@ -4,6 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 
 export REVIEW_TOOL=memory_review REVIEW_NAMESPACE=mcp__petit_poucet
+node --test "$repo/tests/agents/calls.test.mjs"
 start_model
 # The mock as Codex's model provider; top-level keys go before the tables `setup` adds.
 mkdir -p "$HOME/.codex"
@@ -22,13 +23,23 @@ has "$(codex mcp get petit-poucet 2>&1)" 'command: .*petit-poucet'
 has "$(codex mcp list 2>/dev/null)" '^petit-poucet .* enabled'
 
 # Users trust the hooks once in Codex's /hooks; `codex exec` would skip untrusted ones silently.
-cd "$(mktemp -d)"
+session_dir=$(mktemp -d)
+if [ -n "$windows" ]; then
+  # Codex finds the user-level skills in the OS-resolved profile, which the throwaway HOME doesn't redirect:
+  # making that home a project root gives it the same skills as the project's .agents/skills.
+  git init -q "$HOME"
+  session_dir="$HOME"
+fi
+cd "$session_dir"
 codex="codex exec --dangerously-bypass-hook-trust --skip-git-repo-check"
 MOCK_API_KEY=dummy $codex one </dev/null >/dev/null
 for turn in two three; do
   MOCK_API_KEY=dummy codex exec resume --last --dangerously-bypass-hook-trust --skip-git-repo-check "$turn" </dev/null >/dev/null
 done
 cd "$repo"
+# The skills catalog Codex sent the model lists the three installed skills (#159).
+node "$repo/tests/agents/calls.mjs" "$calls" x --catalog=memory,migrate-memory,tidy-memory "--codex-version=$(codex --version 2>/dev/null | head -n 1)" ||
+  fail "Codex's skills catalog lacks an installed skill"
 # Codex offers MCP tools through its tool search, which lists each server with its instructions.
 check_calls "petit-poucet holds the user's memory"
 check_update
