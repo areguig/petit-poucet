@@ -987,6 +987,37 @@ fn setup_wires_codex_in_and_out() {
 }
 
 #[test]
+fn setup_uninstall_keeps_the_users_files_in_a_shared_skill_folder() {
+    let home = TempDir::new().unwrap();
+    fs::create_dir(home.path().join(".codex")).unwrap();
+    fs::create_dir(home.path().join(".cursor")).unwrap();
+    assert!(setup(home.path(), &[]).0);
+    let skills = home.path().join(".agents/skills");
+    write(home.path(), ".agents/skills/memory/notes.md", "the user's");
+
+    let (ok, out) = setup(home.path(), &["--uninstall", "--agent", "codex"]);
+    assert!(ok && out.ends_with("skills kept for Cursor\n"), "{out}");
+    assert!(skills.join("memory/SKILL.md").is_file());
+
+    let (ok, out) = setup(home.path(), &["--uninstall", "--agent", "cursor"]);
+    assert!(ok && out.ends_with("Cursor skills: removed\n"), "{out}");
+    assert!(!skills.join("memory/SKILL.md").exists());
+    assert_eq!(
+        fs::read_to_string(skills.join("memory/notes.md")).unwrap(),
+        "the user's"
+    );
+    assert!(!skills.join("migrate-memory").exists());
+    assert!(!skills.join("tidy-memory").exists());
+
+    let (ok, out) = setup(home.path(), &["--uninstall", "--agent", "cursor"]);
+    assert!(
+        ok && out.ends_with("Cursor skills: nothing to remove\n"),
+        "{out}"
+    );
+    assert!(skills.join("memory/notes.md").is_file());
+}
+
+#[test]
 fn setup_uninstall_preserves_foreign_hooks() {
     use serde_json::{Value, json};
 

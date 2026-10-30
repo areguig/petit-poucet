@@ -186,10 +186,13 @@ pub fn uninstall(agent: Agent, dirs: &Dirs) -> Result<String, String> {
     }
     for (name, _) in SKILLS {
         let skill = dir.join(name);
-        if skill.is_dir() {
-            fs::remove_dir_all(&skill).map_err(|e| format!("{}: {e}", skill.display()))?;
+        let path = skill.join("SKILL.md");
+        if path.is_file() {
+            fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             removed = true;
         }
+        // Files the user added next to it keep the folder.
+        fs::remove_dir(&skill).ok();
     }
     Ok(match removed {
         true => "removed".to_string(),
