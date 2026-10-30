@@ -987,6 +987,102 @@ fn setup_wires_codex_in_and_out() {
 }
 
 #[test]
+fn setup_uninstall_preserves_foreign_hooks() {
+    use serde_json::{Value, json};
+
+    let home = TempDir::new().unwrap();
+    fs::create_dir(home.path().join(".claude")).unwrap();
+    fs::create_dir(home.path().join(".codex")).unwrap();
+    assert!(setup(home.path(), &[]).0);
+
+    let foreign = json!({"type": "command", "command": "notify"});
+    let hookless = json!({"matcher": "Bash"});
+    let null_hooks = json!({"matcher": "Edit", "hooks": null});
+    let scalar_hooks = json!({"matcher": "Read", "hooks": "keep"});
+    let only_foreign = json!({"matcher": "Write", "hooks": [foreign]});
+    let scalar_group = json!("not a group");
+    let array_group = json!(["not", "a", "group"]);
+    let mixed_foreign = json!({"matcher": "*", "timeout": 5, "hooks": [foreign]});
+    let files = [".claude/settings.json", ".codex/hooks.json"];
+    for file in files {
+        let path = home.path().join(file);
+        let mut settings: Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let ours = settings["hooks"]["Stop"][0]["hooks"][0].clone();
+        let mut mixed = mixed_foreign.clone();
+        mixed["hooks"].as_array_mut().unwrap().push(ours);
+        settings["hooks"]["Stop"].as_array_mut().unwrap().extend([
+            mixed,
+            hookless.clone(),
+            null_hooks.clone(),
+            scalar_hooks.clone(),
+            only_foreign.clone(),
+            scalar_group.clone(),
+            array_group.clone(),
+        ]);
+        settings["hooks"]["Notification"] = json!("scalar event");
+        settings["model"] = json!("keep");
+        fs::write(&path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+    }
+
+    let (ok, out) = setup(home.path(), &[]);
+    assert!(ok, "{out}");
+    for file in files {
+        let text = fs::read_to_string(home.path().join(file)).unwrap();
+        let settings: Value = serde_json::from_str(&text).unwrap();
+        let stop = settings["hooks"]["Stop"].as_array().unwrap();
+        let ours = |group: &&Value| group.to_string().contains("petit-poucet");
+        assert_eq!(stop.iter().filter(ours).count(), 1, "{file}: {text}");
+        assert!(stop.contains(&mixed_foreign), "{file}: {text}");
+        for kept in [
+            &hookless,
+            &null_hooks,
+            &scalar_hooks,
+            &only_foreign,
+            &scalar_group,
+            &array_group,
+        ] {
+            assert!(stop.contains(kept), "{file}: {kept}");
+        }
+        assert_eq!(settings["hooks"]["Notification"], "scalar event", "{file}");
+        assert_eq!(settings["model"], "keep", "{file}");
+    }
+
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(ok, "{out}");
+    let expected = json!({
+        "hooks": {
+            "Stop": [
+                mixed_foreign, hookless, null_hooks, scalar_hooks, only_foreign,
+                scalar_group, array_group
+            ],
+            "Notification": "scalar event"
+        },
+        "model": "keep"
+    });
+    for file in files {
+        let text = fs::read_to_string(home.path().join(file)).unwrap();
+        assert!(!text.contains("petit-poucet"), "{file}: {text}");
+        assert_eq!(
+            serde_json::from_str::<Value>(&text).unwrap(),
+            expected,
+            "{file}"
+        );
+    }
+
+    let after_first: Vec<String> = files
+        .iter()
+        .map(|file| fs::read_to_string(home.path().join(file)).unwrap())
+        .collect();
+    let (ok, out) = setup(home.path(), &["--uninstall"]);
+    assert!(ok, "{out}");
+    for (file, before) in files.iter().zip(&after_first) {
+        let text = fs::read_to_string(home.path().join(file)).unwrap();
+        assert_eq!(&text, before, "{file}");
+    }
+}
+
+#[test]
 fn codex_hooks_reply_in_codex_format() {
     let home = TempDir::new().unwrap();
     let vault = home.path().join("vault");
