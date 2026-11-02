@@ -637,6 +637,40 @@ fn a_cleanup_lists_notes_nobody_opens() {
     assert!(child.wait().unwrap().success());
 }
 
+// A summary longer than a page goes on over the next pages, whole, each response within the inline limit (#179).
+#[test]
+fn a_cleanup_review_pages_an_oversized_summary_without_loss() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let summary = "résumé ".repeat(714) + "ok";
+    let (is_error, saved) = client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "Long summary", "summary": summary,
+               "fact": "Long.", "source": "the user on 2026-10-30", "how_to_apply": "Always."}),
+    );
+    assert!(!is_error, "{saved}");
+
+    let (pages, _) = review_pages(&mut client, false);
+    assert!(pages.len() > 2, "{pages:?}");
+    let mut lines = String::new();
+    for page in &pages {
+        assert!(page.len() <= 3 * 1024, "{} bytes: {page}", page.len());
+        let body = page.split_once(" | summary)\n").unwrap().1;
+        lines.extend(
+            body.lines()
+                .filter(|l| !l.starts_with("## ") && !l.starts_with("more: ")),
+        );
+    }
+    assert!(lines.contains(&summary), "{lines}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 // Usage lives in the vault: a read never commits alone, and every machine's reads add up (#88).
 #[test]
 fn usage_rides_with_the_next_commit_and_adds_up_across_machines() {
