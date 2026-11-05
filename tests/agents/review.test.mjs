@@ -38,10 +38,14 @@ const note = (name) => {
   const n = name.slice("fact-".length, -".md".length);
   return `- fact-${n} | project | 2026-09-01 | never | fact ${n} of a large vault, worded like a real one-line summary`;
 };
-const HEADER = "vault: /synthetic/vault\nfirst cleanup: all 250 notes, then the problems found in the whole vault\npage 1 of 9 (slug | type | created[/updated] | reads and last read | summary)\n## Projects/big\n";
-const lines = names.slice(0, 30).map(note);
+// The vault line's length moves where page 1 ends: the binary sent 25 notes under a 58-byte vault line, 24 under a 194-byte one.
+const header = (vaultBytes, pages) =>
+  `${"vault: /synthetic/".padEnd(vaultBytes, "v")}\nfirst cleanup: all 250 notes, then the problems found in the whole vault\npage 1 of ${pages} (slug | type | created[/updated] | reads and last read | summary)\n## Projects/big\n`;
+const HEADER = header(58, 26);
+const lines = names.slice(0, 25).map(note);
 const MORE = "more: call memory_review with page=2\n";
 const PAGE = HEADER + lines.join("\n") + "\n" + MORE;
+const LONG_ROOT_PAGE = header(194, 27) + names.slice(0, 24).map(note).join("\n") + "\n" + MORE;
 
 const call = (request) => JSON.stringify({ path: "/v1", body: JSON.stringify({ tools: [{ description: "memory_review: pages of notes" }], ...request }) });
 // Each exercised agent's API, as the mock receives it: the page is the tool result of the call after the tool call.
@@ -78,6 +82,8 @@ const assertFails = (file) => {
 
 for (const [agent, deliver] of Object.entries(deliveries)) {
   test(`the whole first page inline passes for ${agent}`, () => assertPasses(capture([first, deliver(PAGE)].join("\n"))));
+  test(`the whole first page under a long vault path passes for ${agent}`, () =>
+    assertPasses(capture([first, deliver(LONG_ROOT_PAGE)].join("\n"))));
   // Agents cap or spill long tool results; each of these shapes reached a model in place of the page.
   for (const [name, text] of [
     ["the heading only", HEADER],
@@ -87,6 +93,9 @@ for (const [agent, deliver] of Object.entries(deliveries)) {
     ["a page cut in the middle", `${HEADER}${lines.slice(0, 5).join("\n")}\n[... 2000 characters omitted ...]\n${lines.slice(-5).join("\n")}\n${MORE}`],
     ["a page missing a note", `${HEADER}${lines.filter((_, i) => i !== 15).join("\n")}\n${MORE}`],
     ["a page missing its first note", `${HEADER}${lines.slice(1).join("\n")}\n${MORE}`],
+    ["a page missing its last note", `${HEADER}${lines.slice(0, -1).join("\n")}\n${MORE}`],
+    ["a page missing its last notes", `${HEADER}${lines.slice(0, 2).join("\n")}\n${MORE}`],
+    ["a page with a note past its end", `${HEADER}${names.slice(0, 26).map(note).join("\n")}\n${MORE}`],
   ]) {
     test(`${name} in a tool result fails for ${agent}`, () => assertFails(capture([first, deliver(text)].join("\n"))));
   }

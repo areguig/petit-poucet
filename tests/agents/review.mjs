@@ -1,5 +1,5 @@
 // Checks that the first memory_review page of big_vault's notes reached the model whole and inline, in a tool result:
-// its header, then every note of the page in order from the first, then its line naming page 2.
+// its header, then its notes in order from the first up to where src/review.rs ends page 1, then its line naming page 2.
 // Only the first page is called for, so the later pages are not checked.
 // Usage: node review.mjs <log file>; prints one line per tool result, never what the calls contain.
 import { readFileSync } from "node:fs";
@@ -35,14 +35,25 @@ const texts = (value) => {
 const NOTES = Array.from({ length: 250 }, (_, i) => `fact-${i}.md`)
   .sort()
   .map((name) => name.slice("fact-".length, -".md".length));
-const NOTE = /^- fact-(\d+) \| project \| 2026-09-01 \| [^|]* \| fact (\d+) of a large vault, worded like a real one-line summary$/;
+const NOTE = /^- fact-(\d+) \| project \| 2026-09-01 \| ([^|]*) \| fact (\d+) of a large vault, worded like a real one-line summary$/;
+// src/review.rs's page contract: PAGE_BYTES less the header and more: line at their widest page numbers (usize::MAX),
+// and a note goes on the next page once it no longer fits, so the vault path's length moves where page 1 ends.
+const PAGE_BYTES = 3 * 1024;
+const WIDEST = "18446744073709551615";
+const bytes = (text) => Buffer.byteLength(text);
 const holdsFirstPage = (text) => {
   const lines = text.split(/\r?\n/);
   const header = lines.findIndex((line) => /^page 1 of \d+ \(/.test(line));
   const more = lines.indexOf("more: call memory_review with page=2");
-  if (header < 0 || more < header || lines[header + 1] !== "## Projects/big") return false;
+  if (header < 2 || more < header || lines[header + 1] !== "## Projects/big") return false;
   const notes = lines.slice(header + 2, more).map((line) => line.match(NOTE));
-  return notes.length > 1 && notes.every((m, i) => m && m[1] === NOTES[i] && m[2] === NOTES[i]);
+  if (!notes.length || !notes.every((m, i) => m && m[1] === NOTES[i] && m[3] === NOTES[i])) return false;
+  const widest = lines[header].replace(/^page 1 of \d+/, `page ${WIDEST} of ${WIDEST}`);
+  const budget = PAGE_BYTES - bytes(`${lines[header - 2]}\n${lines[header - 1]}\n${widest}\nmore: call memory_review with page=${WIDEST}\n`);
+  const body = bytes(lines.slice(header + 1, more).join("\n") + "\n");
+  const next = NOTES[notes.length];
+  const nextLine = `- fact-${next} | project | 2026-09-01 | ${notes.at(-1)[2]} | fact ${next} of a large vault, worded like a real one-line summary`;
+  return body <= budget && body + bytes(nextLine) + 1 > budget;
 };
 
 let results;
