@@ -314,6 +314,59 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
     assert!(child.wait().unwrap().success());
 }
 
+// A moved note's links to itself follow it, keeping their heading and alias (#177).
+#[test]
+fn moving_note_self_links_follow_it() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let note = |title: &str, fact: &str| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("{title} summary"), "fact": fact,
+            "source": "test on 2026-11-05", "how_to_apply": "Test.",
+        })
+    };
+    client.call("memory_save", note("Other", "Another fact."));
+    client.call(
+        "memory_save",
+        note(
+            "Fact",
+            "See [[Preferences/fact#Examples|examples]] and [[Preferences/other]].",
+        ),
+    );
+
+    for (path, new_path) in [
+        ("Preferences/fact", "Preferences/renamed"),
+        ("Preferences/renamed", "Topics/homelab/renamed"),
+    ] {
+        let (is_error, text) =
+            client.call("memory_move", json!({"path": path, "new_path": new_path}));
+        assert!(!is_error, "{text}");
+        let moved = std::fs::read_to_string(vault.join(format!("{new_path}.md"))).unwrap();
+        assert!(
+            moved.contains(&format!(
+                "See [[{new_path}#Examples|examples]] and [[Preferences/other]]."
+            )),
+            "{moved}"
+        );
+        let check = petit_poucet(home.path()).arg("check").output().unwrap();
+        assert!(check.status.success(), "{}", stdout(&check));
+    }
+    assert!(
+        std::fs::read_to_string(vault.join("Topics/homelab/renamed.md"))
+            .unwrap()
+            .contains("scope: homelab")
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 #[test]
 fn moving_into_an_empty_topic_is_refused_before_any_change() {
     let home = TempDir::new().unwrap();

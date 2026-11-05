@@ -41,13 +41,13 @@ pub fn move_note(
         }
         _ => fs::read_to_string(&old_file).map_err(|e| e.to_string())?,
     };
+    let relink =
+        |text: &str| note::map_links(text, |target| (target == old).then(|| new.to_string()));
     let new_file = vault.root.join(format!("{new}.md"));
     fs::create_dir_all(new_file.parent().unwrap()).map_err(|e| e.to_string())?;
-    write_atomic(&new_file, &text)?;
+    write_atomic(&new_file, &relink(&text))?;
     fs::remove_file(&old_file).map_err(|e| e.to_string())?;
-    let relinked = change::rewrite_links(&vault, old, |text| {
-        note::map_links(text, |target| (target == old).then(|| new.to_string()))
-    })?;
+    let relinked = change::rewrite_links(&vault, old, relink)?;
 
     let mut changed = vec![format!("{old}.md"), format!("{new}.md")];
     changed.extend(relinked.iter().cloned());
@@ -123,6 +123,14 @@ mod tests {
                 "See [[Preferences/fact#Part|the fact]].",
             ),
         );
+        write(
+            "Preferences/self.md",
+            &note(
+                "reference",
+                "all repos",
+                "See [[Preferences/self#Examples|examples]] and [[Preferences/other]].",
+            ),
+        );
         let config = Config {
             git_autocommit: false,
             ..Config::new(tmp.path().to_path_buf())
@@ -179,6 +187,48 @@ mod tests {
         .unwrap();
         let after = fs::read_to_string(tmp.path().join("Preferences/commit-rule.md")).unwrap();
         assert_eq!(after, before, "same scope: no confirmation, no rewrite");
+    }
+
+    #[test]
+    fn a_rename_rewrites_the_note_s_own_links() {
+        let (tmp, config) = vault();
+        move_note(
+            &config,
+            request("Preferences/self", "Preferences/renamed"),
+            "test",
+        )
+        .unwrap();
+        let moved = fs::read_to_string(tmp.path().join("Preferences/renamed.md")).unwrap();
+        assert!(
+            moved.contains(
+                "See [[Preferences/renamed#Examples|examples]] and [[Preferences/other]]."
+            ),
+            "{moved}"
+        );
+    }
+
+    #[test]
+    fn a_move_to_another_scope_rewrites_the_note_s_own_links() {
+        let (tmp, config) = vault();
+        move_note(
+            &config,
+            request("Preferences/self", "Projects/app/self"),
+            "test",
+        )
+        .unwrap();
+        let moved = fs::read_to_string(tmp.path().join("Projects/app/self.md")).unwrap();
+        assert_eq!(
+            Note::parse("Projects/app/self".into(), &moved)
+                .frontmatter
+                .unwrap()
+                .scope,
+            "app"
+        );
+        assert!(
+            moved
+                .contains("See [[Projects/app/self#Examples|examples]] and [[Preferences/other]]."),
+            "{moved}"
+        );
     }
 
     #[test]
