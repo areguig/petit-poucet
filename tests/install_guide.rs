@@ -47,7 +47,7 @@ impl Shell {
             #[cfg(unix)]
             Shell::Sh => "sh",
             #[cfg(windows)]
-            Shell::PowerShell(program) => *program,
+            Shell::PowerShell(program) => program,
         }
     }
 
