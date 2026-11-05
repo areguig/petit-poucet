@@ -88,7 +88,7 @@ install_old_plugin() {
   "$1" plugin install petit-poucet@petit-poucet >/dev/null
 }
 
-# big_vault: a vault too large for one memory_review result (#77); the mock calls $REVIEW_TOOL on the prompt petit-poucet-review.
+# big_vault: a vault too large for one memory_review page (#77); the mock calls $REVIEW_TOOL, for page 1, on the prompt petit-poucet-review.
 big_vault() {
   big="$HOME/agent-memory/Projects/big"
   mkdir -p "$big"
@@ -100,7 +100,7 @@ big_vault() {
   : > "$calls"
 }
 
-# check_review: the review reached the model whole, not saved to a file or cut in the middle.
+# check_review: the first review page reached the model whole, in a tool result, not saved to a file or cut; see review.mjs.
 check_review() {
-  grep -q 'page 1 of ' "$calls" || fail "memory_review didn't reach the model inline"
+  node "$repo/tests/agents/review.mjs" "$calls" || fail "the first memory_review page didn't reach the model whole and inline"
 }
