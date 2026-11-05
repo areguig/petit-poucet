@@ -71,7 +71,7 @@ fn check_destination(vault: &Vault, new: &str) -> Result<(), String> {
     let valid = match new.split('/').collect::<Vec<_>>()[..] {
         [PREFERENCES, name] => valid_name(name),
         [PROJECTS, key, name] => valid_name(name) && known_project(key),
-        [TOPICS, key, name] => valid_name(name) && slug::slugify(key) == key,
+        [TOPICS, key, name] => valid_name(name) && !key.is_empty() && slug::slugify(key) == key,
         _ => false,
     };
     if !valid {
@@ -206,11 +206,25 @@ mod tests {
             ("Preferences/../x", "new_path must be"),
             ("Elsewhere/fact", "new_path must be"),
             ("Topics/Bad Name/fact", "new_path must be"),
+            ("Topics//fact", "new_path must be"),
         ] {
             let err =
                 move_note(&config, request("Preferences/other", new_path), "test").unwrap_err();
             assert!(err.contains(expected), "{new_path}: {err}");
         }
+    }
+
+    #[test]
+    fn an_empty_topic_leaves_the_vault_untouched() {
+        let (tmp, config) = vault();
+        let files = ["Preferences/fact.md", "Preferences/other.md", INDEX_FILE];
+        let read = || files.map(|f| fs::read(tmp.path().join(f)).ok());
+        let before = read();
+        let err =
+            move_note(&config, request("Preferences/fact", "Topics//fact"), "test").unwrap_err();
+        assert!(err.contains("new_path must be"), "{err}");
+        assert_eq!(read(), before);
+        assert!(!tmp.path().join("Topics").exists());
     }
 
     #[test]

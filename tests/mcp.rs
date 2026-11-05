@@ -314,6 +314,40 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
     assert!(child.wait().unwrap().success());
 }
 
+#[test]
+fn moving_into_an_empty_topic_is_refused_before_any_change() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let note = |title: &str, fact: &str| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("{title} summary"), "fact": fact,
+            "source": "test on 2026-09-24", "how_to_apply": "Test.",
+        })
+    };
+    client.call("memory_save", note("Fact", "The fact."));
+    client.call("memory_save", note("Linker", "See [[Preferences/fact]]."));
+    let files = ["Preferences/fact.md", "Preferences/linker.md", "Index.md"];
+    let read = || files.map(|f| std::fs::read(vault.join(f)).unwrap());
+    let before = read();
+
+    let (is_error, text) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/fact", "new_path": "Topics//fact"}),
+    );
+    assert!(is_error && text.contains("new_path must be"), "{text}");
+    assert_eq!(read(), before);
+    assert!(!vault.join("Topics/fact.md").exists());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 fn checkout(dir: &Path, remote: &str) {
     std::fs::create_dir_all(dir).unwrap();
     for args in [
