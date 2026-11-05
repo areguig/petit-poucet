@@ -940,14 +940,21 @@ fn sync_without_syncthing_says_how_to_install_it() {
     let stignore = vault.join(".stignore");
     let text = fs::read_to_string(&stignore).unwrap();
     fs::write(&stignore, format!("!/Index.md\n{text}")).unwrap();
-    let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
-        .find(|dir| dir.join("git").is_file() || dir.join("git.exe").is_file())
+    // Only git on PATH: Syncthing may be installed next to the host's git (#175).
+    let git = format!("git{}", std::env::consts::EXE_SUFFIX);
+    let host_git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|dir| dir.join(&git))
+        .find(|path| path.is_file())
         .unwrap();
-    assert!(!git.join("syncthing").exists() && !git.join("syncthing.exe").exists());
+    let bin = TempDir::new().unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&host_git, bin.path().join(&git)).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(&host_git, bin.path().join(&git)).unwrap();
 
     // A fresh machine often has no git identity yet: the files are written all the same (#140).
     let output = without_git_identity(&mut petit_poucet(home.path()))
-        .env("PATH", &git)
+        .env("PATH", bin.path())
         .arg("sync")
         .output()
         .unwrap();
