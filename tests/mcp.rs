@@ -724,6 +724,56 @@ fn a_cleanup_lists_notes_nobody_opens() {
     assert!(child.wait().unwrap().success());
 }
 
+// A Syncthing conflict copy of a machine's usage file is that machine again, not another one (#181).
+#[test]
+fn a_review_counts_a_usage_conflict_copy_once() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let (is_error, saved) = client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "Counted", "summary": "counted",
+               "fact": "Counted.", "source": "the user on 2026-10-30", "how_to_apply": "Always."}),
+    );
+    assert!(!is_error, "{saved}");
+    let usage = |reads, day| {
+        format!(
+            "{{\"notes\": {{\"Preferences/counted\": {{\"reads\": {reads}, \"last_read\": \"{day}\"}}}}}}"
+        )
+    };
+    std::fs::create_dir(vault.join(".usage")).unwrap();
+    std::fs::write(vault.join(".usage/machine.json"), usage(5, "2026-10-20")).unwrap();
+    std::fs::write(vault.join(".usage/other.json"), usage(2, "2026-10-22")).unwrap();
+    let copy = vault.join(".usage/machine.sync-conflict-20261026-101112-ABCDEF7.json");
+    std::fs::write(&copy, usage(4, "2026-10-26")).unwrap();
+
+    let (pages, _) = review_pages(&mut client, true);
+    let text = pages.concat();
+    assert!(text.contains("| 7r 2026-10-22 | counted"), "{text}");
+
+    let (is_error, moved) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/counted", "new_path": "Preferences/moved"}),
+    );
+    assert!(!is_error, "{moved}");
+    let (pages, _) = review_pages(&mut client, true);
+    assert!(
+        pages.concat().contains("| 7r 2026-10-22 | counted"),
+        "{pages:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&copy).unwrap(),
+        usage(4, "2026-10-26"),
+        "the copy is left as synced"
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 // A summary longer than a page goes on over the next pages, whole, each response within the inline limit (#179).
 #[test]
 fn a_cleanup_review_pages_an_oversized_summary_without_loss() {
