@@ -66,6 +66,19 @@ printf '%s\n' "$out" | grep -q 'mock model printed no port in 20 s' || fail "no 
 [ "$elapsed" -le 25 ] || fail "start_model took $elapsed s past its deadline"
 gone
 
+# A loaded host, like the macOS runner: each `sleep 0.1` takes 0.15 s; the 20 s deadline is still 20 s of real time.
+mkdir -p "$work/slow"
+printf '#!/bin/sh\n%s 0.05\nexec %s "$@"\n' "$(command -v sleep)" "$(command -v sleep)" > "$work/slow/sleep"
+chmod +x "$work/slow/sleep"
+path=$PATH
+PATH="$work/slow:$PATH"
+start 40
+PATH=$path
+[ "$status" -ne 0 ] || fail "start_model succeeded with a model that printed no port on a slow host"
+printf '%s\n' "$out" | grep -q 'mock model printed no port in 20 s' || fail "no deadline reason on a slow host in: $out"
+[ "$elapsed" -le 25 ] || fail "start_model took $elapsed s past its deadline on a slow host"
+gone
+
 # A model that prints its port and answers: perl, which Git for Windows ships as well.
 fixture "exec perl -MIO::Socket::INET -e '
   \$server = IO::Socket::INET->new(LocalAddr => \"127.0.0.1\", LocalPort => 0, Listen => 5, ReuseAddr => 1) or die;

@@ -48,14 +48,14 @@ start_model() {
   node "$repo/tests/agents/model.mjs" "$calls" > "$HOME/model-port" &
   model_pid=$!
   trap 'kill $model_pid 2>/dev/null' EXIT
-  tries=0
+  # Wall-clock time, not a count of sleeps: on a loaded host each `sleep 0.1` takes longer.
+  deadline=$(($(date +%s) + 20))
   until [ -s "$HOME/model-port" ]; do
     if ! kill -0 "$model_pid" 2>/dev/null; then
       wait "$model_pid" && status=0 || status=$?
       fail "the mock model exited ($status) before printing its port"
     fi
-    tries=$((tries + 1))
-    [ "$tries" -le 200 ] || fail "the mock model printed no port in 20 s"
+    [ "$(date +%s)" -lt "$deadline" ] || fail "the mock model printed no port in 20 s"
     sleep 0.1
   done
   model_url="http://127.0.0.1:$(cat "$HOME/model-port")"
