@@ -82,7 +82,11 @@ pub fn check(vault: &Vault, limits: &Limits) -> Vec<Issue> {
                 error(format!("broken link [[{target}]]"));
             }
         }
-        if let Some(kind) = secrets::find(&note.body).or_else(|| secrets::find(note.summary()?)) {
+        let tags = note.frontmatter.as_ref().map_or(&[][..], |fm| &fm.tags);
+        if let Some(kind) = secrets::find(&note.body)
+            .or_else(|| secrets::find(note.summary()?))
+            .or_else(|| tags.iter().find_map(|tag| secrets::find(tag)))
+        {
             error(format!("looks like a secret ({kind})"));
         }
         let max = limits.summary_max_chars;

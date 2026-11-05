@@ -1214,6 +1214,81 @@ fn an_update_keeps_tags_and_is_committed_as_an_update() {
     );
 }
 
+// Every file under the fake home but git internals and the lock any write call takes first.
+fn files_under(home: &Path) -> Vec<(std::path::PathBuf, String)> {
+    let lock_files = [".petit-poucet/lock", ".petit-poucet/.gitignore"];
+    walkdir::WalkDir::new(home)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|e| e.file_name() != ".git")
+        .map(Result::unwrap)
+        .filter(|e| e.file_type().is_file() && !lock_files.iter().any(|f| e.path().ends_with(f)))
+        .map(|e| {
+            let text = std::fs::read_to_string(e.path()).unwrap();
+            (e.path().to_path_buf(), text)
+        })
+        .collect()
+}
+
+// Tags are stored in the note too, so the secret scan covers them on save and on check (#183).
+#[test]
+fn a_secret_in_tags_is_refused_on_save_and_reported_by_check() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // Generated to match the AWS access key pattern; not a credential.
+    let synthetic_key = format!("AKIA{}", "TESTONLY".repeat(2));
+    let (mut child, mut client, _) = start(home.path());
+    let save = json!({
+        "type": "user", "scope": "all repos", "title": "Deploy",
+        "summary": "deploys go through the pipeline", "fact": "Deploy with the pipeline.",
+        "source": "the user on 2026-11-05", "how_to_apply": "Before a deploy.",
+    });
+
+    let before = files_under(home.path());
+    let log_before = git_log(&vault);
+    let mut secret_tag = save.clone();
+    secret_tag["tags"] = json!(["deploy", synthetic_key]);
+    let (is_error, text) = client.call("memory_save", secret_tag);
+    assert!(is_error, "{text}");
+    assert_eq!(
+        text,
+        "tags looks like a secret (AWS access key): never store secrets"
+    );
+    assert_eq!(files_under(home.path()), before);
+    assert_eq!(git_log(&vault), log_before);
+
+    let mut ordinary_tags = save;
+    ordinary_tags["tags"] = json!(["deploy", "token-rotation"]);
+    assert_eq!(
+        client.call("memory_save", ordinary_tags),
+        (false, "saved Preferences/deploy".into())
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+    petit_poucet(home.path()).arg("check").assert().success();
+
+    let note = vault.join("Preferences/deploy.md");
+    let text = std::fs::read_to_string(&note).unwrap();
+    assert!(text.contains("- token-rotation\n"), "{text}");
+    std::fs::write(
+        &note,
+        text.replace("- token-rotation\n", &format!("- {synthetic_key}\n")),
+    )
+    .unwrap();
+    let output = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(!output.status.success());
+    let report = stdout(&output);
+    assert!(
+        report.contains("Preferences/deploy.md: error: looks like a secret (AWS access key)\n"),
+        "{report}"
+    );
+    assert!(!report.contains(&synthetic_key), "{report}");
+}
+
 #[test]
 fn search_finds_two_letter_names_as_whole_words() {
     let home = TempDir::new().unwrap();
