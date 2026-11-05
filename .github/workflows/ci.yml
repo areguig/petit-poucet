@@ -20,3 +20,5 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --no-fail-fast
+      - run: sh tests/agents/lib.test.sh
+        shell: bash

@@ -47,8 +47,17 @@ start_model() {
   calls="$HOME/calls.jsonl"
   node "$repo/tests/agents/model.mjs" "$calls" > "$HOME/model-port" &
   model_pid=$!
-  trap 'kill $model_pid' EXIT
-  while [ ! -s "$HOME/model-port" ]; do sleep 0.1; done
+  trap 'kill $model_pid 2>/dev/null' EXIT
+  tries=0
+  until [ -s "$HOME/model-port" ]; do
+    if ! kill -0 "$model_pid" 2>/dev/null; then
+      wait "$model_pid" && status=0 || status=$?
+      fail "the mock model exited ($status) before printing its port"
+    fi
+    tries=$((tries + 1))
+    [ "$tries" -le 200 ] || fail "the mock model printed no port in 20 s"
+    sleep 0.1
+  done
   model_url="http://127.0.0.1:$(cat "$HOME/model-port")"
   # A proxy set for the machine must not stand between the agent and the mock.
   export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
