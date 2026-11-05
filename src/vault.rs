@@ -121,17 +121,26 @@ pub fn folder(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(folder, _)| folder)
 }
 
+// Temp files are created 0600; notes should stay readable like any other file.
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
+    write_atomic_mode(path, content, 0o644)
+}
+
+// `mode` is set before the rename, so the file is never more readable than that.
+pub fn write_atomic_mode(
+    path: &Path,
+    content: &str,
+    #[cfg_attr(not(unix), allow(unused_variables))] mode: u32,
+) -> Result<(), String> {
     let dir = path.parent().ok_or("no parent folder")?;
     let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
     tmp.write_all(content.as_bytes())
         .map_err(|e| e.to_string())?;
-    // Temp files are created 0600; notes should stay readable like any other file.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         tmp.as_file()
-            .set_permissions(fs::Permissions::from_mode(0o644))
+            .set_permissions(fs::Permissions::from_mode(mode))
             .map_err(|e| e.to_string())?;
     }
     // Not `persist`: on Windows it can't replace a file another process is reading, and `fs::rename` can.
