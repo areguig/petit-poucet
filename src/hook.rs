@@ -171,7 +171,13 @@ pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
         return None;
     }
     let session = agent.session(event)?;
-    let count = stops::record(session)?;
+    let count = match stops::record(session) {
+        Ok(count) => count?,
+        Err(e) => {
+            eprintln!("petit-poucet: stop not counted: {e}");
+            return None;
+        }
+    };
     let due = count >= FIRST_REMINDER && (count - FIRST_REMINDER).is_multiple_of(EVERY);
     due.then(|| {
         agent.stop_reply(
