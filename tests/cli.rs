@@ -236,7 +236,7 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
     assert_eq!(git_log(&vault), "migrate: vault\n");
 }
 
-// Stop counters go to the temp folder: one per test.
+// Stop counters go to each test's HOME, under .cache/petit-poucet/stops.
 fn hook(home: &Path, args: &[&str], input: &str) -> String {
     stdout(&hook_output(home, home, args, input))
 }
