@@ -49,134 +49,58 @@ fn only_the_release_job_can_write_to_the_repository() {
     }
 }
 
-fn step_using<'a>(job: &'a Value, action: &str) -> Option<(usize, &'a Value)> {
-    let prefix = format!("{action}@");
+// Finds a step by what it does, so action versions and harmless extra steps don't matter.
+fn step(job: &Value, does: impl Fn(&Value) -> bool) -> (usize, &Value) {
     job["steps"]
-        .as_array()?
+        .as_array()
+        .unwrap()
         .iter()
         .enumerate()
-        .find(|(_, step)| {
-            step["uses"]
-                .as_str()
-                .is_some_and(|uses| uses.starts_with(&prefix))
-        })
+        .find(|(_, step)| does(step))
+        .unwrap_or_else(|| panic!("no such step in {job}"))
 }
 
-// Checks what the release flow does, not the action versions or step positions that carry it.
-fn check_release_flow(release: &Value) -> Result<(), String> {
-    let triggers = json!({
-        "push": {"tags": ["v*"]},
-        "pull_request": {"paths": [".github/workflows/release.yml", "install.sh", "install.ps1", "Cargo.toml", "Cargo.lock"]},
-    });
-    if release["on"] != triggers {
-        return Err(format!("triggers: {}", release["on"]));
+fn uses(action: &str) -> impl Fn(&Value) -> bool {
+    move |step| {
+        step["uses"]
+            .as_str()
+            .is_some_and(|uses| uses.starts_with(&format!("{action}@")))
     }
-    let build = &release["jobs"]["build"];
-    if build.get("if").is_some() {
-        return Err("pull requests must build".into());
-    }
-    let (_, upload) =
-        step_using(build, "actions/upload-artifact").ok_or("build uploads no packages")?;
-    if upload.get("if").is_some()
-        || upload["with"] != json!({"name": "${{ matrix.target }}", "path": "petit-poucet-*"})
-    {
-        return Err(format!("upload: {upload}"));
-    }
-
-    let publish = &release["jobs"]["release"];
-    if publish["needs"] != "build" || publish["if"] != "github.event_name == 'push'" {
-        return Err(format!(
-            "publish runs on: needs {}, if {}",
-            publish["needs"], publish["if"]
-        ));
-    }
-    if publish["permissions"] != json!({"contents": "write"}) {
-        return Err(format!("publish permissions: {}", publish["permissions"]));
-    }
-    let (downloaded_at, download) =
-        step_using(publish, "actions/download-artifact").ok_or("publish downloads no packages")?;
-    if download["with"] != json!({"path": "dist", "merge-multiple": true}) {
-        return Err(format!("download: {download}"));
-    }
-    let steps = publish["steps"].as_array().unwrap();
-    let published_at = steps
-        .iter()
-        .position(|step| {
-            step["run"].as_str().is_some_and(|run| {
-                run.starts_with("gh release create ") && run.contains(" dist/* ")
-            })
-        })
-        .ok_or("publish creates no release from dist")?;
-    if published_at < downloaded_at {
-        return Err("the release is created before the packages are downloaded".into());
-    }
-    Ok(())
 }
 
 // Pull requests build and upload the packages; only a tag push reaches the job that publishes them.
 #[test]
 fn pull_requests_package_and_only_tags_publish() {
-    assert_eq!(check_release_flow(&workflow("release.yml")), Ok(()));
-}
-
-fn steps_of<'a>(release: &'a mut Value, job: &str) -> &'a mut Vec<Value> {
-    release["jobs"][job]["steps"].as_array_mut().unwrap()
-}
-
-fn remove_step_using(release: &mut Value, job: &str, action: &str) {
-    let at = step_using(&release["jobs"][job], action).unwrap().0;
-    steps_of(release, job).remove(at);
-}
-
-#[test]
-fn the_release_flow_check_ignores_versions_and_extra_steps_but_not_regressions() {
     let release = workflow("release.yml");
-    let mut harmless = release.clone();
-    for (job, action) in [
-        ("build", "actions/upload-artifact"),
-        ("release", "actions/download-artifact"),
-    ] {
-        let at = step_using(&harmless["jobs"][job], action).unwrap().0;
-        let step = &mut steps_of(&mut harmless, job)[at];
-        step["uses"] = json!(format!("{action}@v99"));
-        steps_of(&mut harmless, job).insert(0, json!({"run": "echo extra"}));
-        steps_of(&mut harmless, job).push(json!({"run": "echo extra"}));
-    }
-    assert_eq!(check_release_flow(&harmless), Ok(()));
+    assert_eq!(
+        release["on"],
+        json!({
+            "push": {"tags": ["v*"]},
+            "pull_request": {"paths": [".github/workflows/release.yml", "install.sh", "install.ps1", "Cargo.toml", "Cargo.lock"]},
+        })
+    );
+    let build = &release["jobs"]["build"];
+    assert_eq!(build.get("if"), None);
+    let (_, upload) = step(build, uses("actions/upload-artifact"));
+    assert_eq!(upload.get("if"), None);
+    assert_eq!(
+        upload["with"],
+        json!({"name": "${{ matrix.target }}", "path": "petit-poucet-*"})
+    );
 
-    let mut no_upload = release.clone();
-    remove_step_using(&mut no_upload, "build", "actions/upload-artifact");
-    let mut no_download = release.clone();
-    remove_step_using(&mut no_download, "release", "actions/download-artifact");
-    let mut unguarded = release.clone();
-    unguarded["jobs"]["release"]
-        .as_object_mut()
-        .unwrap()
-        .remove("if");
-    let mut published_first = release.clone();
-    let at = step_using(
-        &published_first["jobs"]["release"],
-        "actions/download-artifact",
-    )
-    .unwrap()
-    .0;
-    let download = steps_of(&mut published_first, "release").remove(at);
-    steps_of(&mut published_first, "release").push(download);
-    let mut one_name_for_all_targets = release.clone();
-    let at = step_using(
-        &one_name_for_all_targets["jobs"]["build"],
-        "actions/upload-artifact",
-    )
-    .unwrap()
-    .0;
-    steps_of(&mut one_name_for_all_targets, "build")[at]["with"]["name"] = json!("packages");
-    for (name, regression) in [
-        ("no upload", no_upload),
-        ("no download", no_download),
-        ("unguarded publish", unguarded),
-        ("published before download", published_first),
-        ("one upload name for every target", one_name_for_all_targets),
-    ] {
-        assert!(check_release_flow(&regression).is_err(), "{name}");
-    }
+    let publish = &release["jobs"]["release"];
+    assert_eq!(publish["needs"], "build");
+    assert_eq!(publish["if"], "github.event_name == 'push'");
+    assert_eq!(publish["permissions"], json!({"contents": "write"}));
+    let (downloaded_at, download) = step(publish, uses("actions/download-artifact"));
+    assert_eq!(
+        download["with"],
+        json!({"path": "dist", "merge-multiple": true})
+    );
+    let (published_at, _) = step(publish, |step| {
+        step["run"]
+            .as_str()
+            .is_some_and(|run| run.starts_with("gh release create ") && run.contains(" dist/* "))
+    });
+    assert!(downloaded_at < published_at);
 }
