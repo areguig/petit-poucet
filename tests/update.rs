@@ -268,11 +268,17 @@ impl Install {
         fs::metadata(&self.exe).unwrap().modified().unwrap() > std::time::UNIX_EPOCH + LONG_AGO
     }
 
-    // The download never stays next to the binary.
-    fn leftovers(&self) -> Vec<String> {
+    fn files(&self) -> Vec<String> {
         fs::read_dir(self.exe.parent().unwrap())
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    // The download never stays next to the binary.
+    fn leftovers(&self) -> Vec<String> {
+        self.files()
+            .into_iter()
             .filter(|name| name.starts_with(".petit-poucet.download."))
             .collect()
     }
@@ -302,10 +308,12 @@ fn update_installs_the_latest_release_while_a_server_runs_then_sets_up_the_agent
 
     let output = install.command().arg("update").output().unwrap();
     let out = stdout(&output);
+    // Which of self_replace's renames failed shows in what it left next to the binary.
     assert!(
         output.status.success(),
-        "{out}{}",
-        String::from_utf8_lossy(&output.stderr)
+        "{out}{}\nnext to the binary: {:?}",
+        String::from_utf8_lossy(&output.stderr),
+        install.files()
     );
     assert!(
         out.starts_with("petit-poucet: updated to 99.0.0\n"),
