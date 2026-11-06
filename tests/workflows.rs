@@ -28,18 +28,25 @@ fn permissions_by_job(workflow: &Value) -> BTreeMap<String, Value> {
 // Only the job that publishes a release may write to the repository (#173).
 #[test]
 fn only_the_release_job_can_write_to_the_repository() {
-    let release = workflow("release.yml");
+    let read = json!({"contents": "read"});
     assert_eq!(
-        permissions_by_job(&release),
+        permissions_by_job(&workflow("release.yml")),
         BTreeMap::from([
-            ("build".to_string(), json!({"contents": "read"})),
+            ("build".to_string(), read.clone()),
             ("release".to_string(), json!({"contents": "write"})),
         ])
     );
-    assert_eq!(
-        permissions_by_job(&workflow("agents.yml")),
-        BTreeMap::from([("install".to_string(), json!({"contents": "read"}))])
-    );
+    for (name, job) in [
+        ("agents.yml", "install"),
+        ("ci.yml", "check"),
+        ("syncthing.yml", "sync"),
+    ] {
+        assert_eq!(
+            permissions_by_job(&workflow(name)),
+            BTreeMap::from([(job.to_string(), read.clone())]),
+            "{name}"
+        );
+    }
 }
 
 // Pull requests build and upload the packages; only a tag push reaches the job that publishes them.
