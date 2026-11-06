@@ -31,6 +31,7 @@ mod opencode;
 mod pair;
 mod priority;
 mod project;
+mod replace;
 mod review;
 mod save;
 mod search;
