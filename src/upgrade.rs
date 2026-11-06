@@ -6,7 +6,7 @@ use std::process::Command;
 use semver::Version;
 use sha2::{Digest, Sha256};
 
-use crate::update;
+use crate::{replace, update};
 
 // Where the install scripts download releases from: GitHub, or a test's local copy.
 const RELEASES_ENV: &str = "PETIT_POUCET_RELEASES";
@@ -41,7 +41,7 @@ pub fn upgrade(exe: &Path) -> Result<Option<String>, String> {
         ));
     }
     make_executable(download.path())?;
-    self_replace::self_replace(download.path())
+    replace::replace(download.path(), exe)
         .map_err(|e| format!("replacing {}: {e}", exe.display()))?;
     Ok(Some(latest.to_string()))
 }

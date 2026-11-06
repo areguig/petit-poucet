@@ -440,3 +440,125 @@ fn a_binary_the_install_script_did_not_place_is_never_replaced() {
         "{err}"
     );
 }
+
+// What `update` printed while another handle held the binary open without sharing deletion.
+#[cfg(windows)]
+struct HeldUpdate {
+    success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+#[cfg(windows)]
+impl Install {
+    // The holder lets go only once `update` says it waits for it, unless `forever`.
+    fn update_while_held(&self, forever: bool) -> HeldUpdate {
+        use std::io::{BufRead, BufReader, Read};
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+        let mut holder = Some(
+            fs::File::options()
+                .read(true)
+                .share_mode(FILE_SHARE_READ)
+                .open(&self.exe)
+                .unwrap(),
+        );
+        let mut update = Server(
+            self.command()
+                .arg("update")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        let mut out = update.0.stdout.take().unwrap();
+        let stdout = std::thread::spawn(move || {
+            let mut text = String::new();
+            out.read_to_string(&mut text).unwrap();
+            text
+        });
+        let (line, lines) = mpsc::channel();
+        let err = BufReader::new(update.0.stderr.take().unwrap());
+        std::thread::spawn(move || {
+            for text in err.lines() {
+                let _ = line.send(text.unwrap());
+            }
+        });
+        let mut stderr = String::new();
+        loop {
+            match lines.recv_timeout(Duration::from_secs(30)) {
+                Ok(text) => {
+                    if !forever && text.contains("trying again") {
+                        holder = None;
+                    }
+                    stderr += &text;
+                    stderr.push('\n');
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(e) => panic!("update still runs: {e}\n{stderr}"),
+            }
+        }
+        drop(holder);
+        let success = update.0.wait().unwrap().success();
+        HeldUpdate {
+            success,
+            stdout: stdout.join().unwrap(),
+            stderr,
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn update_waits_for_a_program_that_briefly_holds_the_binary() {
+    let install = install_with_agent_and_vault();
+    let update = install.update_while_held(false);
+    assert!(
+        update.success,
+        "{}{}\nnext to the binary: {:?}",
+        update.stdout,
+        update.stderr,
+        install.files()
+    );
+    assert_eq!(
+        update.stderr.matches("trying again").count(),
+        1,
+        "{}",
+        update.stderr
+    );
+    assert!(
+        update
+            .stdout
+            .starts_with("petit-poucet: updated to 99.0.0\n"),
+        "{}",
+        update.stdout
+    );
+    assert!(
+        update.stdout.contains("\nClaude Code: set up"),
+        "the new binary ran setup: {}",
+        update.stdout
+    );
+    assert!(install.replaced());
+    assert_eq!(install.leftovers(), Vec::<String>::new());
+}
+
+#[cfg(windows)]
+#[test]
+fn update_gives_up_on_a_program_that_keeps_the_binary_and_leaves_it_whole() {
+    let install = install("v99.0.0", None);
+    let start = Instant::now();
+    let update = install.update_while_held(true);
+    assert!(!update.success, "{}", update.stdout);
+    assert!(update.stderr.contains("(os error 32)"), "{}", update.stderr);
+    assert!(
+        start.elapsed() < Duration::from_secs(30),
+        "took {:?}",
+        start.elapsed()
+    );
+    assert!(!install.replaced());
+    assert_eq!(
+        fs::read(&install.exe).unwrap(),
+        fs::read(env!("CARGO_BIN_EXE_petit-poucet")).unwrap()
+    );
+    assert_eq!(install.files(), vec!["petit-poucet.exe".to_string()]);
+}

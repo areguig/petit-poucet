@@ -22,6 +22,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
+      - if: runner.os == 'Windows'
+        run: bash tests/windows_update_red.sh
+        shell: bash
       - run: cargo test --no-fail-fast
       - run: sh tests/agents/lib.test.sh
         shell: bash
