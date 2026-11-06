@@ -12,9 +12,9 @@ petit-poucet is one binary. It installs in `~/.local/bin`, keeps memory in a Mar
 
 ## 1. Already installed?
 
-Run `petit-poucet --version`. If the command isn't found, also try `~/.local/bin/petit-poucet --version` (on Windows: `& "$HOME\.local\bin\petit-poucet.exe" --version`).
+Run `petit-poucet --version`. If the command isn't found, also try `~/.local/bin/petit-poucet --version` (on Windows: `& "$HOME\.local\bin\petit-poucet.exe" --version`). Keep running petit-poucet the way that worked: if it was the full path, use the full-path form each step below gives.
 
-- **It prints a version from 0.6 on:** run `petit-poucet update`, then go to step 4. It downloads the latest release, checks its SHA-256, replaces the binary and runs `setup` again. `already up to date` is fine too. If it says the binary wasn't installed by the install script, it came from Homebrew, cargo or a build: tell your user to update it the way they installed it, and stop.
+- **It prints a version from 0.6 on:** run `petit-poucet update` (with the full path: `~/.local/bin/petit-poucet update`, on Windows `& "$HOME\.local\bin\petit-poucet.exe" update`), then go to step 4. It downloads the latest release, checks its SHA-256, replaces the binary and runs `setup` again. `already up to date` is fine too. If it says the binary wasn't installed by the install script, it came from Homebrew, cargo or a build: tell your user to update it the way they installed it, and stop.
 - **It prints a version before 0.6:** that version has no `update` command. Install over it with step 2.
 - **Not found:** go to step 2.
 
@@ -46,6 +46,8 @@ Run the command that line names, exactly as printed. It holds the full path when
 petit-poucet setup
 ```
 
+With the full path: `~/.local/bin/petit-poucet setup`, on Windows `& "$HOME\.local\bin\petit-poucet.exe" setup`.
+
 It creates the vault in `~/agent-memory` (or uses the one already there), then wires every agent it finds. It prints one line per item. A line like `Claude Code: set up (MCP server in ~/.claude.json, hooks in settings.json): restart Claude Code` means that agent is done. It keeps a `.petit-poucet.bak` copy of each file it changes, and never touches anything outside its own entries.
 
 - `vault: set your git identity …`: the vault works, but git has no name and email for its commits. Tell your user, and ask before running `git config --global` for them.
@@ -57,7 +59,9 @@ It creates the vault in `~/agent-memory` (or uses the one already there), then w
 petit-poucet setup --check
 ```
 
-It exits with status 0 and reports nothing missing when every agent found is set up. If it lists something, run `petit-poucet setup` again and read its output.
+With the full path: `~/.local/bin/petit-poucet setup --check`, on Windows `& "$HOME\.local\bin\petit-poucet.exe" setup --check`.
+
+It exits with status 0 and reports nothing missing when every agent found is set up. If it lists something, run setup again, the same way as in step 3, and read its output.
 
 ## 5. Tell your user
 
