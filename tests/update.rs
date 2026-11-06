@@ -311,7 +311,7 @@ impl Install {
     fn update_and_set_up(&self) {
         let output = self.command().arg("update").output().unwrap();
         let out = stdout(&output);
-        // Which of self_replace's renames failed shows in what it left next to the binary.
+        // The remaining files help locate a failed replacement.
         assert!(
             output.status.success(),
             "{out}{}\nnext to the binary: {:?}",
@@ -371,8 +371,7 @@ fn update_installs_the_latest_release_while_a_server_runs_then_sets_up_the_agent
     );
 }
 
-// Diagnostic for #165: the same update once the server has answered its handshake, to tell
-// a failure from a server still starting apart from one with a server already running.
+// Compare an initialized server with the startup-overlap case.
 #[test]
 fn update_installs_the_latest_release_while_an_initialized_server_runs() {
     let install = install_with_agent_and_vault();
