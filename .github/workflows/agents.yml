@@ -5,6 +5,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   # Hermes Agent v2026.9.24: its installer is taken from the same commit, since newer ones expect newer files.

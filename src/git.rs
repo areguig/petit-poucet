@@ -27,18 +27,46 @@ pub fn init(dir: &Path) -> Result<(), String> {
     git(dir, &["init", "--quiet"]).map(drop)
 }
 
+// Commits only `paths`: whatever else the user staged stays staged.
 pub fn commit(dir: &Path, paths: &[&str], message: &str) -> Result<(), String> {
-    let mut add = vec!["add", "--all", "--"];
-    add.extend(paths);
-    git(dir, &add)?;
-    let mut diff = vec!["diff", "--cached", "--quiet", "--"];
-    diff.extend(paths);
-    if git(dir, &diff).is_ok() {
+    let indexed = git(dir, &[&["ls-files", "-z", "--"][..], paths].concat())?;
+    let known = on_disk_or_listed(dir, paths, &indexed);
+    if known.is_empty() {
         return Ok(());
     }
-    let mut commit = vec!["commit", "--quiet", "-m", message, "--"];
-    commit.extend(paths);
-    git(dir, &commit).map(drop)
+    git(dir, &[&["add", "--all", "--"][..], &known[..]].concat())?;
+    let diff = [
+        "diff",
+        "--cached",
+        "--name-only",
+        "--no-renames",
+        "-z",
+        "--",
+    ];
+    let staged = git(dir, &[&diff[..], &known[..]].concat())?;
+    if staged.is_empty() {
+        return Ok(());
+    }
+    let changed = on_disk_or_listed(dir, &known, &staged);
+    git(
+        dir,
+        &[
+            &["commit", "--quiet", "-m", message, "--"][..],
+            &changed[..],
+        ]
+        .concat(),
+    )
+    .map(drop)
+}
+
+// git refuses a pathspec matching nothing, as a removed file it never committed.
+fn on_disk_or_listed<'a>(dir: &Path, paths: &[&'a str], listed: &str) -> Vec<&'a str> {
+    let listed: Vec<&str> = listed.split_terminator('\0').collect();
+    paths
+        .iter()
+        .copied()
+        .filter(|path| dir.join(path).exists() || listed.contains(path))
+        .collect()
 }
 
 // Files with uncommitted changes. Takes no git lock, so it never collides with a commit running beside it.
@@ -78,4 +106,30 @@ pub fn remote_urls(dir: &Path) -> Vec<String> {
         .collect();
     urls.dedup();
     urls
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    #[test]
+    fn a_removed_file_git_never_committed_adds_nothing_to_the_commit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        init(dir).unwrap();
+        git(dir, &["config", "user.name", "test"]).unwrap();
+        git(dir, &["config", "user.email", "test@example.com"]).unwrap();
+        fs::write(dir.join("kept.md"), "kept").unwrap();
+        fs::write(dir.join("staged.md"), "staged").unwrap();
+        git(dir, &["add", "staged.md"]).unwrap();
+        fs::remove_file(dir.join("staged.md")).unwrap();
+
+        commit(dir, &["kept.md", "untracked.md", "staged.md"], "first").unwrap();
+        commit(dir, &["untracked.md", "staged.md"], "second").unwrap();
+        assert_eq!(git(dir, &["log", "--format=%s"]).unwrap(), "first\n");
+        assert_eq!(git(dir, &["ls-files"]).unwrap(), "kept.md\n");
+        assert_eq!(changed(dir).unwrap(), Vec::<String>::new());
+    }
 }

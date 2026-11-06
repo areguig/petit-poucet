@@ -150,7 +150,8 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
 // Returns the note type once every required field is there.
 fn validate(req: &SaveRequest) -> Result<NoteType, String> {
     let note_type = require_fields(req)?;
-    for (name, value) in text_fields(req) {
+    let tags = req.tags.iter().map(|tag| ("tags", tag));
+    for (name, value) in text_fields(req).into_iter().chain(tags) {
         if let Some(kind) = secrets::find(value) {
             return Err(format!(
                 "{name} looks like a secret ({kind}): never store secrets"
@@ -253,6 +254,12 @@ fn target_folder(
         .ok_or(format!("no folder name in {}", dir.display()))?
         .to_string_lossy()
         .into_owned();
+    // The vault scan skips dot folders, so such a project would be invisible.
+    if folder.starts_with('.') {
+        return Err(format!(
+            "`{folder}` cannot name a project: pass scope to save in an existing project"
+        ));
+    }
     let remotes = git::remote_urls(dir);
     let key = match vault.projects.iter().find(|p| p.key == folder) {
         // Another repo already owns this folder name (resolve didn't match it): name the project after the remote.

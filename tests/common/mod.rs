@@ -119,12 +119,17 @@ pub fn connect(home: &Path) -> (Child, Client) {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    let client = Client {
+    let client = client(&mut child);
+    (child, client)
+}
+
+// A client on a `serve` process spawned with piped stdin and stdout.
+pub fn client(child: &mut Child) -> Client {
+    Client {
         stdin: child.stdin.take().unwrap(),
         stdout: BufReader::new(child.stdout.take().unwrap()),
         next_id: 0,
-    };
-    (child, client)
+    }
 }
 
 // Reads every page of memory_review; returns the pages and the project note lines they hold (#77).

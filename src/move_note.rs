@@ -41,13 +41,13 @@ pub fn move_note(
         }
         _ => fs::read_to_string(&old_file).map_err(|e| e.to_string())?,
     };
+    let relink =
+        |text: &str| note::map_links(text, |target| (target == old).then(|| new.to_string()));
     let new_file = vault.root.join(format!("{new}.md"));
     fs::create_dir_all(new_file.parent().unwrap()).map_err(|e| e.to_string())?;
-    write_atomic(&new_file, &text)?;
+    write_atomic(&new_file, &relink(&text))?;
     fs::remove_file(&old_file).map_err(|e| e.to_string())?;
-    let relinked = change::rewrite_links(&vault, old, |text| {
-        note::map_links(text, |target| (target == old).then(|| new.to_string()))
-    })?;
+    let relinked = change::rewrite_links(&vault, old, relink)?;
 
     let mut changed = vec![format!("{old}.md"), format!("{new}.md")];
     changed.extend(relinked.iter().cloned());
@@ -71,7 +71,7 @@ fn check_destination(vault: &Vault, new: &str) -> Result<(), String> {
     let valid = match new.split('/').collect::<Vec<_>>()[..] {
         [PREFERENCES, name] => valid_name(name),
         [PROJECTS, key, name] => valid_name(name) && known_project(key),
-        [TOPICS, key, name] => valid_name(name) && slug::slugify(key) == key,
+        [TOPICS, key, name] => valid_name(name) && !key.is_empty() && slug::slugify(key) == key,
         _ => false,
     };
     if !valid {
@@ -121,6 +121,14 @@ mod tests {
                 "reference",
                 "all repos",
                 "See [[Preferences/fact#Part|the fact]].",
+            ),
+        );
+        write(
+            "Preferences/self.md",
+            &note(
+                "reference",
+                "all repos",
+                "See [[Preferences/self#Examples|examples]] and [[Preferences/other]].",
             ),
         );
         let config = Config {
@@ -182,6 +190,48 @@ mod tests {
     }
 
     #[test]
+    fn a_rename_rewrites_the_note_s_own_links() {
+        let (tmp, config) = vault();
+        move_note(
+            &config,
+            request("Preferences/self", "Preferences/renamed"),
+            "test",
+        )
+        .unwrap();
+        let moved = fs::read_to_string(tmp.path().join("Preferences/renamed.md")).unwrap();
+        assert!(
+            moved.contains(
+                "See [[Preferences/renamed#Examples|examples]] and [[Preferences/other]]."
+            ),
+            "{moved}"
+        );
+    }
+
+    #[test]
+    fn a_move_to_another_scope_rewrites_the_note_s_own_links() {
+        let (tmp, config) = vault();
+        move_note(
+            &config,
+            request("Preferences/self", "Projects/app/self"),
+            "test",
+        )
+        .unwrap();
+        let moved = fs::read_to_string(tmp.path().join("Projects/app/self.md")).unwrap();
+        assert_eq!(
+            Note::parse("Projects/app/self".into(), &moved)
+                .frontmatter
+                .unwrap()
+                .scope,
+            "app"
+        );
+        assert!(
+            moved
+                .contains("See [[Projects/app/self#Examples|examples]] and [[Preferences/other]]."),
+            "{moved}"
+        );
+    }
+
+    #[test]
     fn moving_a_user_rule_to_another_scope_needs_confirmation() {
         let (_tmp, config) = vault();
         let err = move_note(
@@ -206,11 +256,25 @@ mod tests {
             ("Preferences/../x", "new_path must be"),
             ("Elsewhere/fact", "new_path must be"),
             ("Topics/Bad Name/fact", "new_path must be"),
+            ("Topics//fact", "new_path must be"),
         ] {
             let err =
                 move_note(&config, request("Preferences/other", new_path), "test").unwrap_err();
             assert!(err.contains(expected), "{new_path}: {err}");
         }
+    }
+
+    #[test]
+    fn an_empty_topic_leaves_the_vault_untouched() {
+        let (tmp, config) = vault();
+        let files = ["Preferences/fact.md", "Preferences/other.md", INDEX_FILE];
+        let read = || files.map(|f| fs::read(tmp.path().join(f)).ok());
+        let before = read();
+        let err =
+            move_note(&config, request("Preferences/fact", "Topics//fact"), "test").unwrap_err();
+        assert!(err.contains("new_path must be"), "{err}");
+        assert_eq!(read(), before);
+        assert!(!tmp.path().join("Topics").exists());
     }
 
     #[test]

@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
-use crate::state;
 use crate::vault::write_atomic;
+use crate::{state, sync_conflict};
 
 // In the vault, synced and committed with the notes; one file per machine, so two machines never write the same one.
 pub const DIR: &str = ".usage";
@@ -99,6 +99,7 @@ fn own_file(root: &Path) -> Result<PathBuf, String> {
     Ok(file)
 }
 
+// A Syncthing conflict copy holds counts its machine's own file already has: it is left alone, uncounted.
 fn machine_files(root: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(root.join(DIR)) else {
         return Vec::new();
@@ -106,6 +107,7 @@ fn machine_files(root: &Path) -> Vec<PathBuf> {
     entries
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .filter(|p| sync_conflict::original_of(&p.file_name().unwrap().to_string_lossy()).is_none())
         .collect()
 }
 
@@ -237,6 +239,52 @@ mod tests {
         assert_eq!(
             moved.notes["Topics/t/a"].reads, 4,
             "the other machine's file follows too"
+        );
+    }
+
+    #[test]
+    fn a_syncthing_conflict_copy_is_not_another_machine() {
+        let tmp = tempfile::tempdir().unwrap();
+        let usage = |reads, d| Activity {
+            notes: BTreeMap::from([(
+                "Preferences/a".to_string(),
+                Usage {
+                    reads,
+                    last_read: day(d),
+                },
+            )]),
+            projects: BTreeMap::from([("app".to_string(), day(d))]),
+            since: Some(day(d)),
+        };
+        let dir = tmp.path().join(DIR);
+        write(&dir.join("machine.json"), &usage(5, 10)).unwrap();
+        write(&dir.join("other.json"), &usage(2, 12)).unwrap();
+        let copy = dir.join("machine.sync-conflict-20261026-101112-ABCDEF7.json");
+        write(&copy, &usage(4, 20)).unwrap();
+        write(
+            &dir.join("early.sync-conflict-20261026-101112-ABCDEF7.json"),
+            &usage(1, 1),
+        )
+        .unwrap();
+        let bytes = fs::read(&copy).unwrap();
+
+        let total = load(tmp.path());
+        assert_eq!(
+            total.notes["Preferences/a"],
+            Usage {
+                reads: 7,
+                last_read: day(12)
+            }
+        );
+        assert_eq!(total.projects["app"], day(12));
+        assert_eq!(total.since, Some(day(10)));
+
+        relocate(tmp.path(), "Preferences/a", Some("Topics/t/a")).unwrap();
+        assert_eq!(read(&dir.join("other.json")).notes["Topics/t/a"].reads, 2);
+        assert_eq!(
+            fs::read(&copy).unwrap(),
+            bytes,
+            "the copy is left as synced"
         );
     }
 

@@ -81,19 +81,39 @@ pub struct Project {
 }
 
 // `git@github.com:Owner/repo.git` and `https://github.com/Owner/repo` both become `github.com/Owner/repo`.
+// A non-default port names another server, so it keeps its scheme and port: `ssh://host:2222/Owner/repo`.
 pub fn normalise_remote(url: &str) -> String {
     let url = url.trim().trim_end_matches('/');
     let url = url.strip_suffix(".git").unwrap_or(url);
-    let (host, path) = match url.split_once("://") {
-        Some((_, rest)) => rest.split_once('/').unwrap_or((rest, "")),
+    let (scheme, host, path) = match url.split_once("://") {
+        Some((scheme, rest)) => {
+            let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+            (Some(scheme), host, path)
+        }
         None => match url.split_once(':') {
-            Some((host, path)) if !host.contains('/') => (host, path),
+            Some((host, path)) if !host.contains('/') => (None, host, path),
             _ => return url.to_string(),
         },
     };
-    let host = host.rsplit('@').next().unwrap_or(host);
-    let host = host.split(':').next().unwrap_or(host).to_lowercase();
-    format!("{host}/{}", path.trim_start_matches('/'))
+    let host = host.rsplit('@').next().unwrap_or(host).to_lowercase();
+    let path = path.trim_start_matches('/');
+    match (scheme, host.split_once(':')) {
+        (Some(scheme), Some((name, port))) if Some(port) != default_port(scheme) => {
+            format!("{scheme}://{name}:{port}/{path}")
+        }
+        (_, Some((name, _))) => format!("{name}/{path}"),
+        (_, None) => format!("{host}/{path}"),
+    }
+}
+
+fn default_port(scheme: &str) -> Option<&'static str> {
+    match scheme {
+        "ssh" => Some("22"),
+        "https" => Some("443"),
+        "http" => Some("80"),
+        "git" => Some("9418"),
+        _ => None,
+    }
 }
 
 pub fn resolve<'a>(projects: &'a [Project], dir: &Path) -> Option<&'a str> {
@@ -124,6 +144,7 @@ pub fn resolve<'a>(projects: &'a [Project], dir: &Path) -> Option<&'a str> {
 // `github.com/someone/api` gives `someone-api`: the key for a repo whose folder name another project already uses.
 pub fn key_from_remote(remote: &str) -> Option<String> {
     let remote = normalise_remote(remote);
+    let remote = remote.split_once("://").map_or(remote.as_str(), |(_, r)| r);
     let (_, path) = remote.split_once('/')?;
     let key = slug::slugify(path);
     (!key.is_empty()).then_some(key)
@@ -157,6 +178,7 @@ mod tests {
             "https://github.com/areguig/petit-poucet",
             "https://user@GitHub.com/areguig/petit-poucet.git/",
             "ssh://git@github.com:22/areguig/petit-poucet.git",
+            "https://github.com:443/areguig/petit-poucet",
         ] {
             assert_eq!(
                 normalise_remote(url),
@@ -165,6 +187,27 @@ mod tests {
             );
         }
         assert_eq!(normalise_remote("/srv/repos/x.git"), "/srv/repos/x");
+    }
+
+    #[test]
+    fn keeps_a_non_default_port() {
+        let on_2222 = normalise_remote("ssh://git@git.example.test:2222/team/app.git");
+        let on_2223 = normalise_remote("ssh://git@git.example.test:2223/team/app.git");
+        assert_eq!(on_2222, "ssh://git.example.test:2222/team/app");
+        assert_ne!(on_2222, on_2223);
+        assert_ne!(
+            on_2222,
+            normalise_remote("git@git.example.test:team/app.git")
+        );
+        assert_eq!(
+            normalise_remote(&on_2222),
+            on_2222,
+            "stored remotes stay as they are"
+        );
+        assert_eq!(
+            normalise_remote("https://git.example.test:8443/team/app"),
+            "https://git.example.test:8443/team/app"
+        );
     }
 
     #[test]
@@ -248,6 +291,39 @@ mod tests {
         assert_eq!(
             key_from_remote("git@gitlab.com:someone-else/api.git").as_deref(),
             Some("someone-else-api")
+        );
+        assert_eq!(
+            key_from_remote("ssh://git@git.example.test:2222/team/app.git").as_deref(),
+            Some("team-app")
+        );
+    }
+
+    #[test]
+    fn a_remote_never_matches_the_same_repo_on_another_ssh_port() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("app");
+        std::fs::create_dir(&repo).unwrap();
+        git::init(&repo).unwrap();
+        std::process::Command::new("git")
+            .args(["-C", repo.to_str().unwrap(), "remote", "add", "origin"])
+            .arg("ssh://git@git.example.test:2223/team/app.git")
+            .status()
+            .unwrap();
+        let project = |key: &str, port: &str| Project {
+            key: key.into(),
+            identity: Ok(Identity {
+                remotes: vec![format!("ssh://git@git.example.test:{port}/team/app.git")],
+                folders: vec![format!("app-{port}")],
+                ..Default::default()
+            }),
+        };
+        assert_eq!(resolve(&[project("on-2222", "2222")], &repo), None);
+        assert_eq!(
+            resolve(
+                &[project("on-2222", "2222"), project("on-2223", "2223")],
+                &repo
+            ),
+            Some("on-2223")
         );
     }
 }

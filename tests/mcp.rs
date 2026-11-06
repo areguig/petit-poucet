@@ -314,6 +314,93 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
     assert!(child.wait().unwrap().success());
 }
 
+// A moved note's links to itself follow it, keeping their heading and alias (#177).
+#[test]
+fn moving_note_self_links_follow_it() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let note = |title: &str, fact: &str| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("{title} summary"), "fact": fact,
+            "source": "test on 2026-11-05", "how_to_apply": "Test.",
+        })
+    };
+    client.call("memory_save", note("Other", "Another fact."));
+    client.call(
+        "memory_save",
+        note(
+            "Fact",
+            "See [[Preferences/fact#Examples|examples]] and [[Preferences/other]].",
+        ),
+    );
+
+    for (path, new_path) in [
+        ("Preferences/fact", "Preferences/renamed"),
+        ("Preferences/renamed", "Topics/homelab/renamed"),
+    ] {
+        let (is_error, text) =
+            client.call("memory_move", json!({"path": path, "new_path": new_path}));
+        assert!(!is_error, "{text}");
+        let moved = std::fs::read_to_string(vault.join(format!("{new_path}.md"))).unwrap();
+        assert!(
+            moved.contains(&format!(
+                "See [[{new_path}#Examples|examples]] and [[Preferences/other]]."
+            )),
+            "{moved}"
+        );
+        let check = petit_poucet(home.path()).arg("check").output().unwrap();
+        assert!(check.status.success(), "{}", stdout(&check));
+    }
+    assert!(
+        std::fs::read_to_string(vault.join("Topics/homelab/renamed.md"))
+            .unwrap()
+            .contains("scope: homelab")
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn moving_into_an_empty_topic_is_refused_before_any_change() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let note = |title: &str, fact: &str| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("{title} summary"), "fact": fact,
+            "source": "test on 2026-09-24", "how_to_apply": "Test.",
+        })
+    };
+    client.call("memory_save", note("Fact", "The fact."));
+    client.call("memory_save", note("Linker", "See [[Preferences/fact]]."));
+    let files = ["Preferences/fact.md", "Preferences/linker.md", "Index.md"];
+    let read = || files.map(|f| std::fs::read(vault.join(f)).unwrap());
+    let before = read();
+
+    let (is_error, text) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/fact", "new_path": "Topics//fact"}),
+    );
+    assert!(is_error && text.contains("new_path must be"), "{text}");
+    assert_eq!(read(), before);
+    assert!(!vault.join("Topics/fact.md").exists());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 fn checkout(dir: &Path, remote: &str) {
     std::fs::create_dir_all(dir).unwrap();
     for args in [
@@ -633,6 +720,90 @@ fn a_cleanup_lists_notes_nobody_opens() {
     client.call("memory_read", json!({"path": "Preferences/old-fact"}));
     let (pages, _) = review_pages(&mut client, false);
     assert!(!pages.concat().contains("## unused"), "{pages:?}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// A Syncthing conflict copy of a machine's usage file is that machine again, not another one (#181).
+#[test]
+fn a_review_counts_a_usage_conflict_copy_once() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let (is_error, saved) = client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "Counted", "summary": "counted",
+               "fact": "Counted.", "source": "the user on 2026-10-30", "how_to_apply": "Always."}),
+    );
+    assert!(!is_error, "{saved}");
+    let usage = |reads, day| {
+        format!(
+            "{{\"notes\": {{\"Preferences/counted\": {{\"reads\": {reads}, \"last_read\": \"{day}\"}}}}}}"
+        )
+    };
+    std::fs::create_dir(vault.join(".usage")).unwrap();
+    std::fs::write(vault.join(".usage/machine.json"), usage(5, "2026-10-20")).unwrap();
+    std::fs::write(vault.join(".usage/other.json"), usage(2, "2026-10-22")).unwrap();
+    let copy = vault.join(".usage/machine.sync-conflict-20261026-101112-ABCDEF7.json");
+    std::fs::write(&copy, usage(4, "2026-10-26")).unwrap();
+
+    let (pages, _) = review_pages(&mut client, true);
+    let text = pages.concat();
+    assert!(text.contains("| 7r 2026-10-22 | counted"), "{text}");
+
+    let (is_error, moved) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/counted", "new_path": "Preferences/moved"}),
+    );
+    assert!(!is_error, "{moved}");
+    let (pages, _) = review_pages(&mut client, true);
+    assert!(
+        pages.concat().contains("| 7r 2026-10-22 | counted"),
+        "{pages:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&copy).unwrap(),
+        usage(4, "2026-10-26"),
+        "the copy is left as synced"
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// A summary longer than a page goes on over the next pages, whole, each response within the inline limit (#179).
+#[test]
+fn a_cleanup_review_pages_an_oversized_summary_without_loss() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let summary = "résumé ".repeat(714) + "ok";
+    let (is_error, saved) = client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "Long summary", "summary": summary,
+               "fact": "Long.", "source": "the user on 2026-10-30", "how_to_apply": "Always."}),
+    );
+    assert!(!is_error, "{saved}");
+
+    let (pages, _) = review_pages(&mut client, false);
+    assert!(pages.len() > 2, "{pages:?}");
+    let mut lines = String::new();
+    for page in &pages {
+        assert!(page.len() <= 3 * 1024, "{} bytes: {page}", page.len());
+        let body = page.split_once(" | summary)\n").unwrap().1;
+        lines.extend(
+            body.lines()
+                .filter(|l| !l.starts_with("## ") && !l.starts_with("more: ")),
+        );
+    }
+    assert!(lines.contains(&summary), "{lines}");
     drop(client);
     assert!(child.wait().unwrap().success());
 }
@@ -1043,6 +1214,81 @@ fn an_update_keeps_tags_and_is_committed_as_an_update() {
     );
 }
 
+// Every file under the fake home but git internals and the lock any write call takes first.
+fn files_under(home: &Path) -> Vec<(std::path::PathBuf, String)> {
+    let lock_files = [".petit-poucet/lock", ".petit-poucet/.gitignore"];
+    walkdir::WalkDir::new(home)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|e| e.file_name() != ".git")
+        .map(Result::unwrap)
+        .filter(|e| e.file_type().is_file() && !lock_files.iter().any(|f| e.path().ends_with(f)))
+        .map(|e| {
+            let text = std::fs::read_to_string(e.path()).unwrap();
+            (e.path().to_path_buf(), text)
+        })
+        .collect()
+}
+
+// Tags are stored in the note too, so the secret scan covers them on save and on check (#183).
+#[test]
+fn a_secret_in_tags_is_refused_on_save_and_reported_by_check() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // Generated to match the AWS access key pattern; not a credential.
+    let synthetic_key = format!("AKIA{}", "TESTONLY".repeat(2));
+    let (mut child, mut client, _) = start(home.path());
+    let save = json!({
+        "type": "user", "scope": "all repos", "title": "Deploy",
+        "summary": "deploys go through the pipeline", "fact": "Deploy with the pipeline.",
+        "source": "the user on 2026-11-05", "how_to_apply": "Before a deploy.",
+    });
+
+    let before = files_under(home.path());
+    let log_before = git_log(&vault);
+    let mut secret_tag = save.clone();
+    secret_tag["tags"] = json!(["deploy", synthetic_key]);
+    let (is_error, text) = client.call("memory_save", secret_tag);
+    assert!(is_error, "{text}");
+    assert_eq!(
+        text,
+        "tags looks like a secret (AWS access key): never store secrets"
+    );
+    assert_eq!(files_under(home.path()), before);
+    assert_eq!(git_log(&vault), log_before);
+
+    let mut ordinary_tags = save;
+    ordinary_tags["tags"] = json!(["deploy", "token-rotation"]);
+    assert_eq!(
+        client.call("memory_save", ordinary_tags),
+        (false, "saved Preferences/deploy".into())
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+    petit_poucet(home.path()).arg("check").assert().success();
+
+    let note = vault.join("Preferences/deploy.md");
+    let text = std::fs::read_to_string(&note).unwrap();
+    assert!(text.contains("- token-rotation\n"), "{text}");
+    std::fs::write(
+        &note,
+        text.replace("- token-rotation\n", &format!("- {synthetic_key}\n")),
+    )
+    .unwrap();
+    let output = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(!output.status.success());
+    let report = stdout(&output);
+    assert!(
+        report.contains("Preferences/deploy.md: error: looks like a secret (AWS access key)\n"),
+        "{report}"
+    );
+    assert!(!report.contains(&synthetic_key), "{report}");
+}
+
 #[test]
 fn search_finds_two_letter_names_as_whole_words() {
     let home = TempDir::new().unwrap();
@@ -1244,6 +1490,153 @@ fn search_drops_notes_matching_under_half_the_terms() {
         found,
         "- [[Preferences/jsonb-filters-in-specifications]] — jsonb filters go through cb.function in the repository"
     );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+fn git(vault: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(vault)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    stdout(&output)
+}
+
+// A committed note, a note linking to it and to `draft`, `draft` added outside petit-poucet and not in git yet,
+// and the user's work in progress: a staged file and an untracked one.
+fn vault_with_an_uncommitted_note(home: &Path) -> std::path::PathBuf {
+    let vault = home.join("vault");
+    petit_poucet(home)
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = |summary: &str, body: &str| {
+        format!(
+            "---\ntype: reference\nscope: all repos\nsummary: {summary}\ncreated: 2026-10-30\ntags: [agent-memory]\n---\n# {summary}\n\n{body}\n"
+        )
+    };
+    let write = |path: &str, text: &str| std::fs::write(vault.join(path), text).unwrap();
+    write("Preferences/kept.md", &note("kept", "Kept."));
+    write(
+        "Preferences/links.md",
+        &note(
+            "links",
+            "See [[Preferences/kept]] and [[Preferences/draft]].",
+        ),
+    );
+    git(&vault, &["add", "Preferences"]);
+    git(&vault, &["commit", "--quiet", "-m", "user: notes"]);
+    write("Preferences/draft.md", &note("draft", "Draft."));
+    write("staged.txt", "staged");
+    git(&vault, &["add", "staged.txt"]);
+    write("untracked.txt", "untracked");
+    vault
+}
+
+// Usage rides with any commit, so it is left out.
+fn last_commit_files(vault: &Path) -> Vec<String> {
+    let mut files: Vec<String> = git(
+        vault,
+        &["show", "--no-renames", "--name-only", "--format=", "HEAD"],
+    )
+    .lines()
+    .filter(|f| !f.starts_with(".usage/"))
+    .map(str::to_string)
+    .collect();
+    files.sort();
+    files
+}
+
+fn assert_user_work_untouched(vault: &Path) {
+    let pending: Vec<String> = git_status(vault)
+        .lines()
+        .filter(|l| !l.contains(".usage/"))
+        .map(str::to_string)
+        .collect();
+    assert_eq!(pending, ["A  staged.txt", "?? untracked.txt"]);
+}
+
+// Moving a note git has never seen commits its new place and the rewritten links, nothing of the user's (#172).
+#[test]
+fn a_move_commits_only_its_own_changes_whether_the_note_was_committed_or_not() {
+    let home = TempDir::new().unwrap();
+    let vault = vault_with_an_uncommitted_note(home.path());
+    let (mut child, mut client, _) = start(home.path());
+
+    let (is_error, reply) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/draft", "new_path": "Preferences/final"}),
+    );
+    assert!(!is_error && !reply.contains("not committed"), "{reply}");
+    assert_eq!(
+        git(&vault, &["log", "-1", "--format=%s"]),
+        "move: Preferences/draft -> Preferences/final (test-agent)\n"
+    );
+    assert_eq!(
+        last_commit_files(&vault),
+        ["Index.md", "Preferences/final.md", "Preferences/links.md"]
+    );
+    assert_user_work_untouched(&vault);
+
+    let (is_error, reply) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/kept", "new_path": "Preferences/renamed"}),
+    );
+    assert!(!is_error && !reply.contains("not committed"), "{reply}");
+    assert_eq!(
+        last_commit_files(&vault),
+        [
+            "Index.md",
+            "Preferences/kept.md",
+            "Preferences/links.md",
+            "Preferences/renamed.md"
+        ]
+    );
+    assert_user_work_untouched(&vault);
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// A note git has never seen has no history: its delete commits the unlinked notes and the Index, with the reason (#172).
+#[test]
+fn a_delete_commits_its_reason_and_only_its_own_changes_whether_the_note_was_committed_or_not() {
+    let home = TempDir::new().unwrap();
+    let vault = vault_with_an_uncommitted_note(home.path());
+    let (mut child, mut client, _) = start(home.path());
+
+    for (note, reason, expected) in [
+        (
+            "Preferences/draft",
+            "the draft was wrong",
+            &["Index.md", "Preferences/links.md"][..],
+        ),
+        (
+            "Preferences/kept",
+            "kept is obsolete",
+            &["Index.md", "Preferences/kept.md", "Preferences/links.md"],
+        ),
+    ] {
+        client.call("memory_read", json!({"path": note}));
+        let (is_error, reply) =
+            client.call("memory_delete", json!({"path": note, "reason": reason}));
+        assert!(!is_error && !reply.contains("not committed"), "{reply}");
+        assert_eq!(
+            git(&vault, &["log", "-1", "--format=%B"]),
+            format!("delete: {note} (test-agent)\n\n{reason}\n\n")
+        );
+        assert_eq!(last_commit_files(&vault), expected);
+        assert_user_work_untouched(&vault);
+    }
 
     drop(client);
     assert!(child.wait().unwrap().success());
