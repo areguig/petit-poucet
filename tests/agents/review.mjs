@@ -19,14 +19,20 @@ const toolResults = (node) => {
   if (node.functionResponse) return [node.functionResponse.response];
   return Object.values(node).flatMap(toolResults);
 };
-// Some agents pass the MCP result on as JSON text, so a string that parses is searched inside too.
+// Some agents pass the MCP result on as JSON text, which Hermes frames in an untrusted-data block,
+// so the JSON a string is, or holds between its first { and last }, is searched inside too.
+const json = (text) => {
+  for (const candidate of [text, text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)]) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {}
+  }
+};
 const texts = (value) => {
   if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object") return [value, ...texts(parsed)];
-    } catch {}
-    return [value];
+    const parsed = json(value);
+    return parsed ? [value, ...texts(parsed)] : [value];
   }
   return value && typeof value === "object" ? Object.values(value).flatMap(texts) : [];
 };
