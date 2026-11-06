@@ -104,3 +104,30 @@ fn pull_requests_package_and_only_tags_publish() {
     });
     assert!(downloaded_at < published_at);
 }
+
+fn runs(script: &'static str) -> impl Fn(&Value) -> bool {
+    move |step| {
+        step["run"]
+            .as_str()
+            .is_some_and(|run| run.starts_with(script))
+    }
+}
+
+// The #165 diagnostic's instrumented self-replace is built by Windows CI after the ordinary tests, never for a release.
+#[test]
+fn only_windows_ci_builds_the_instrumented_updater() {
+    let ci = workflow("ci.yml");
+    let check = &ci["jobs"]["check"];
+    let (tested_at, _) = step(check, runs("cargo test "));
+    let (diagnosed_at, diagnostic) = step(check, runs("bash tests/windows-update-phases/run.sh "));
+    assert!(tested_at < diagnosed_at);
+    assert_eq!(
+        diagnostic["if"],
+        "${{ !cancelled() && runner.os == 'Windows' }}"
+    );
+    let release = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml"),
+    )
+    .unwrap();
+    assert!(!release.contains("windows-update-phases") && !release.contains("patch."));
+}

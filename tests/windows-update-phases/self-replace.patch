@@ -1,0 +1,230 @@
+--- a/src/windows.rs
++++ b/src/windows.rs
+@@ -34,6 +34,130 @@
+     fn _wtoi64(x: *const u16) -> i64;
+ }
+ 
++// petit-poucet #165 diagnostic, CI only: logs a failed step, never changes its outcome.
++#[link(name = "kernel32")]
++extern "system" {
++    fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut std::ffi::c_void;
++    fn QueryFullProcessImageNameW(
++        process: *mut std::ffi::c_void,
++        flags: u32,
++        name: *mut u16,
++        size: *mut u32,
++    ) -> i32;
++}
++
++#[link(name = "ntdll")]
++extern "system" {
++    fn NtQueryInformationFile(
++        file: *mut std::ffi::c_void,
++        status: *mut [usize; 2],
++        info: *mut std::ffi::c_void,
++        length: u32,
++        class: u32,
++    ) -> i32;
++}
++
++const ERROR_SHARING_VIOLATION: i32 = 32;
++const FILE_READ_ATTRIBUTES: u32 = 0x80;
++const FILE_SHARE_ALL: u32 = 7;
++const FILE_PROCESS_IDS_USING_FILE_INFORMATION: u32 = 47;
++const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
++
++// A step that succeeds returns at once: logging it could give a short-lived holder time to let go.
++fn phase<T>(name: &str, paths: &[&Path], result: io::Result<T>) -> io::Result<T> {
++    if let Err(e) = &result {
++        report(name, paths, e);
++    }
++    result
++}
++
++fn report(name: &str, paths: &[&Path], error: &io::Error) {
++    let outcome = match error.raw_os_error() {
++        Some(code) => format!("os error {}", code),
++        None => format!("{:?}", error.kind()),
++    };
++    let names: Vec<_> = paths.iter().map(|path| basename(path)).collect();
++    eprintln!(
++        "self-replace phase {}: {} [{}]",
++        name,
++        outcome,
++        names.join(" -> ")
++    );
++    if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) {
++        for path in paths {
++            eprintln!(
++                "self-replace holders of {} (self {}): {}",
++                basename(path),
++                std::process::id(),
++                holders(path)
++            );
++        }
++    }
++}
++
++fn basename(path: &Path) -> String {
++    path.file_name()
++        .map(|name| name.to_string_lossy().into_owned())
++        .unwrap_or_default()
++}
++
++// The processes with `path` open, by image name only; attributes-only access never conflicts.
++fn holders(path: &Path) -> String {
++    use std::os::windows::fs::OpenOptionsExt;
++    use std::os::windows::io::AsRawHandle;
++
++    let file = match fs::OpenOptions::new()
++        .access_mode(FILE_READ_ATTRIBUTES)
++        .share_mode(FILE_SHARE_ALL)
++        .open(path)
++    {
++        Ok(file) => file,
++        Err(e) => return format!("not opened: os error {:?}", e.raw_os_error()),
++    };
++    // FILE_PROCESS_IDS_USING_FILE_INFORMATION: a count, then the ids.
++    let mut ids = [0usize; 65];
++    let mut status_block = [0usize; 2];
++    let status = unsafe {
++        NtQueryInformationFile(
++            file.as_raw_handle(),
++            &mut status_block,
++            ids.as_mut_ptr().cast(),
++            mem::size_of_val(&ids) as u32,
++            FILE_PROCESS_IDS_USING_FILE_INFORMATION,
++        )
++    };
++    if status < 0 {
++        return format!("not queried: ntstatus {:#x}", status);
++    }
++    let count = (ids[0] as u32 as usize).min(ids.len() - 1);
++    ids[1..=count]
++        .iter()
++        .map(|&pid| format!("{}:{}", pid, image_name(pid as u32)))
++        .collect::<Vec<_>>()
++        .join(" ")
++}
++
++fn image_name(pid: u32) -> String {
++    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
++
++    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
++    if process.is_null() {
++        return format!("? os error {:?}", io::Error::last_os_error().raw_os_error());
++    }
++    let process = unsafe { OwnedHandle::from_raw_handle(process) };
++    let mut name = [0u16; 1024];
++    let mut length = name.len() as u32;
++    let named = unsafe {
++        QueryFullProcessImageNameW(process.as_raw_handle(), 0, name.as_mut_ptr(), &mut length)
++    };
++    if named == 0 {
++        return format!("? os error {:?}", io::Error::last_os_error().raw_os_error());
++    }
++    basename(Path::new(&String::from_utf16_lossy(
++        &name[..length as usize],
++    )))
++}
++
+ macro_rules! cstrdup {
+     ($target:ident, $s:expr) => {
+         let mut $target = [0u8; $s.len()];
+@@ -68,7 +192,11 @@
+         )
+     };
+     if tmp_handle == INVALID_HANDLE_VALUE {
+-        return Err(io::Error::last_os_error());
++        return phase(
++            "open selfdelete",
++            &[tmp_exe.as_path()],
++            Err(io::Error::last_os_error()),
++        );
+     }
+ 
+     // We need to upgrade the pseudo current process handle to the real one for the
+@@ -85,15 +213,26 @@
+             DUPLICATE_SAME_ACCESS,
+         ) == 0
+         {
++            let duplicate_error = io::Error::last_os_error();
+             CloseHandle(tmp_handle);
+-            return Err(io::Error::last_os_error());
++            let forwarded = io::Error::last_os_error();
++            let _ = phase(
++                "duplicate process handle",
++                &[],
++                Err::<(), _>(duplicate_error),
++            );
++            return Err(forwarded);
+         }
+     };
+ 
+-    Command::new(tmp_exe)
+-        .arg(process_handle.to_string())
+-        .arg(original_exe)
+-        .spawn()?;
++    phase(
++        "spawn selfdelete",
++        &[tmp_exe.as_path()],
++        Command::new(&tmp_exe)
++            .arg(process_handle.to_string())
++            .arg(original_exe)
++            .spawn(),
++    )?;
+ 
+     // Many implementations of this sort of logic sleep here.  This one included.  However
+     // it does not appear that the sleep here is actually necessary from my testing so I
+@@ -211,7 +350,11 @@
+     let relocated_exe = get_temp_executable_name(&first_choice, RELOCATED_SUFFIX);
+     if fs::rename(exe, &relocated_exe).is_ok() {
+         let tmp_exe = get_temp_executable_name(&first_choice, SELFDELETE_SUFFIX);
+-        fs::copy(&relocated_exe, &tmp_exe)?;
++        phase(
++            "copy relocated to selfdelete in temp dir",
++            &[relocated_exe.as_path(), tmp_exe.as_path()],
++            fs::copy(&relocated_exe, &tmp_exe),
++        )?;
+         spawn_tmp_exe_to_delete_parent(tmp_exe, relocated_exe)?;
+     } else if let Some(protected_path) = protected_path {
+         let path = protected_path.parent().ok_or_else(|| {
+@@ -225,7 +368,11 @@
+         spawn_tmp_exe_to_delete_parent(tmp_exe, relocated_exe)?;
+     } else {
+         let tmp_exe = get_temp_executable_name(get_directory_of(exe)?, SELFDELETE_SUFFIX);
+-        fs::copy(exe, &tmp_exe)?;
++        phase(
++            "copy relocated to selfdelete beside it",
++            &[exe, tmp_exe.as_path()],
++            fs::copy(exe, &tmp_exe),
++        )?;
+         spawn_tmp_exe_to_delete_parent(tmp_exe, exe.to_path_buf())?;
+     }
+     Ok(())
+@@ -282,10 +429,22 @@
+ pub fn self_replace(new_executable: &Path) -> Result<(), io::Error> {
+     let exe = env::current_exe()?.canonicalize()?;
+     let old_exe = get_temp_executable_name(get_directory_of(&exe)?, RELOCATED_SUFFIX);
+-    fs::rename(&exe, &old_exe)?;
++    phase(
++        "rename installed to relocated",
++        &[exe.as_path(), old_exe.as_path()],
++        fs::rename(&exe, &old_exe),
++    )?;
+     schedule_self_deletion_on_shutdown(&old_exe, None)?;
+     let temp_exe = get_temp_executable_name(get_directory_of(&exe)?, TEMP_SUFFIX);
+-    fs::copy(new_executable, &temp_exe)?;
+-    fs::rename(&temp_exe, &exe)?;
++    phase(
++        "copy download to temp",
++        &[new_executable, temp_exe.as_path()],
++        fs::copy(new_executable, &temp_exe),
++    )?;
++    phase(
++        "rename temp to installed",
++        &[temp_exe.as_path(), exe.as_path()],
++        fs::rename(&temp_exe, &exe),
++    )?;
+     Ok(())
+ }

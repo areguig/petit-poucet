@@ -397,6 +397,29 @@ fn update_installs_the_latest_release_while_an_initialized_server_runs() {
     );
 }
 
+// Another program holds the binary without letting it be renamed: the update fails and leaves it whole.
+#[cfg(windows)]
+#[test]
+fn update_leaves_a_binary_another_program_holds_whole() {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+
+    let install = install("v99.0.0", None);
+    let _held = fs::File::options()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(&install.exe)
+        .unwrap();
+    let output = install.command().arg("update").output().unwrap();
+    let err = String::from_utf8_lossy(&output.stderr);
+    // tests/windows-update-phases/run.sh reads the instrumented updater's phases here.
+    eprintln!("{err}");
+    assert!(!output.status.success());
+    assert!(err.contains("(os error 32)"), "{err}");
+    assert!(!install.replaced());
+    assert_eq!(install.files(), vec!["petit-poucet.exe"]);
+}
+
 #[test]
 fn a_checksum_mismatch_replaces_nothing() {
     let install = install("v99.0.0", Some(&"0".repeat(64)));
