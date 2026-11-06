@@ -314,6 +314,59 @@ fn a_session_is_not_blocked_by_its_own_link_rewrites() {
     assert!(child.wait().unwrap().success());
 }
 
+// A moved note's links to itself follow it, keeping their heading and alias (#177).
+#[test]
+fn moving_note_self_links_follow_it() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let note = |title: &str, fact: &str| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("{title} summary"), "fact": fact,
+            "source": "test on 2026-11-05", "how_to_apply": "Test.",
+        })
+    };
+    client.call("memory_save", note("Other", "Another fact."));
+    client.call(
+        "memory_save",
+        note(
+            "Fact",
+            "See [[Preferences/fact#Examples|examples]] and [[Preferences/other]].",
+        ),
+    );
+
+    for (path, new_path) in [
+        ("Preferences/fact", "Preferences/renamed"),
+        ("Preferences/renamed", "Topics/homelab/renamed"),
+    ] {
+        let (is_error, text) =
+            client.call("memory_move", json!({"path": path, "new_path": new_path}));
+        assert!(!is_error, "{text}");
+        let moved = std::fs::read_to_string(vault.join(format!("{new_path}.md"))).unwrap();
+        assert!(
+            moved.contains(&format!(
+                "See [[{new_path}#Examples|examples]] and [[Preferences/other]]."
+            )),
+            "{moved}"
+        );
+        let check = petit_poucet(home.path()).arg("check").output().unwrap();
+        assert!(check.status.success(), "{}", stdout(&check));
+    }
+    assert!(
+        std::fs::read_to_string(vault.join("Topics/homelab/renamed.md"))
+            .unwrap()
+            .contains("scope: homelab")
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 #[test]
 fn moving_into_an_empty_topic_is_refused_before_any_change() {
     let home = TempDir::new().unwrap();
@@ -667,6 +720,56 @@ fn a_cleanup_lists_notes_nobody_opens() {
     client.call("memory_read", json!({"path": "Preferences/old-fact"}));
     let (pages, _) = review_pages(&mut client, false);
     assert!(!pages.concat().contains("## unused"), "{pages:?}");
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+// A Syncthing conflict copy of a machine's usage file is that machine again, not another one (#181).
+#[test]
+fn a_review_counts_a_usage_conflict_copy_once() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let (is_error, saved) = client.call(
+        "memory_save",
+        json!({"type": "user", "scope": "all repos", "title": "Counted", "summary": "counted",
+               "fact": "Counted.", "source": "the user on 2026-10-30", "how_to_apply": "Always."}),
+    );
+    assert!(!is_error, "{saved}");
+    let usage = |reads, day| {
+        format!(
+            "{{\"notes\": {{\"Preferences/counted\": {{\"reads\": {reads}, \"last_read\": \"{day}\"}}}}}}"
+        )
+    };
+    std::fs::create_dir(vault.join(".usage")).unwrap();
+    std::fs::write(vault.join(".usage/machine.json"), usage(5, "2026-10-20")).unwrap();
+    std::fs::write(vault.join(".usage/other.json"), usage(2, "2026-10-22")).unwrap();
+    let copy = vault.join(".usage/machine.sync-conflict-20261026-101112-ABCDEF7.json");
+    std::fs::write(&copy, usage(4, "2026-10-26")).unwrap();
+
+    let (pages, _) = review_pages(&mut client, true);
+    let text = pages.concat();
+    assert!(text.contains("| 7r 2026-10-22 | counted"), "{text}");
+
+    let (is_error, moved) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/counted", "new_path": "Preferences/moved"}),
+    );
+    assert!(!is_error, "{moved}");
+    let (pages, _) = review_pages(&mut client, true);
+    assert!(
+        pages.concat().contains("| 7r 2026-10-22 | counted"),
+        "{pages:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&copy).unwrap(),
+        usage(4, "2026-10-26"),
+        "the copy is left as synced"
+    );
     drop(client);
     assert!(child.wait().unwrap().success());
 }
@@ -1109,6 +1212,81 @@ fn an_update_keeps_tags_and_is_committed_as_an_update() {
         ),
         "{log}"
     );
+}
+
+// Every file under the fake home but git internals and the lock any write call takes first.
+fn files_under(home: &Path) -> Vec<(std::path::PathBuf, String)> {
+    let lock_files = [".petit-poucet/lock", ".petit-poucet/.gitignore"];
+    walkdir::WalkDir::new(home)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|e| e.file_name() != ".git")
+        .map(Result::unwrap)
+        .filter(|e| e.file_type().is_file() && !lock_files.iter().any(|f| e.path().ends_with(f)))
+        .map(|e| {
+            let text = std::fs::read_to_string(e.path()).unwrap();
+            (e.path().to_path_buf(), text)
+        })
+        .collect()
+}
+
+// Tags are stored in the note too, so the secret scan covers them on save and on check (#183).
+#[test]
+fn a_secret_in_tags_is_refused_on_save_and_reported_by_check() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    // Generated to match the AWS access key pattern; not a credential.
+    let synthetic_key = format!("AKIA{}", "TESTONLY".repeat(2));
+    let (mut child, mut client, _) = start(home.path());
+    let save = json!({
+        "type": "user", "scope": "all repos", "title": "Deploy",
+        "summary": "deploys go through the pipeline", "fact": "Deploy with the pipeline.",
+        "source": "the user on 2026-11-05", "how_to_apply": "Before a deploy.",
+    });
+
+    let before = files_under(home.path());
+    let log_before = git_log(&vault);
+    let mut secret_tag = save.clone();
+    secret_tag["tags"] = json!(["deploy", synthetic_key]);
+    let (is_error, text) = client.call("memory_save", secret_tag);
+    assert!(is_error, "{text}");
+    assert_eq!(
+        text,
+        "tags looks like a secret (AWS access key): never store secrets"
+    );
+    assert_eq!(files_under(home.path()), before);
+    assert_eq!(git_log(&vault), log_before);
+
+    let mut ordinary_tags = save;
+    ordinary_tags["tags"] = json!(["deploy", "token-rotation"]);
+    assert_eq!(
+        client.call("memory_save", ordinary_tags),
+        (false, "saved Preferences/deploy".into())
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+    petit_poucet(home.path()).arg("check").assert().success();
+
+    let note = vault.join("Preferences/deploy.md");
+    let text = std::fs::read_to_string(&note).unwrap();
+    assert!(text.contains("- token-rotation\n"), "{text}");
+    std::fs::write(
+        &note,
+        text.replace("- token-rotation\n", &format!("- {synthetic_key}\n")),
+    )
+    .unwrap();
+    let output = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(!output.status.success());
+    let report = stdout(&output);
+    assert!(
+        report.contains("Preferences/deploy.md: error: looks like a secret (AWS access key)\n"),
+        "{report}"
+    );
+    assert!(!report.contains(&synthetic_key), "{report}");
 }
 
 #[test]

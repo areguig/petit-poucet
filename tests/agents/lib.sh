@@ -47,8 +47,17 @@ start_model() {
   calls="$HOME/calls.jsonl"
   node "$repo/tests/agents/model.mjs" "$calls" > "$HOME/model-port" &
   model_pid=$!
-  trap 'kill $model_pid' EXIT
-  while [ ! -s "$HOME/model-port" ]; do sleep 0.1; done
+  trap 'kill $model_pid 2>/dev/null' EXIT
+  # Wall-clock time, not a count of sleeps: on a loaded host each `sleep 0.1` takes longer.
+  deadline=$(($(date +%s) + 20))
+  until [ -s "$HOME/model-port" ]; do
+    if ! kill -0 "$model_pid" 2>/dev/null; then
+      wait "$model_pid" && status=0 || status=$?
+      fail "the mock model exited ($status) before printing its port"
+    fi
+    [ "$(date +%s)" -lt "$deadline" ] || fail "the mock model printed no port in 20 s"
+    sleep 0.1
+  done
   model_url="http://127.0.0.1:$(cat "$HOME/model-port")"
   # A proxy set for the machine must not stand between the agent and the mock.
   export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
@@ -79,7 +88,7 @@ install_old_plugin() {
   "$1" plugin install petit-poucet@petit-poucet >/dev/null
 }
 
-# big_vault: a vault too large for one memory_review result (#77); the mock calls $REVIEW_TOOL on the prompt petit-poucet-review.
+# big_vault: a vault too large for one memory_review page (#77); the mock calls $REVIEW_TOOL, for page 1, on the prompt petit-poucet-review.
 big_vault() {
   big="$HOME/agent-memory/Projects/big"
   mkdir -p "$big"
@@ -91,7 +100,7 @@ big_vault() {
   : > "$calls"
 }
 
-# check_review: the review reached the model whole, not saved to a file or cut in the middle.
+# check_review: the first review page reached the model whole, in a tool result, not saved to a file or cut; see review.mjs.
 check_review() {
-  grep -q 'page 1 of ' "$calls" || fail "memory_review didn't reach the model inline"
+  node "$repo/tests/agents/review.mjs" "$calls" || fail "the first memory_review page didn't reach the model whole and inline"
 }

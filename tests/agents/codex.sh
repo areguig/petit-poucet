@@ -4,7 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 
 export REVIEW_TOOL=memory_review REVIEW_NAMESPACE=mcp__petit_poucet
-node --test "$repo/tests/agents/calls.test.mjs"
+node --test "$repo/tests/agents/calls.test.mjs" "$repo/tests/agents/review.test.mjs"
 start_model
 # The mock as Codex's model provider; top-level keys go before the tables `setup` adds.
 mkdir -p "$HOME/.codex"

@@ -236,19 +236,23 @@ fn migrate_upgrades_a_hand_maintained_vault_once() {
     assert_eq!(git_log(&vault), "migrate: vault\n");
 }
 
-// Stop counters go to the temp folder: one per test.
+// Stop counters go to each test's HOME, under .cache/petit-poucet/stops.
 fn hook(home: &Path, args: &[&str], input: &str) -> String {
+    stdout(&hook_output(home, home, args, input))
+}
+
+fn hook_output(home: &Path, temp: &Path, args: &[&str], input: &str) -> std::process::Output {
     let output = petit_poucet(home)
-        .env("TMPDIR", home)
-        .env("TMP", home)
-        .env("TEMP", home)
+        .env("TMPDIR", temp)
+        .env("TMP", temp)
+        .env("TEMP", temp)
         .arg("hook")
         .args(args)
         .write_stdin(input)
         .output()
         .unwrap();
     assert!(output.status.success(), "hooks never fail the session");
-    stdout(&output)
+    output
 }
 
 #[test]
@@ -684,10 +688,81 @@ fn stop_never_reminds_without_a_session_id_and_keeps_counters_in_their_folder() 
     let event = serde_json::json!({"session_id": "../escape"}).to_string();
     hook(home.path(), &["stop", "--agent", "claude"], &event);
     assert_eq!(
-        fs::read_to_string(home.path().join("petit-poucet-stops/escape")).unwrap(),
+        fs::read_to_string(home.path().join(".cache/petit-poucet/stops/escape")).unwrap(),
         "1"
     );
     assert!(!home.path().parent().unwrap().join("escape").exists());
+}
+
+#[test]
+fn stop_counters_of_two_users_sharing_a_temp_folder_stay_apart() {
+    let temp = TempDir::new().unwrap();
+    let (alice, bob) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let stop = |home: &Path| {
+        let event = r#"{"session_id": "same-id"}"#;
+        stdout(&hook_output(
+            home,
+            temp.path(),
+            &["stop", "--agent", "claude"],
+            event,
+        ))
+    };
+    let _ = (stop(alice.path()), stop(alice.path()));
+    assert_eq!(
+        stop(bob.path()),
+        "",
+        "bob's first stop is not alice's third"
+    );
+    assert!(stop(alice.path()).contains("block"));
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unwritable_stops_folder_in_the_shared_temp_folder_does_not_silence_the_reminder() {
+    use std::os::unix::fs::PermissionsExt;
+    let (home, temp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let foreign = temp.path().join("petit-poucet-stops");
+    fs::create_dir(&foreign).unwrap();
+    fs::set_permissions(&foreign, fs::Permissions::from_mode(0o555)).unwrap();
+    let event = r#"{"session_id": "s1"}"#;
+    let replies: Vec<String> = (0..3)
+        .map(|_| {
+            stdout(&hook_output(
+                home.path(),
+                temp.path(),
+                &["stop", "--agent", "claude"],
+                event,
+            ))
+        })
+        .collect();
+    assert_eq!(replies[..2], ["", ""]);
+    assert!(replies[2].contains("block"), "{replies:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn stop_says_in_one_line_why_it_cannot_count_and_lets_the_session_go_on() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = TempDir::new().unwrap();
+    let stops = home.path().join(".cache/petit-poucet/stops");
+    fs::create_dir_all(&stops).unwrap();
+    fs::set_permissions(&stops, fs::Permissions::from_mode(0o555)).unwrap();
+    let event = r#"{"session_id": "s1"}"#;
+    for _ in 0..3 {
+        let output = hook_output(
+            home.path(),
+            home.path(),
+            &["stop", "--agent", "claude"],
+            event,
+        );
+        assert_eq!(stdout(&output), "");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr.lines().count(), 1, "{stderr}");
+        assert!(
+            stderr.starts_with("petit-poucet: stop not counted: ") && stderr.contains("stops"),
+            "{stderr}"
+        );
+    }
 }
 
 #[test]
@@ -865,14 +940,21 @@ fn sync_without_syncthing_says_how_to_install_it() {
     let stignore = vault.join(".stignore");
     let text = fs::read_to_string(&stignore).unwrap();
     fs::write(&stignore, format!("!/Index.md\n{text}")).unwrap();
-    let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
-        .find(|dir| dir.join("git").is_file() || dir.join("git.exe").is_file())
+    // Only git on PATH: Syncthing may be installed next to the host's git (#175).
+    let git = format!("git{}", std::env::consts::EXE_SUFFIX);
+    let host_git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|dir| dir.join(&git))
+        .find(|path| path.is_file())
         .unwrap();
-    assert!(!git.join("syncthing").exists() && !git.join("syncthing.exe").exists());
+    let bin = TempDir::new().unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&host_git, bin.path().join(&git)).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(&host_git, bin.path().join(&git)).unwrap();
 
     // A fresh machine often has no git identity yet: the files are written all the same (#140).
     let output = without_git_identity(&mut petit_poucet(home.path()))
-        .env("PATH", &git)
+        .env("PATH", bin.path())
         .arg("sync")
         .output()
         .unwrap();
@@ -969,6 +1051,41 @@ fn setup_for_one_agent_and_uninstall_keep_the_vault() {
         .output()
         .unwrap();
     assert!(!conflict.status.success());
+}
+
+// An agent's config can hold secrets: setup, uninstall and the backups keep it as private as it was (#169).
+#[cfg(unix)]
+#[test]
+fn setup_and_uninstall_keep_a_private_agent_config_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = TempDir::new().unwrap();
+    let config = home.path().join(".claude.json");
+    let backup = home.path().join(".claude.json.petit-poucet.bak");
+    let mine = "{\n  \"mcpServers\": {\n    \"other\": {\n      \"command\": \"other\",\n      \"env\": {\n        \"TOKEN\": \"synthetic\"\n      }\n    }\n  }\n}\n";
+    fs::create_dir(home.path().join(".claude")).unwrap();
+    fs::write(&config, mine).unwrap();
+    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+    // A backup an older version left readable.
+    fs::write(&backup, "old").unwrap();
+    fs::set_permissions(&backup, fs::Permissions::from_mode(0o644)).unwrap();
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+    for args in [
+        &["--agent", "claude"][..],
+        &["--agent", "claude"],
+        &["--uninstall"],
+    ] {
+        let (ok, out) = setup(home.path(), args);
+        assert!(ok, "{out}");
+        assert_eq!(mode(&config), 0o600, "{args:?}");
+        assert_eq!(mode(&backup), 0o600, "{args:?}");
+    }
+    assert_eq!(fs::read_to_string(&config).unwrap(), mine);
+    let replaced = fs::read_to_string(&backup).unwrap();
+    assert!(
+        replaced.contains("\"TOKEN\": \"synthetic\"") && replaced.contains("petit-poucet"),
+        "the backup holds what uninstall replaced: {replaced}"
+    );
 }
 
 #[test]

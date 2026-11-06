@@ -147,7 +147,7 @@ Replace today's `~/.config/agent-memory/memory-hook.py` (a working prototype wor
   - Claude Code: `{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "…"}}`
   - Copilot CLI: `{"additionalContext": "…"}`
   - 0.3 adds Codex (Claude's format), Cursor (`{"additional_context": …}`) and Antigravity CLI (a `PreInvocation` hook answering `{"injectSteps": [{"ephemeralMessage": …}]}` before each model call). Each agent's formats live in `src/agent.rs`.
-- **Stop** — at the 3rd stop of a session, then every 10th: `{"decision": "block", "reason": "<save reminder>"}`; do nothing when `stop_hook_active` is set. Per-session counter in a temp file keyed by session id. Cadence configurable.
+- **Stop** — at the 3rd stop of a session, then every 10th: `{"decision": "block", "reason": "<save reminder>"}`; do nothing when `stop_hook_active` is set. Per-session counter in a file keyed by session id, under the user's `~/.cache/petit-poucet/stops` (a shared temp folder lets another user silence it); a counter that cannot be written is reported on stderr and never fails the session. Cadence configurable.
 
 ## 8. Distribution
 

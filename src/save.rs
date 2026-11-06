@@ -150,7 +150,8 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
 // Returns the note type once every required field is there.
 fn validate(req: &SaveRequest) -> Result<NoteType, String> {
     let note_type = require_fields(req)?;
-    for (name, value) in text_fields(req) {
+    let tags = req.tags.iter().map(|tag| ("tags", tag));
+    for (name, value) in text_fields(req).into_iter().chain(tags) {
         if let Some(kind) = secrets::find(value) {
             return Err(format!(
                 "{name} looks like a secret ({kind}): never store secrets"

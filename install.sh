@@ -44,6 +44,6 @@ log "installed $("$dir/petit-poucet" --version) in $dir"
 # The full path when it's not on PATH, so the next step works as printed, from this shell or an agent's.
 case ":$PATH:" in
   *":$dir:"*) command=petit-poucet ;;
-  *) command="$dir/petit-poucet"; log "$dir is not on your PATH: add it to your shell profile" ;;
+  *) command="'$(printf '%s' "$dir/petit-poucet" | sed "s/'/'\\\\''/g")'"; log "$dir is not on your PATH: add it to your shell profile" ;;
 esac
 log "next: run \`$command setup\` to create your memory vault and set up your agents"

@@ -14,6 +14,12 @@ fn first_save_from_dot_prefixed_checkout_is_rejected_without_writing_project_or_
         .success();
     let repo = home.path().join(".dotfiles");
     std::fs::create_dir(&repo).unwrap();
+    let status = std::process::Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(&repo)
+        .status()
+        .unwrap();
+    assert!(status.success());
 
     let (mut child, mut client, _) = start(home.path());
     let (is_error, reply) = client.call(
