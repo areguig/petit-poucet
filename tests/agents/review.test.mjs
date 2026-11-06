@@ -54,8 +54,10 @@ const deliveries = {
     call({ messages: [{ role: "user", content: SECRET }, { role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: [{ type: "text", text }] }] }] }),
   "codex (Responses, MCP content as JSON)": (text) =>
     call({ input: [{ role: "user", content: [{ type: "input_text", text: SECRET }] }, { type: "function_call_output", call_id: "c", output: JSON.stringify([{ type: "text", text }]) }] }),
-  "copilot, omp, hermes (Chat Completions)": (text) =>
+  "copilot, omp (Chat Completions)": (text) =>
     call({ messages: [{ role: "user", content: SECRET }, { role: "tool", tool_call_id: "c", content: text }] }),
+  "hermes (Chat Completions, MCP result as JSON)": (text) =>
+    call({ messages: [{ role: "user", content: SECRET }, { role: "tool", tool_call_id: "c", content: JSON.stringify({ result: text }) }] }),
   "opencode (Chat Completions, execute's JSON result)": (text) =>
     call({ messages: [{ role: "tool", tool_call_id: "c", content: JSON.stringify({ content: [{ type: "text", text }] }) }] }),
   "antigravity (Gemini function response)": (text) =>
