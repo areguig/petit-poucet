@@ -3,11 +3,12 @@ mod common;
 use std::fs;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use common::{FIXTURE, copy_dir, stdout};
-use serde_json::Value;
+use common::{Client, FIXTURE, copy_dir, stdout};
+use serde_json::{Value, json};
 use tempfile::TempDir;
 
 // A home with a vault, its update check turned on and pointed at `release`.
@@ -51,7 +52,7 @@ fn release(dir: &Path, tag: &str) -> String {
 fn session_start(cmd: &mut Command, agent: &str) -> Value {
     let output = cmd
         .args(["hook", "session-start", "--agent", agent])
-        .stdin(std::process::Stdio::null())
+        .stdin(Stdio::null())
         .output()
         .unwrap();
     serde_json::from_str(&stdout(&output)).unwrap()
@@ -268,18 +269,70 @@ impl Install {
         fs::metadata(&self.exe).unwrap().modified().unwrap() > std::time::UNIX_EPOCH + LONG_AGO
     }
 
-    // The download never stays next to the binary.
-    fn leftovers(&self) -> Vec<String> {
+    fn files(&self) -> Vec<String> {
         fs::read_dir(self.exe.parent().unwrap())
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    // The download never stays next to the binary.
+    fn leftovers(&self) -> Vec<String> {
+        self.files()
+            .into_iter()
             .filter(|name| name.starts_with(".petit-poucet.download."))
             .collect()
     }
 }
 
-#[test]
-fn update_installs_the_latest_release_while_a_server_runs_then_sets_up_the_agents() {
+// Kills the server even when an assertion fails first.
+struct Server(std::process::Child);
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+impl Install {
+    // An agent's MCP server, started from the installed binary.
+    fn serve(&self, stdout: Stdio) -> Server {
+        Server(
+            self.command()
+                .arg("serve")
+                .stdin(Stdio::piped())
+                .stdout(stdout)
+                .spawn()
+                .unwrap(),
+        )
+    }
+
+    fn update_and_set_up(&self) {
+        let output = self.command().arg("update").output().unwrap();
+        let out = stdout(&output);
+        // The remaining files help locate a failed replacement.
+        assert!(
+            output.status.success(),
+            "{out}{}\nnext to the binary: {:?}",
+            String::from_utf8_lossy(&output.stderr),
+            self.files()
+        );
+        assert!(
+            out.starts_with("petit-poucet: updated to 99.0.0\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("\nClaude Code: set up"),
+            "the new binary ran setup: {out}"
+        );
+        assert!(self.replaced());
+        assert_eq!(self.leftovers(), Vec::<String>::new());
+    }
+}
+
+// A release to update to, a vault and Claude Code for the new binary's setup.
+fn install_with_agent_and_vault() -> Install {
     let install = install("v99.0.0", None);
     fs::create_dir(install.home.path().join(".claude")).unwrap();
     let vault = install.home.path().join("vault");
@@ -291,38 +344,57 @@ fn update_installs_the_latest_release_while_a_server_runs_then_sets_up_the_agent
             .unwrap()
             .success()
     );
-    // An agent's MCP server, started from the installed binary, keeps running across the update.
-    let mut server = install
-        .command()
-        .arg("serve")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+    install
+}
 
-    let output = install.command().arg("update").output().unwrap();
-    let out = stdout(&output);
+// The server's answer, or a failure once it has kept silent too long.
+fn request_within(mut client: Client, method: &'static str, params: Value) -> (Client, Value) {
+    let (answer, answered) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = client.request(method, params);
+        let _ = answer.send((client, result));
+    });
+    answered
+        .recv_timeout(Duration::from_secs(20))
+        .unwrap_or_else(|e| panic!("no answer to {method}: {e}"))
+}
+
+#[test]
+fn update_installs_the_latest_release_while_a_server_runs_then_sets_up_the_agents() {
+    let install = install_with_agent_and_vault();
+    // The server may still be starting when the update replaces its binary.
+    let mut server = install.serve(Stdio::null());
+    install.update_and_set_up();
     assert!(
-        output.status.success(),
-        "{out}{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        out.starts_with("petit-poucet: updated to 99.0.0\n"),
-        "{out}"
-    );
-    assert!(
-        out.contains("\nClaude Code: set up"),
-        "the new binary ran setup: {out}"
-    );
-    assert!(install.replaced());
-    assert_eq!(install.leftovers(), Vec::<String>::new());
-    assert!(
-        server.try_wait().unwrap().is_none(),
+        server.0.try_wait().unwrap().is_none(),
         "the server still runs"
     );
-    server.kill().unwrap();
-    server.wait().unwrap();
+}
+
+// Compare an initialized server with the startup-overlap case.
+#[test]
+fn update_installs_the_latest_release_while_an_initialized_server_runs() {
+    let install = install_with_agent_and_vault();
+    let mut server = install.serve(Stdio::piped());
+    let (mut client, init) = request_within(
+        common::client(&mut server.0),
+        "initialize",
+        json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test-agent", "version": "1"}}),
+    );
+    assert!(
+        init["instructions"]
+            .as_str()
+            .is_some_and(|i| i.contains("call memory_index")),
+        "{init}"
+    );
+    client.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+
+    install.update_and_set_up();
+    let (_, tools) = request_within(client, "tools/list", json!({}));
+    assert!(
+        tools["tools"].as_array().is_some_and(|t| !t.is_empty()),
+        "the same server still answers: {tools}"
+    );
 }
 
 #[test]
