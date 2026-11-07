@@ -1,17 +1,19 @@
 name: Agents
 
-# Installs petit-poucet into each supported agent's real CLI (latest release) and runs a session against a mock model.
+# Installs petit-poucet into each supported agent's real CLI and runs a session against a mock model.
+# Pushes and pull requests use the pinned versions below; the weekly run (and a manual one) uses each agent's latest release.
 on:
   push:
   pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
   CARGO_TERM_COLOR: always
-  # Hermes Agent v2026.9.24: its installer is taken from the same commit, since newer ones expect newer files.
-  HERMES_COMMIT: f97608f178d1ffeca59860195ab7da295f7c8e5f
 
 jobs:
   install:
@@ -21,27 +23,35 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         agent: [codex, claude, copilot, cursor, antigravity, opencode, omp, hermes]
         # install-windows only where Windows needs another command.
+        # version: the pinned release; the install commands read it as $VERSION, which is "latest" on scheduled runs.
         include:
-          - { agent: codex, install: "npm install -g @openai/codex" }
-          - { agent: claude, install: "npm install -g @anthropic-ai/claude-code" }
-          - { agent: copilot, install: "npm install -g @github/copilot" }
-          - { agent: opencode, install: "npm install -g @opencode/cli" }
+          - { agent: codex, version: 0.167.0, install: "npm install -g @openai/codex@$VERSION" }
+          - { agent: claude, version: 2.1.319, install: "npm install -g @anthropic-ai/claude-code@$VERSION" }
+          - { agent: copilot, version: 1.0.107, install: "npm install -g @github/copilot@$VERSION" }
+          - { agent: opencode, version: 2.0.24, install: "npm install -g @opencode/cli@$VERSION" }
           # omp runs on Bun; bun's global bin folder isn't on the Path by default.
           - agent: omp
-            install: bun install -g @oh-my-pi/pi-coding-agent && echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
-            install-windows: bun install -g @oh-my-pi/pi-coding-agent; Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.bun\bin"
+            version: 18.17.0
+            install: bun install -g @oh-my-pi/pi-coding-agent@$VERSION && echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+            install-windows: bun install -g @oh-my-pi/pi-coding-agent@$VERSION; Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.bun\bin"
+          # Cursor's installer has its release hard-coded and takes no version: always the latest.
           - agent: cursor
-            install: curl https://cursor.com/install -fsS | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            install-windows: irm 'https://cursor.com/install?win32=true' | iex
+            install: sh .github/download.sh https://cursor.com/install | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: irm @download 'https://cursor.com/install?win32=true' | iex
           # On Windows, the v2026.9.24 installer can't switch to a pinned commit (checkout aborts on "local changes"):
           # the current installer runs instead, which takes Hermes's latest stable release.
+          # Hermes Agent v2026.9.24: its installer is taken from the same commit, since newer ones expect newer files.
           - agent: hermes
-            install: curl -fsSL --retry 5 "https://raw.githubusercontent.com/NousResearch/hermes-agent/$HERMES_COMMIT/scripts/install.sh" | bash -s -- --commit "$HERMES_COMMIT" --non-interactive --skip-browser --skip-computer-use && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            install-windows: "& ([scriptblock]::Create((irm -MaximumRetryCount 5 -RetryIntervalSec 10 https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1))) -NonInteractive -SkipComputerUse"
+            version: f97608f178d1ffeca59860195ab7da295f7c8e5f
+            install: |
+              ref=$VERSION; commit="--commit $VERSION"
+              [ "$VERSION" = latest ] && ref=main commit=
+              sh .github/download.sh "https://raw.githubusercontent.com/NousResearch/hermes-agent/$ref/scripts/install.sh" | bash -s -- $commit --non-interactive --skip-browser --skip-computer-use && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: "& ([scriptblock]::Create((irm @download https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1))) -NonInteractive -SkipComputerUse"
+          # Antigravity's installer always fetches the manifest's current release and takes no version: always the latest.
           - agent: antigravity
-            # Its server sometimes sends the script gzip-compressed (seen 2026-10-04): --compressed decodes it.
-            install: curl -fsSL --compressed --retry 3 https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            install-windows: irm https://antigravity.google/cli/install.ps1 | iex
+            install: sh .github/download.sh https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: irm @download https://antigravity.google/cli/install.ps1 | iex
     name: ${{ matrix.agent }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     defaults:
@@ -55,11 +65,17 @@ jobs:
       - if: matrix.agent == 'omp'
         uses: oven-sh/setup-bun@v2
       - if: runner.os != 'Windows'
+        env:
+          VERSION: ${{ contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name) && 'latest' || matrix.version }}
         run: ${{ matrix.install }}
       # Windows installers add their folder to the user Path, which later steps only see through GITHUB_PATH.
       - if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          VERSION: ${{ contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name) && 'latest' || matrix.version }}
         run: |
+          $VERSION = $env:VERSION
+          $download = @{ MaximumRetryCount = 5; RetryIntervalSec = 10 }
           $before = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
           ${{ matrix.install-windows || matrix.install }}
           [Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_ -and $before -notcontains $_ } | Add-Content $env:GITHUB_PATH

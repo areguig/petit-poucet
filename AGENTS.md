@@ -19,6 +19,7 @@ Review the whole diff against this list and fix what it finds:
 - **Clean history:** one commit per finished step. Fix your own unmerged branch by amending or rebasing, never with a "fix" commit on top; once merged, a fix is a new pull request.
 
 ## Workflow
+- A change under `tests/agents/` is run locally with `sh tests/agents/isolated.sh <agent>` for every installed agent before pushing (mock model, throwaway HOME).
 - Before each commit: `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test`.
 - Commit each finished step locally, conventional style (`feat: …`), one or two lines, no Co-Authored-By trailer.
 - Work on the branch of the version in progress (e.g. `v0.3`, cut from `main`), one pull request per issue targeting it; `main` holds released versions only, because users install from it (the install script and the site come from `main`). Merging to `main`, tagging and releasing happen only after the owner tried the local build and asked for the release (see CONTRIBUTING.md).

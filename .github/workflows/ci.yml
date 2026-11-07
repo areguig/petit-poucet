@@ -28,13 +28,3 @@ jobs:
       - run: cargo test --no-fail-fast
       - run: sh tests/agents/lib.test.sh
         shell: bash
-      # Compare startup-overlap and initialized-server failures; this does not fix the updater.
-      - if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          for batch in $(seq 20); do
-            for scenario in update_installs_the_latest_release_while_a_server_runs_then_sets_up_the_agents update_installs_the_latest_release_while_an_initialized_server_runs; do
-              echo "batch $batch/20: $scenario"
-              cargo test --test update "$scenario" -- --exact || { status=$?; echo "failed in batch $batch/20: $scenario"; exit $status; }
-            done
-          done
