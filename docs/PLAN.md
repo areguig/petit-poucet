@@ -147,7 +147,7 @@ Replace today's `~/.config/agent-memory/memory-hook.py` (a working prototype wor
   - Claude Code: `{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "…"}}`
   - Copilot CLI: `{"additionalContext": "…"}`
   - 0.3 adds Codex (Claude's format), Cursor (`{"additional_context": …}`) and Antigravity CLI (a `PreInvocation` hook answering `{"injectSteps": [{"ephemeralMessage": …}]}` before each model call). Each agent's formats live in `src/agent.rs`.
-- **Stop** — at the 3rd stop of a session, then every 10th: `{"decision": "block", "reason": "<save reminder>"}`; do nothing when `stop_hook_active` is set. Per-session counter in a temp file keyed by session id. Cadence configurable.
+- **Stop** — at the 3rd stop of a session, then every 10th: `{"decision": "block", "reason": "<save reminder>"}`; do nothing when `stop_hook_active` is set. Per-session counter in a file keyed by session id, under the user's `~/.cache/petit-poucet/stops` (a shared temp folder lets another user silence it); a counter that cannot be written is reported on stderr and never fails the session. Cadence configurable.
 
 ## 8. Distribution
 
@@ -272,6 +272,9 @@ Scope decided 2026-10-26 (owner): one memory for coding agents on a laptop and a
 - Found in a two-machine trial (Claude Code on Haiku on a Mac and a Linux VM), fixed before #134: #106 (commits named "unknown agent": protocol 2026-07-28 clients skip `initialize` and name themselves in each request's `_meta`), #137 (sync conflicts resolved by the agent with its memory tools), and a flaky real-Syncthing test (two instances dialing each other at once fail TLS and back off).
 - #133 Hermes Agent support. Spike first (owner chose the shell hook over a memory-provider plugin, which would take Hermes's only provider slot): `setup` writes Hermes's `config.yaml` only through `hermes config set`, keeping the user's comments; a `pre_llm_call` hook loads the memory on the first turn of a session, and Hermes replays it after; `hooks.output_spill.max_chars` is raised, since Hermes cuts longer hook output to a 1,000-character preview; no save reminder (Hermes has no hook after an answer) and no `tidy-memory` (its subagents come from no file); the user approves the hook once in `hermes`. **Built 2026-10-27.**
 - #19 moves to a later release.
+
+### 0.7.1: maintenance fixes
+- Stop reminders: remove the fixed "Nothing new to remember" reply, preserve unfinished user work and keep waiting for a user answer or approval. CLI regression coverage checks every supported stop-hook format; agent CI checks delivery through the installed agents. **Built and locally tested 2026-11-07:** six installed-agent mock checks and nine independent real-model cases in Claude Code and Copilot (no new memory, saving to temporary vaults, waiting for user input).
 
 ### Later, only when needed
 - Homebrew tap and `cargo install`, once the install script has users.

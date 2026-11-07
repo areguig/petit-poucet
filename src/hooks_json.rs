@@ -32,7 +32,14 @@ pub fn remove(settings: &mut Value, agent: &str) {
     // `settings["hooks"]` would add a null `hooks` to settings without one.
     if let Some(events) = settings.get_mut("hooks").and_then(Value::as_object_mut) {
         for groups in events.values_mut().filter_map(Value::as_array_mut) {
-            groups.retain(|g| !group_is_ours(g, agent));
+            groups.retain_mut(|group| {
+                let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) else {
+                    return true;
+                };
+                let before = hooks.len();
+                hooks.retain(|h| !entry_is_ours(h, agent));
+                before == hooks.len() || !hooks.is_empty()
+            });
         }
         events.retain(|_, groups| groups.as_array().is_none_or(|g| !g.is_empty()));
     }
@@ -78,6 +85,26 @@ mod tests {
         assert!(has(&settings, "Stop", "claude") && !has(&settings, "Stop", "codex"));
         remove(&mut settings, "claude");
         assert_eq!(settings, json!({}));
+    }
+
+    #[test]
+    fn removing_keeps_foreign_hooks_and_metadata_in_mixed_groups() {
+        let foreign = json!({"type": "command", "command": "notify"});
+        let mut settings = json!({"hooks": {"Stop": [{
+            "matcher": "*",
+            "hooks": [foreign, exec(Path::new("/pp"), "stop", "claude")]
+        }]}});
+        remove(&mut settings, "claude");
+        assert_eq!(
+            settings,
+            json!({"hooks": {"Stop": [{"matcher": "*", "hooks": [foreign]}]}})
+        );
+        remove(&mut settings, "claude");
+        assert_eq!(
+            settings,
+            json!({"hooks": {"Stop": [{"matcher": "*", "hooks": [foreign]}]}}),
+            "idempotent"
+        );
     }
 
     #[test]

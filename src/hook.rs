@@ -33,10 +33,11 @@ holds something relevant to your current task, save it here with memory_save (ke
 leave the old file as it is, and tell the user what you migrated.
 - The user's rules below win over your built-in defaults (e.g. commit trailers).";
 
-// Claude Code and Copilot CLI both treat an empty reply after a blocking stop hook as an error.
+// Do not require silence: some harnesses retry or error on an empty response.
 const REMINDER: &str = "Memory check: did this session produce a user decision, correction or preference, \
 or a verified fact, that memory doesn't hold yet or holds wrongly? If yes, save or fix it with memory_save. \
-If not, reply only: \"Nothing new to remember.\"";
+If you were waiting for the user's answer or approval, keep waiting. \
+Otherwise carry on with any unfinished task, or end your turn as usual.";
 
 // Starts every line shown to the user.
 const PEBBLE: &str = "🪨 petit-poucet ·";
@@ -171,7 +172,13 @@ pub fn stop(agent: Agent, event: &Value) -> Option<Value> {
         return None;
     }
     let session = agent.session(event)?;
-    let count = stops::record(session)?;
+    let count = match stops::record(session) {
+        Ok(count) => count?,
+        Err(e) => {
+            eprintln!("petit-poucet: stop not counted: {e}");
+            return None;
+        }
+    };
     let due = count >= FIRST_REMINDER && (count - FIRST_REMINDER).is_multiple_of(EVERY);
     due.then(|| {
         agent.stop_reply(

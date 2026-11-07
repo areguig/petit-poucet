@@ -12,6 +12,8 @@
 
 A project is recognised by its git remote first, then its folder name, so a checkout under another name still matches. [How it works](architecture.md) lists the other files petit-poucet keeps there.
 
+A remote on a non-default port, such as `ssh://git@host:2222/team/app.git`, is kept with its port, so it never matches the same path on another port. Before 0.7.1 the port was dropped: if a repo on such a port no longer loads its project, open the project's `_project.md` and replace its `host/team/app` remote with the full URL from `git remote -v`. Do it only for the project that belongs to that port; if repos on two ports had ended up in one project, move the other repo's notes to a project of its own.
+
 ## A note
 
 One short fact per note:

@@ -41,6 +41,8 @@ check_calls "mcp__petit_poucet__memory_save" --no-reminder --skill=migrate-memor
 grep -q "preference 89, worded" "$calls" || fail "the memory was cut short"
 check_update
 
+# check_review knows big_vault's notes only: the preferences above would fill its first page.
+rm "$HOME"/agent-memory/Preferences/preference-*.md
 big_vault
 cd "$work"
 hermes chat --accept-hooks -Q -q petit-poucet-review </dev/null >/dev/null

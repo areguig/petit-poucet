@@ -5,26 +5,28 @@ use std::time::{Duration, SystemTime};
 // Counters older than this belong to finished sessions.
 const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
-// In the temp folder: the stop hook runs even when the vault is missing.
-fn dir() -> PathBuf {
-    std::env::temp_dir().join("petit-poucet-stops")
+// Per user, out of the vault: the stop hook runs even when the vault is missing.
+fn dir() -> Result<PathBuf, String> {
+    let home = std::env::home_dir().ok_or("cannot find the home folder")?;
+    Ok(home.join(".cache/petit-poucet/stops"))
 }
 
 // This session's stop count, this stop included; None without a usable session id.
-pub fn record(session: &str) -> Option<u32> {
-    record_in(&dir(), session)
+pub fn record(session: &str) -> Result<Option<u32>, String> {
+    record_in(&dir()?, session)
 }
 
-fn record_in(dir: &Path, session: &str) -> Option<u32> {
+fn record_in(dir: &Path, session: &str) -> Result<Option<u32>, String> {
     // The id becomes a file name: keep only characters that can't leave the folder.
     let name: String = session
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
         .collect();
     if name.is_empty() {
-        return None;
+        return Ok(None);
     }
-    fs::create_dir_all(dir).ok()?;
+    let error = |e: std::io::Error| format!("{}: {e}", dir.display());
+    fs::create_dir_all(dir).map_err(error)?;
     let file = dir.join(name);
     let count = match fs::read_to_string(&file) {
         Ok(n) => n.trim().parse::<u32>().unwrap_or(0) + 1,
@@ -33,8 +35,8 @@ fn record_in(dir: &Path, session: &str) -> Option<u32> {
             1
         }
     };
-    fs::write(&file, count.to_string()).ok()?;
-    Some(count)
+    fs::write(&file, count.to_string()).map_err(error)?;
+    Ok(Some(count))
 }
 
 fn prune(dir: &Path) {
@@ -56,7 +58,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let counts: Vec<_> = ["a", "a", "b", "a"]
             .iter()
-            .map(|s| record_in(tmp.path(), s))
+            .map(|s| record_in(tmp.path(), s).unwrap())
             .collect();
         assert_eq!(counts, [Some(1), Some(2), Some(1), Some(3)]);
     }
@@ -65,18 +67,18 @@ mod tests {
     fn a_session_id_never_leaves_the_folder() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("stops");
-        assert_eq!(record_in(&dir, "../../x/y"), Some(1));
+        assert_eq!(record_in(&dir, "../../x/y"), Ok(Some(1)));
         assert!(dir.join("xy").exists());
-        assert_eq!(record_in(&dir, "../"), None);
-        assert_eq!(record_in(&dir, ""), None);
+        assert_eq!(record_in(&dir, "../"), Ok(None));
+        assert_eq!(record_in(&dir, ""), Ok(None));
         assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 1);
     }
 
     #[test]
     fn a_new_session_drops_counters_of_old_ones() {
         let tmp = tempfile::tempdir().unwrap();
-        record_in(tmp.path(), "old");
-        record_in(tmp.path(), "recent");
+        record_in(tmp.path(), "old").unwrap();
+        record_in(tmp.path(), "recent").unwrap();
         let two_days_ago = SystemTime::now() - 2 * MAX_AGE;
         fs::File::options()
             .write(true)
@@ -85,10 +87,10 @@ mod tests {
             .set_modified(two_days_ago)
             .unwrap();
 
-        record_in(tmp.path(), "recent");
+        record_in(tmp.path(), "recent").unwrap();
         assert!(tmp.path().join("old").exists(), "only a new session prunes");
-        record_in(tmp.path(), "new");
+        record_in(tmp.path(), "new").unwrap();
         assert!(!tmp.path().join("old").exists());
-        assert_eq!(record_in(tmp.path(), "recent"), Some(3));
+        assert_eq!(record_in(tmp.path(), "recent"), Ok(Some(3)));
     }
 }

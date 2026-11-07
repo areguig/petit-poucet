@@ -61,6 +61,22 @@ fn install(home: &Path, envs: &[(&str, String)]) -> Output {
     cmd.output().unwrap()
 }
 
+// Runs the `next: run `…`` command from the log in /bin/sh, as a user pasting it would.
+fn run_printed_setup(log: &str, path: &str) -> Output {
+    let command = log
+        .split_once("next: run `")
+        .and_then(|(_, rest)| rest.split_once('`'))
+        .unwrap_or_else(|| panic!("no next step: {log}"))
+        .0;
+    Command::new("/bin/sh")
+        .arg("-c")
+        .arg(command)
+        .env_clear()
+        .env("PATH", path)
+        .output()
+        .unwrap()
+}
+
 #[test]
 fn install_script_installs_the_latest_release_then_a_chosen_version() {
     let home = TempDir::new().unwrap();
@@ -82,7 +98,7 @@ fn install_script_installs_the_latest_release_then_a_chosen_version() {
     assert!(log.contains("installed latest --version in "), "{log}");
     assert!(log.contains(".local/bin is not on your PATH"), "{log}");
     assert!(
-        log.contains(&format!("next: run `{} setup`", installed.display())),
+        log.contains(&format!("next: run `'{}' setup`", installed.display())),
         "the full path, which works without PATH: {log}"
     );
     assert!(text(&latest).is_empty(), "messages go to stderr");
@@ -145,4 +161,33 @@ fn install_script_refuses_a_binary_with_a_wrong_checksum() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("checksum mismatch"));
     let dir = home.path().join(".local/bin");
     assert_eq!(fs::read_dir(dir).unwrap().count(), 0, "nothing installed");
+}
+
+#[test]
+fn install_script_prints_a_setup_command_that_runs_from_a_dir_needing_quotes() {
+    let home = TempDir::new().unwrap();
+    let args = r#"printf '[%s]' "$#" "$@""#;
+    mirror_with(&home.path().join("mirror"), "latest/download", args);
+    let dir = home.path().join("my tool's bin");
+    let system_path = std::env::var("PATH").unwrap();
+    let on_path = format!("{}:{system_path}", dir.display());
+    for (path, on_path) in [(system_path.clone(), false), (on_path, true)] {
+        let output = install(
+            home.path(),
+            &[
+                ("PETIT_POUCET_INSTALL_DIR", dir.display().to_string()),
+                ("PATH", path.clone()),
+            ],
+        );
+        let log = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{log}");
+        assert_eq!(
+            log.contains("next: run `petit-poucet setup`"),
+            on_path,
+            "{log}"
+        );
+        let setup = run_printed_setup(&log, &path);
+        assert!(setup.status.success(), "{log}");
+        assert_eq!(text(&setup), "[1][setup]", "exactly one argument: {log}");
+    }
 }
