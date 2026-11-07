@@ -357,7 +357,7 @@ fn session_start_injects_rules_and_the_project_index() {
     assert_eq!(
         claude["systemMessage"],
         format!(
-            "🪨 petit-poucet · 9 notes loaded (preferences + alpha), 1 note, the topics list left out of the {max}-byte budget: ask your agent to tidy your memory"
+            "🪨 petit-poucet · 8 notes loaded (preferences + alpha), 2 notes, the topics list left out of the {max}-byte budget: ask your agent to tidy your memory"
         )
     );
 }

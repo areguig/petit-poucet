@@ -19,7 +19,7 @@ holds something relevant to your current task, save it here with memory_save (ke
 leave the old file as it is, and tell the user what you migrated.
 - The user's rules below win over your built-in defaults (e.g. commit trailers).";
 const ALL_LOADED: &str = "the Index below is already loaded, don't fetch it again.";
-const PARTIAL: &str = "the Index below is only part of it (see its \"Not loaded\" line): memory_search finds the rest.";
+const PARTIAL: &str = "the Index below is only part of it (see its \"Not loaded\" line): memory_index with `page` reads the rest.";
 
 pub struct View {
     pub text: String,
@@ -98,7 +98,7 @@ impl Left {
         }
         parts.extend(self.extras());
         format!(
-            "Not loaded (over the {max}-byte session budget): {}. memory_search finds notes.",
+            "Not loaded (over the {max}-byte session budget): {}. memory_index with `page` reads them all.",
             parts.join(", ")
         )
     }
@@ -111,10 +111,7 @@ impl<'a> Pool<'a> {
             sections: index::sections(vault, |place| index::in_session(place, project)),
             topics: index::topics_line(vault),
             conflict_count: (!conflicts.is_empty()).then(|| conflicts_line(conflicts.len())),
-            conflict_lines: conflicts
-                .iter()
-                .map(|c| conflict_detail(vault, c))
-                .collect(),
+            conflict_lines: conflict_details(vault),
         }
     }
 
@@ -152,7 +149,7 @@ impl<'a> Pool<'a> {
             !full
         };
         for section in &self.sections {
-            let mut heading = Some(index::heading(section));
+            let mut heading = Some(index::heading(&section.title));
             for line in &section.lines {
                 let chunk = format!("{}{line}\n", heading.as_deref().unwrap_or_default());
                 match (take(chunk), section.place) {
@@ -183,6 +180,13 @@ fn conflicts_line(count: usize) -> String {
 }
 
 // Syncthing keeps the most recently modified version under the note's name, so each copy is the older one.
+pub fn conflict_details(vault: &Vault) -> Vec<String> {
+    note_conflicts(vault)
+        .into_iter()
+        .map(|c| conflict_detail(vault, c))
+        .collect()
+}
+
 fn conflict_detail(vault: &Vault, conflict: &Conflict) -> String {
     match vault.root.join(&conflict.original).is_file() {
         true => format!("- {} (older copy of {})", conflict.copy, conflict.original),
@@ -397,7 +401,7 @@ mod tests {
         let v = view(&vault(tmp.path()), Some("alpha"), budget());
         let kept = note_lines(&v.text).len();
         let line = format!(
-            "Not loaded (over the {}-byte session budget): {} preferences, 7 notes of alpha. memory_search finds notes.",
+            "Not loaded (over the {}-byte session budget): {} preferences, 7 notes of alpha. memory_index with `page` reads them all.",
             budget(),
             notes_over_budget() - kept
         );

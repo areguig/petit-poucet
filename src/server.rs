@@ -36,6 +36,8 @@ pub struct IndexRequest {
     project_dir: PathBuf,
     /// List this topic's notes instead, e.g. `homelab`.
     topic: Option<String>,
+    /// Page to read, from 1. An Index longer than the session budget comes in pages; the first is the default.
+    page: Option<usize>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -86,6 +88,30 @@ impl Server {
     }
 }
 
+// The whole Index when it fits the budget and no page is asked for; otherwise the page asked for, the first by default.
+fn page_of(
+    sections: &[index::Section],
+    topics: Option<&str>,
+    conflicts: &[String],
+    head: &str,
+    whole: String,
+    page: Option<usize>,
+    max: usize,
+) -> Result<String, String> {
+    if page.is_none() && whole.len() <= max {
+        return Ok(whole);
+    }
+    let pages = index::pages(sections, topics, conflicts, head, max);
+    let number = page.unwrap_or(1);
+    let total = pages.len();
+    number
+        .checked_sub(1)
+        .and_then(|i| pages.into_iter().nth(i))
+        .ok_or_else(|| {
+            format!("page {number} does not exist: this Index has {total} pages, from 1")
+        })
+}
+
 #[tool_router]
 impl Server {
     #[tool(
@@ -99,20 +125,42 @@ impl Server {
     ) -> Result<String, String> {
         let agent = agent_name(&client, &meta);
         let vault = self.vault()?;
+        let max = self.config.limits.session_start_max_bytes;
         if let Some(topic) = &req.topic {
-            let view = index::for_topic(&vault, &slug::slugify(topic));
-            return Ok(match view.trim() {
+            let topic = slug::slugify(topic);
+            let sections = index::sections(&vault, |place| place == Place::Topic(&topic));
+            let whole = index::for_topic(&vault, &topic);
+            let whole = match whole.trim() {
                 "" => format!("no notes in topic {topic}"),
                 view => view.to_string(),
-            });
+            };
+            return page_of(&sections, None, &[], "", whole, req.page, max);
         }
         let project = self.project_key(&vault, &req.project_dir, &agent);
-        let view = index::for_project(&vault, project.as_deref());
+        let project = project.as_deref();
+        let view = index::for_project(&vault, project);
         let view = match view.trim() {
             "" => "no notes yet",
             view => view,
         };
-        Ok(format!("{}\n\n{view}", context::rules(false)))
+        let conflicts = context::conflict_details(&vault);
+        let whole = format!(
+            "{}\n\n{view}{}",
+            context::rules(false),
+            index::conflicts_block(&conflicts)
+        );
+        let sections = index::sections(&vault, |place| index::in_session(place, project));
+        let topics = index::topics_line(&vault);
+        let head = format!("{}\n", context::rules(true));
+        page_of(
+            &sections,
+            topics.as_deref(),
+            &conflicts,
+            &head,
+            whole,
+            req.page,
+            max,
+        )
     }
 
     #[tool(description = "Read one note, or a sync conflict copy of one.")]

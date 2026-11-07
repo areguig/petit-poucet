@@ -28,6 +28,7 @@ mod move_note;
 mod note;
 mod omp;
 mod opencode;
+mod paging;
 mod pair;
 mod priority;
 mod project;

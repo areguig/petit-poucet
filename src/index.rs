@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 
 use crate::note::Place;
+use crate::paging;
 use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault};
 
 pub const NO_SUMMARY: &str = "(no summary)";
@@ -24,6 +25,7 @@ pub fn in_session(place: Place, project: Option<&str>) -> bool {
     place == Place::Preferences || project.is_some_and(|p| place == Place::Project(p))
 }
 
+#[derive(Clone)]
 pub struct Section<'a> {
     pub place: Place<'a>,
     pub title: String,
@@ -82,14 +84,86 @@ pub fn sections<'a>(vault: &'a Vault, keep: impl Fn(Place) -> bool) -> Vec<Secti
         .collect()
 }
 
-pub fn heading(section: &Section) -> String {
-    format!("\n## {}\n", section.title)
+pub fn heading(title: &str) -> String {
+    format!("\n## {title}\n")
+}
+
+fn page_footer(page: usize, total: usize) -> String {
+    match page < total {
+        true => format!(
+            "(page {page} of {total}: call memory_index again with page={} for the next page.)",
+            page + 1
+        ),
+        false => format!("(page {page} of {total}, the last.)"),
+    }
+}
+
+const SHORT_HEAD: &str =
+    "Agent memory (petit-poucet) Index: the rules did not fit this page budget.\n";
+const CONFLICTS_TITLE: &str = "Sync conflicts (older copies)";
+
+// Index order; a page that continues a section repeats its heading, and a line longer than a page is split between characters.
+pub fn pages(
+    sections: &[Section],
+    topics: Option<&str>,
+    conflicts: &[String],
+    head: &str,
+    max: usize,
+) -> Vec<String> {
+    let reserve = page_footer(usize::MAX - 1, usize::MAX).len() + 1;
+    let head = if head.len() + reserve <= max {
+        head
+    } else {
+        SHORT_HEAD
+    };
+    let items: Vec<paging::Item> = sections
+        .iter()
+        .flat_map(|s| s.lines.iter().map(|line| (s.title.clone(), line.clone())))
+        .chain(topics.map(|t| (String::new(), t.to_string())))
+        .chain(
+            conflicts
+                .iter()
+                .map(|c| (CONFLICTS_TITLE.to_string(), c.clone())),
+        )
+        .collect();
+    let mut pages = paging::paginate(
+        &items,
+        max.saturating_sub(reserve),
+        head,
+        |title| match title.is_empty() {
+            true => "\n".to_string(),
+            false => heading(title),
+        },
+    );
+    let total = pages.len();
+    for (i, page) in pages.iter_mut().enumerate() {
+        writeln!(page, "{}", page_footer(i + 1, total)).unwrap();
+    }
+    pages
+}
+
+// The conflict copies after the Index, as the first page holds them when everything fits.
+pub fn conflicts_block(conflicts: &[String]) -> String {
+    match conflicts.is_empty() {
+        true => String::new(),
+        false => format!(
+            "\n\n{}\n{}",
+            heading(CONFLICTS_TITLE).trim_start(),
+            conflicts.join("\n")
+        ),
+    }
 }
 
 fn render(sections: &[Section]) -> String {
     let mut out = String::new();
     for section in sections {
-        writeln!(out, "{}{}", heading(section), section.lines.join("\n")).unwrap();
+        writeln!(
+            out,
+            "{}{}",
+            heading(&section.title),
+            section.lines.join("\n")
+        )
+        .unwrap();
     }
     out
 }
@@ -99,6 +173,7 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::config::MIN_SESSION_START_BYTES as MIN;
 
     #[test]
     fn lists_preferences_first_then_each_project() {
@@ -189,5 +264,150 @@ mod tests {
                 && !topic.contains("work-mac")
                 && !topic.contains("Preferences")
         );
+    }
+
+    fn section(title: &str, lines: impl Iterator<Item = String>) -> Section<'static> {
+        Section {
+            place: Place::Preferences,
+            title: title.to_string(),
+            lines: lines.collect(),
+        }
+    }
+
+    fn lines_of(pages: &[String]) -> Vec<&str> {
+        pages
+            .iter()
+            .flat_map(|p| p.lines())
+            .filter(|l| l.starts_with("- "))
+            .collect()
+    }
+
+    #[test]
+    fn pages_hold_whole_lines_once_each_within_the_budget() {
+        let first = section(
+            "A",
+            (0..200).map(|i| format!("- [[a/{i}]] — 日本語 🪨 {i}")),
+        );
+        let second = section("B", (0..150).map(|i| format!("- [[b/{i}]] — plain {i}")));
+        let all: Vec<String> = [&first, &second]
+            .iter()
+            .flat_map(|s| s.lines.clone())
+            .collect();
+        for max in [MIN, MIN + 1, MIN + 2, MIN + 333] {
+            let pages = pages(
+                &[first.clone(), second.clone()],
+                Some("Topics: x (1)"),
+                &[],
+                "HEAD\n",
+                max,
+            );
+            assert!(pages.len() > 1);
+            for page in &pages {
+                assert!(page.len() <= max, "{} > {max}", page.len());
+            }
+            assert_eq!(
+                lines_of(&pages),
+                all.iter().map(String::as_str).collect::<Vec<_>>()
+            );
+            assert_eq!(
+                pages.iter().filter(|p| p.contains("Topics: x (1)")).count(),
+                1
+            );
+            assert!(pages[0].starts_with("HEAD\n"));
+        }
+    }
+
+    #[test]
+    fn a_continued_page_repeats_its_heading_and_the_last_page_says_so() {
+        let sec = section("A", (0..400).map(|i| format!("- [[a/{i}]] — line {i}")));
+        let pages = pages(&[sec], None, &[], "", MIN);
+        let total = pages.len();
+        assert!(total > 2);
+        for (i, page) in pages.iter().enumerate() {
+            assert!(page.starts_with("\n## A\n"), "{page}");
+            let n = i + 1;
+            let footer = page.lines().last().unwrap();
+            match n < total {
+                true => assert_eq!(
+                    footer,
+                    format!(
+                        "(page {n} of {total}: call memory_index again with page={} for the next page.)",
+                        n + 1
+                    )
+                ),
+                false => assert_eq!(footer, format!("(page {n} of {total}, the last.)")),
+            }
+        }
+    }
+
+    #[test]
+    fn a_vault_that_fits_one_page_is_one_page() {
+        let sec = section("A", (0..2).map(|i| format!("- [[a/{i}]] — x")));
+        assert_eq!(pages(&[sec], None, &[], "", 10_000).len(), 1);
+    }
+
+    // The pieces of a split line joined back, without headings, footers or the page head.
+    fn body_of(pages: &[String], head: &str) -> String {
+        pages
+            .iter()
+            .flat_map(|p| p.lines())
+            .filter(|l| {
+                !l.is_empty()
+                    && !l.starts_with("## ")
+                    && !l.starts_with("(page ")
+                    && !head.contains(l)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_giant_summary_and_a_giant_topics_line_are_split_across_pages_within_the_budget() {
+        let giant = format!("- [[a/giant]] — {}", "日本語🪨".repeat(300));
+        let topics = format!("Topics (not loaded): {}", "homelab (1), ".repeat(200));
+        let sec = section(
+            "A",
+            ["- [[a/1]] — short".to_string(), giant.clone()].into_iter(),
+        );
+        let head = "HEAD\n";
+        for max in [MIN, MIN + 1, 3000] {
+            let pages = pages(std::slice::from_ref(&sec), Some(&topics), &[], head, max);
+            for page in &pages {
+                assert!(page.len() <= max, "{} > {max}", page.len());
+            }
+            assert_eq!(
+                body_of(&pages, head),
+                format!("- [[a/1]] — short{giant}{topics}"),
+                "max {max}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_long_section_title_never_costs_the_text_or_the_continuation_instruction() {
+        for title_len in [250, 5000] {
+            let title = "t".repeat(title_len);
+            let lines: Vec<String> = (0..60)
+                .map(|i| format!("- [[a/{i}]] — {}", "要約🪨".repeat(40)))
+                .collect();
+            let sec = section(&title, lines.clone().into_iter());
+            let pages = pages(&[sec], None, &[], "", MIN);
+            let total = pages.len();
+            assert!(total > 2);
+            for (i, page) in pages.iter().enumerate() {
+                assert!(page.len() <= MIN, "{title_len}: {} > {MIN}", page.len());
+                assert_eq!(page.lines().last().unwrap(), page_footer(i + 1, total));
+            }
+            assert_eq!(body_of(&pages, ""), lines.concat(), "title of {title_len}");
+        }
+    }
+
+    #[test]
+    fn a_head_that_does_not_fit_gives_way_to_a_short_header() {
+        let sec = section("A", (0..5).map(|i| format!("- [[a/{i}]] — x")));
+        let head = "R".repeat(5000);
+        let pages = pages(&[sec], None, &[], &head, MIN);
+        assert!(pages.iter().all(|p| p.len() <= MIN));
+        assert!(!pages[0].contains(&head));
+        assert_eq!(lines_of(&pages).len(), 5);
     }
 }
