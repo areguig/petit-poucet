@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::note::{self, ALL_REPOS, Frontmatter, NoteType, REQUIRED_TAG};
 use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
-use crate::{change, duplicates, git, secrets};
+use crate::{change, context, duplicates, git, secrets};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(transform = require_fields_in_schema)]
@@ -120,6 +120,8 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     fs::create_dir_all(root.join(&file).parent().unwrap()).map_err(|e| e.to_string())?;
     write_atomic(&root.join(&file), &note::render(&frontmatter, &body)?)?;
 
+    let max = config.limits.session_start_max_bytes;
+    let omitted_before = context::omissions(&vault, note::Place::of(&path), max);
     let action = if updating { "update" } else { "create" };
     let (vault, commit_warning) =
         change::finish(config, changed, &format!("{action}: {path} ({agent})"))?;
@@ -141,6 +143,16 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     if body.chars().count() > MAX_BODY_CHARS {
         reply.push(format!(
             "warning: longer than {MAX_BODY_CHARS} characters: one short fact per note"
+        ));
+    }
+    let worsened = context::omissions(&vault, note::Place::of(&path), max)
+        .into_iter()
+        .filter(|(session, (items, _))| *items > omitted_before.get(session).map_or(0, |(n, _)| *n))
+        .max_by_key(|(_, (items, _))| *items);
+    if let Some((session, (_, left_out))) = worsened {
+        let whose = session.map_or(String::new(), |p| format!(" in {p}"));
+        reply.push(format!(
+            "warning: a session{whose} now leaves {left_out} out of its {max}-byte budget: tidy memory with the user (merge or move notes)"
         ));
     }
     reply.extend(commit_warning);
@@ -319,6 +331,114 @@ mod tests {
     fn read(config: &Config, path: &str) -> Note {
         let text = fs::read_to_string(config.vault.join(format!("{path}.md"))).unwrap();
         Note::parse(path.into(), &text)
+    }
+
+    fn warning_of(reply: &str) -> Option<&str> {
+        reply.lines().find(|l| l.contains(" now leaves "))
+    }
+
+    // A budget that holds exactly two notes, so a third tips the view over it.
+    fn tight_vault() -> (tempfile::TempDir, Config) {
+        let (tmp, mut config) = vault();
+        save(&config, request("Rule aa"), "test").unwrap();
+        save(&config, request("Rule bb"), "test").unwrap();
+        let vault = Vault::load(&config.vault).unwrap();
+        config.limits.session_start_max_bytes =
+            crate::context::session_view(&vault, None, &[], usize::MAX)
+                .text
+                .len();
+        (tmp, config)
+    }
+
+    #[test]
+    fn a_save_that_fits_the_session_budget_adds_no_warning() {
+        let (_tmp, mut config) = tight_vault();
+        config.limits.session_start_max_bytes *= 2;
+        let reply = save(&config, request("Rule cc"), "test").unwrap().1;
+        assert_eq!(warning_of(&reply), None, "{reply}");
+    }
+
+    #[test]
+    fn a_save_that_tips_the_session_over_its_budget_says_so_and_still_saves() {
+        let (_tmp, config) = tight_vault();
+        let (path, reply) = save(&config, request("Rule cc"), "test").unwrap();
+        let vault = Vault::load(&config.vault).unwrap();
+        let left =
+            crate::context::session_view(&vault, None, &[], config.limits.session_start_max_bytes);
+        let left_out = left.left_out.expect("the view is over its budget");
+        let max = config.limits.session_start_max_bytes;
+        assert_eq!(
+            warning_of(&reply),
+            Some(
+                format!("warning: a session now leaves {left_out} out of its {max}-byte budget: tidy memory with the user (merge or move notes)").as_str()
+            ),
+            "{reply}"
+        );
+        assert!(vault.has_note(&path));
+    }
+
+    #[test]
+    fn a_preference_that_crowds_out_a_tight_project_s_notes_names_that_project() {
+        let (_tmp, mut config) = vault();
+        save(&config, request("Rule aa"), "test").unwrap();
+        for i in 0..3 {
+            let path = config.vault.join(format!("{PROJECTS}/alpha/fact-{i}.md"));
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, format!("---\ntype: project\nscope: alpha\nsummary: fact {i}\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Fact\n\n**Why:** x\n")).unwrap();
+        }
+        let tight = Vault::load(&config.vault).unwrap();
+        let max = crate::context::session_view(&tight, Some("alpha"), &[], usize::MAX)
+            .text
+            .len();
+        config.limits.session_start_max_bytes = max;
+        let reply = save(&config, request("Rule bb"), "test").unwrap().1;
+        let warning = warning_of(&reply).unwrap_or_else(|| panic!("{reply}"));
+        assert!(
+            warning.starts_with("warning: a session in alpha now leaves "),
+            "{warning}"
+        );
+    }
+
+    #[test]
+    fn a_preference_that_pushes_only_the_topics_list_out_of_the_session_warns() {
+        let (_tmp, mut config) = vault();
+        save(&config, request("Rule aa"), "test").unwrap();
+        save(&config, request("Rule bb"), "test").unwrap();
+        for i in 0..8 {
+            let topic = config
+                .vault
+                .join(format!("Topics/homelab-number-{i}/nas.md"));
+            fs::create_dir_all(topic.parent().unwrap()).unwrap();
+            fs::write(&topic, "x").unwrap();
+        }
+        let before = Vault::load(&config.vault).unwrap();
+        let (path, _) = save(&config, request("Rule cc"), "test").unwrap();
+        let with_cc = Vault::load(&config.vault).unwrap();
+        fs::remove_file(config.vault.join(format!("{path}.md"))).unwrap();
+        let view = |vault: &Vault, max| crate::context::session_view(vault, None, &[], max);
+        let max = (0..20_000)
+            .find(|&max| {
+                view(&before, max).left_out.is_none()
+                    && view(&with_cc, max).left_out.as_deref() == Some("the topics list")
+            })
+            .expect(
+                "a budget that fits two preferences and the topics, then loses only the topics",
+            );
+        config.limits.session_start_max_bytes = max;
+        let reply = save(&config, request("Rule cc"), "test").unwrap().1;
+        let warning = warning_of(&reply).unwrap_or_else(|| panic!("{reply}"));
+        assert!(warning.contains("the topics list"), "{warning}");
+    }
+
+    #[test]
+    fn an_update_that_leaves_the_overflow_as_it_was_adds_no_warning() {
+        let (_tmp, config) = tight_vault();
+        save(&config, request("Rule cc"), "test").unwrap();
+        let mut update = request("Rule cc");
+        update.path = Some("Preferences/rule-cc".into());
+        update.user_confirmed = true;
+        let reply = save(&config, update, "test").unwrap().1;
+        assert_eq!(warning_of(&reply), None, "{reply}");
     }
 
     #[test]

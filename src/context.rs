@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::index;
 use crate::note::Place;
@@ -24,7 +24,8 @@ const PARTIAL: &str = "the Index below is only part of it (see its \"Not loaded\
 pub struct View {
     pub text: String,
     pub loaded: usize,
-    pub omitted: usize,
+    // Notes, the topics list and conflict details left out: what a session lost, however it is worded.
+    pub left_items: usize,
     pub left_out: Option<String>,
 }
 
@@ -62,8 +63,8 @@ impl Left {
         self.preferences + self.project
     }
 
-    fn is_empty(&self) -> bool {
-        self.notes() + usize::from(self.topics) + self.conflicts == 0
+    fn items(&self) -> usize {
+        self.notes() + usize::from(self.topics) + self.conflicts
     }
 
     fn extras(&self) -> Vec<String> {
@@ -205,7 +206,7 @@ fn fallback(max: usize, notes: usize) -> View {
     View {
         text: text[..end].to_string(),
         loaded: 0,
-        omitted: notes,
+        left_items: notes,
         left_out: Some(counted(notes, "note", "notes")),
     }
 }
@@ -227,12 +228,12 @@ pub fn session_view(vault: &Vault, project: Option<&str>, notices: &[String], ma
         Some((head, pool.select(room)))
     };
     if let Some((head, (body, loaded, left))) = attempt(false)
-        && left.is_empty()
+        && left.items() == 0
     {
         return View {
             text: format!("{head}{lead}{body}"),
             loaded,
-            omitted: 0,
+            left_items: 0,
             left_out: None,
         };
     }
@@ -240,11 +241,46 @@ pub fn session_view(vault: &Vault, project: Option<&str>, notices: &[String], ma
         Some((head, (body, loaded, left))) => View {
             text: format!("{head}{}\n{lead}{body}", left.line(max, project)),
             loaded,
-            omitted: left.notes(),
+            left_items: left.items(),
             left_out: left.summary(),
         },
         None => fallback(max, pool.notes()),
     }
+}
+
+// What each session touched by a note's place leaves out (items, and in words), by project (None: a session in no project).
+pub fn omissions(
+    vault: &Vault,
+    place: Place,
+    max: usize,
+) -> BTreeMap<Option<String>, (usize, String)> {
+    let left = |project: Option<&str>| {
+        let view = session_view(vault, project, &[], max);
+        Some((
+            project.map(str::to_string),
+            (view.left_items, view.left_out?),
+        ))
+    };
+    match place {
+        Place::Preferences => projects(vault)
+            .into_iter()
+            .filter_map(|key| left(Some(key)))
+            .chain(left(None))
+            .collect(),
+        Place::Project(key) => left(Some(key)).into_iter().collect(),
+        Place::Topic(_) => BTreeMap::new(),
+    }
+}
+
+fn projects(vault: &Vault) -> BTreeSet<&str> {
+    vault
+        .notes
+        .iter()
+        .filter_map(|n| match n.place() {
+            Place::Project(key) => Some(key),
+            _ => None,
+        })
+        .collect()
 }
 
 // What a session at the vault's top level, or in one project, would leave out.
@@ -255,15 +291,7 @@ pub fn over_budget(vault: &Vault, max: usize) -> Vec<(String, String)> {
     if let Some(left_out) = session_view(vault, None, &[], max).left_out {
         return vec![(PREFERENCES.to_string(), message(left_out))];
     }
-    let projects: BTreeSet<&str> = vault
-        .notes
-        .iter()
-        .filter_map(|n| match n.place() {
-            Place::Project(key) => Some(key),
-            _ => None,
-        })
-        .collect();
-    projects
+    projects(vault)
         .into_iter()
         .filter_map(|key| {
             let left_out = session_view(vault, Some(key), &[], max).left_out?;
@@ -333,7 +361,7 @@ mod tests {
                 index::for_project(&vault(tmp.path()), Some("alpha"))
             )
         );
-        assert_eq!((v.loaded, v.omitted), (6, 0));
+        assert_eq!((v.loaded, v.left_items), (6, 0));
     }
 
     #[test]
@@ -343,7 +371,7 @@ mod tests {
         fill(tmp.path(), "Projects/alpha", notes_over_budget());
         let v = view(&vault(tmp.path()), Some("alpha"), budget());
         assert!(v.text.len() <= budget(), "{}", v.text.len());
-        assert!(v.loaded > 0 && v.omitted > 0);
+        assert!(v.loaded > 0 && v.left_items > 0);
         assert!(v.text.starts_with(&rules(true)));
         assert!(!v.text.contains("already loaded"));
     }
@@ -406,7 +434,7 @@ mod tests {
             notes_over_budget() - kept
         );
         assert!(v.text.lines().any(|l| l == line), "{line}\n{}", v.text);
-        assert_eq!(v.omitted, notes_over_budget() - kept + 7);
+        assert_eq!(v.left_items, notes_over_budget() - kept + 7);
     }
 
     #[test]
@@ -447,7 +475,7 @@ mod tests {
             "the preferences come before the topics"
         );
         assert!(v.text.contains("the topics list"), "{}", v.text);
-        assert_eq!(v.omitted, 0, "omitted counts notes only");
+        assert_eq!(v.left_items, 1);
         assert_eq!(v.left_out.as_deref(), Some("the topics list"));
         let warnings = over_budget(&vault(tmp.path()), budget());
         assert_eq!(warnings.len(), 1, "{warnings:?}");
@@ -467,7 +495,6 @@ mod tests {
         assert!(v.text.contains("Sync conflicts: 300 notes"), "{}", v.text);
         assert_eq!(note_lines(&v.text).len(), 3);
         assert!(v.text.contains("sync conflict details"), "{}", v.text);
-        assert_eq!(v.omitted, 0);
         assert!(
             v.left_out
                 .as_deref()
@@ -504,7 +531,7 @@ mod tests {
         fill(tmp.path(), "Projects/alpha", 3);
         let v = view(&vault(tmp.path()), Some("alpha"), budget());
         assert!(note_lines(&v.text).is_empty(), "{}", v.text);
-        assert_eq!(v.omitted, 7);
+        assert_eq!(v.left_items, 7);
     }
 
     #[test]
@@ -535,7 +562,7 @@ mod tests {
             "{}",
             v.text
         );
-        assert_eq!((v.loaded, v.omitted), (0, 5));
+        assert_eq!((v.loaded, v.left_items), (0, 5));
         for max in 0..80 {
             assert!(view(&vault, None, max).text.len() <= max);
         }
