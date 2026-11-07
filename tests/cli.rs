@@ -654,6 +654,32 @@ fn session_start_without_a_vault_offers_to_create_one() {
 }
 
 #[test]
+fn stop_reminder_does_not_require_a_fixed_reply() {
+    for agent in [
+        "claude",
+        "codex",
+        "copilot",
+        "cursor",
+        "antigravity",
+        "opencode",
+        "omp",
+    ] {
+        let home = TempDir::new().unwrap();
+        let event = r#"{"session_id":"reminder-flow","conversationId":"reminder-flow"}"#;
+        let mut output = String::new();
+        for _ in 0..3 {
+            output = hook(home.path(), &["stop", "--agent", agent], event);
+        }
+        let reply: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let reason = reply["reason"]
+            .as_str()
+            .or_else(|| reply["followup_message"].as_str())
+            .unwrap();
+        assert!(!reason.contains("reply only"), "{agent}: {reason}");
+    }
+}
+
+#[test]
 fn stop_reminds_at_the_third_stop_then_every_tenth() {
     let home = TempDir::new().unwrap();
     let session = home

@@ -273,6 +273,9 @@ Scope decided 2026-10-26 (owner): one memory for coding agents on a laptop and a
 - #133 Hermes Agent support. Spike first (owner chose the shell hook over a memory-provider plugin, which would take Hermes's only provider slot): `setup` writes Hermes's `config.yaml` only through `hermes config set`, keeping the user's comments; a `pre_llm_call` hook loads the memory on the first turn of a session, and Hermes replays it after; `hooks.output_spill.max_chars` is raised, since Hermes cuts longer hook output to a 1,000-character preview; no save reminder (Hermes has no hook after an answer) and no `tidy-memory` (its subagents come from no file); the user approves the hook once in `hermes`. **Built 2026-10-27.**
 - #19 moves to a later release.
 
+### 0.7.1: maintenance fixes
+- Stop reminders: remove the fixed "Nothing new to remember" reply, preserve unfinished user work and keep waiting for a user answer or approval. CLI regression coverage checks every supported stop-hook format; agent CI checks delivery through the installed agents. **Built and locally tested 2026-11-07:** six installed-agent mock checks and nine independent real-model cases in Claude Code and Copilot (no new memory, saving to temporary vaults, waiting for user input).
+
 ### Later, only when needed
 - Homebrew tap and `cargo install`, once the install script has users.
 - Search that scales: better ranking (stems, BM25) once vaults reach several hundred notes; semantic search stays optional behind `memory_search`.
