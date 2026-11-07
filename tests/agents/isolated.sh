@@ -3,6 +3,7 @@
 # variable naming a vault of theirs, then checks the script left those as they were: the tests stay in their throwaway HOME.
 # Usage: sh tests/agents/isolated.sh <agent>
 set -eu
+. "$(dirname "$0")/isolation_snapshot.sh"
 outside=$(mktemp -d)
 for var in COPILOT_HOME CODEX_HOME HERMES_HOME; do
   mkdir -p "$outside/$var/skills/memory"
@@ -18,13 +19,10 @@ git -C "$outside/vault" init -q
 git -C "$outside/vault" add -A
 git -C "$outside/vault" -c user.name=sentinel -c user.email=sentinel@example.invalid commit -q -m "the user's vault"
 export PETIT_POUCET_VAULT="$outside/vault"
-snapshot() {
-  (cd "$outside" && find . | sort | while read -r path; do
-    [ -d "$path" ] && echo "$path/" || echo "$path: $(cksum < "$path")"
-  done
-  git -C "$outside/vault" status --porcelain
-  git -C "$outside/vault" rev-parse HEAD)
-}
-before=$(snapshot)
+before=$(isolation_snapshot "$outside")
 sh "$(dirname "$0")/$1.sh"
-[ "$(snapshot)" = "$before" ] || { echo "FAIL: $1.sh changed a profile or vault outside its HOME:" >&2; snapshot >&2; exit 1; }
+if [ "$(isolation_snapshot "$outside")" != "$before" ]; then
+  echo "FAIL: $1.sh changed a profile or vault outside its HOME:" >&2
+  isolation_snapshot "$outside" >&2
+  exit 1
+fi

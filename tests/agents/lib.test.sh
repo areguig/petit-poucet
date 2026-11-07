@@ -3,6 +3,7 @@
 # Usage: sh tests/agents/lib.test.sh
 set -eu
 lib="$(cd "$(dirname "$0")" && pwd)/lib.sh"
+snapshot_helper="$(cd "$(dirname "$0")" && pwd)/isolation_snapshot.sh"
 work=$(mktemp -d)
 mkdir -p "$work/repo/target/release" "$work/bin"
 printf '#!/bin/sh\n' > "$work/repo/target/release/petit-poucet"
@@ -10,6 +11,21 @@ cp "$work/repo/target/release/petit-poucet" "$work/repo/target/release/petit-pou
 chmod +x "$work/repo/target/release/petit-poucet" "$work/repo/target/release/petit-poucet.exe"
 PATH="$work/bin:$PATH"
 fail() { echo "FAIL: $*" >&2; exit 1; }
+. "$snapshot_helper"
+
+outside="$work/outside"
+mkdir -p "$outside/vault"
+printf 'the user note\n' > "$outside/vault/note.md"
+git -C "$outside/vault" init -q
+git -C "$outside/vault" add -A
+git -C "$outside/vault" -c user.name=sentinel -c user.email=sentinel@example.invalid commit -q -m initial
+before=$(isolation_snapshot "$outside")
+mkdir -p "$outside/vault/.git/objects"
+printf 'maintenance\n' > "$outside/vault/.git/objects/maintenance.lock"
+[ "$(isolation_snapshot "$outside")" = "$before" ] || fail "snapshot included transient Git metadata"
+rm "$outside/vault/.git/objects/maintenance.lock"
+printf 'changed\n' >> "$outside/vault/note.md"
+[ "$(isolation_snapshot "$outside")" != "$before" ] || fail "snapshot missed an outside vault change"
 
 # fixture <body>: the `node` start_model runs; FIXTURE_PID receives its pid.
 fixture() {
