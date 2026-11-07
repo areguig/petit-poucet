@@ -36,8 +36,8 @@ jobs:
             install-windows: bun install -g @oh-my-pi/pi-coding-agent@$VERSION; Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.bun\bin"
           # Cursor's installer has its release hard-coded and takes no version: always the latest.
           - agent: cursor
-            install: curl https://cursor.com/install -fsS | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            install-windows: irm 'https://cursor.com/install?win32=true' | iex
+            install: sh .github/download.sh https://cursor.com/install | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: irm @download 'https://cursor.com/install?win32=true' | iex
           # On Windows, the v2026.9.24 installer can't switch to a pinned commit (checkout aborts on "local changes"):
           # the current installer runs instead, which takes Hermes's latest stable release.
           # Hermes Agent v2026.9.24: its installer is taken from the same commit, since newer ones expect newer files.
@@ -46,13 +46,12 @@ jobs:
             install: |
               ref=$VERSION; commit="--commit $VERSION"
               [ "$VERSION" = latest ] && ref=main commit=
-              curl -fsSL --retry 5 "https://raw.githubusercontent.com/NousResearch/hermes-agent/$ref/scripts/install.sh" | bash -s -- $commit --non-interactive --skip-browser --skip-computer-use && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            install-windows: "& ([scriptblock]::Create((irm -MaximumRetryCount 5 -RetryIntervalSec 10 https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1))) -NonInteractive -SkipComputerUse"
+              sh .github/download.sh "https://raw.githubusercontent.com/NousResearch/hermes-agent/$ref/scripts/install.sh" | bash -s -- $commit --non-interactive --skip-browser --skip-computer-use && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: "& ([scriptblock]::Create((irm @download https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1))) -NonInteractive -SkipComputerUse"
           # Antigravity's installer always fetches the manifest's current release and takes no version: always the latest.
           - agent: antigravity
-            # Its server sometimes sends the script gzip-compressed (seen 2026-10-04): --compressed decodes it.
-            install: curl -fsSL --compressed --retry 3 https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            install-windows: irm https://antigravity.google/cli/install.ps1 | iex
+            install: sh .github/download.sh https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            install-windows: irm @download https://antigravity.google/cli/install.ps1 | iex
     name: ${{ matrix.agent }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     defaults:
@@ -76,6 +75,7 @@ jobs:
           VERSION: ${{ contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name) && 'latest' || matrix.version }}
         run: |
           $VERSION = $env:VERSION
+          $download = @{ MaximumRetryCount = 5; RetryIntervalSec = 10 }
           $before = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
           ${{ matrix.install-windows || matrix.install }}
           [Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_ -and $before -notcontains $_ } | Add-Content $env:GITHUB_PATH
