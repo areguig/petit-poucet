@@ -538,7 +538,7 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
         .assert()
         .success();
     // A session loads a project's 100 notes: over the Index budget, a problem this test isn't about.
-    set_limit(home.path(), "index_max_notes", 200);
+    set_limit(home.path(), "session_start_max_bytes", 1_000_000);
     for project in ["api", "web", "infra"] {
         let dir = vault.join("Projects").join(project);
         std::fs::create_dir_all(&dir).unwrap();
@@ -593,7 +593,7 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
         .assert()
         .success();
     set_limit(other.path(), "review_max_pages", 3);
-    set_limit(other.path(), "index_max_notes", 200);
+    set_limit(other.path(), "session_start_max_bytes", 1_000_000);
     let note = synced.join("Projects/infra/fact-3.md");
     let text = std::fs::read_to_string(&note).unwrap();
     std::fs::write(

@@ -1,6 +1,5 @@
 mod agent;
 mod antigravity;
-mod budget;
 mod change;
 mod check;
 mod checkouts;
@@ -8,6 +7,7 @@ mod claude;
 mod cleanup;
 mod codex;
 mod config;
+mod context;
 mod copilot;
 mod cursor;
 mod delete;

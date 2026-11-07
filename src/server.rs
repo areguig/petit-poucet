@@ -16,7 +16,7 @@ use crate::move_note::{self, MoveRequest};
 use crate::note::Place;
 use crate::save::{self, SaveRequest};
 use crate::vault::{Vault, note_file};
-use crate::{change, cleanup, hook, index, lock, review, search, usage};
+use crate::{change, cleanup, context, index, lock, review, search, usage};
 
 // Clients that don't run hooks (Copilot in JetBrains IDEs) never get the session-start context.
 const INSTRUCTIONS: &str = "petit-poucet holds the user's memory: rules, decisions and verified facts. \
@@ -112,7 +112,7 @@ impl Server {
             "" => "no notes yet",
             view => view,
         };
-        Ok(format!("{}\n\n{view}", hook::RULES))
+        Ok(format!("{}\n\n{view}", context::rules(false)))
     }
 
     #[tool(description = "Read one note, or a sync conflict copy of one.")]

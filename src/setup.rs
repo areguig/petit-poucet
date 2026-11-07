@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::agent::{Agent, Dirs};
 use crate::config::Config;
+use crate::context;
 use crate::init;
 use crate::vault::Vault;
 use crate::{antigravity, claude, codex, copilot, cursor, hermes, omp, opencode, skills};
@@ -77,6 +78,14 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
                     .flat_map(|w| w.lines())
                     .map(|l| format!("vault: {l}")),
             );
+            if mode == Mode::Check {
+                let max = config.limits.session_start_max_bytes;
+                lines.extend(
+                    context::over_budget(&vault, max)
+                        .into_iter()
+                        .map(|(file, message)| format!("vault: warning: {file}: {message}")),
+                );
+            }
             (lines, true)
         }
         Err(e) => (vec![format!("vault: {e}")], false),

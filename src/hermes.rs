@@ -5,7 +5,7 @@ use std::process::Command;
 use serde_json::{Value, json};
 
 use crate::config::{Config, Limits};
-use crate::{edit, hook, hook_command, note};
+use crate::{edit, hook_command, note};
 
 const AGENT: &str = "hermes";
 const SERVER_KEY: &str = "mcp_servers.petit-poucet";
@@ -15,8 +15,6 @@ const EVENT: &str = "session-start";
 const SPILL_KEY: &str = "hooks.output_spill.max_chars";
 // Hermes's own default when the config sets none.
 const DEFAULT_SPILL: u64 = 10_000;
-// A generous note path in an Index line, before its summary.
-const PATH_CHARS: usize = 100;
 const APPROVE: &str = "open `hermes` once and approve petit-poucet's hook when it asks";
 
 #[derive(Debug, PartialEq)]
@@ -60,11 +58,9 @@ fn others_hooks(config: &Value) -> Vec<Value> {
         .collect()
 }
 
-// Room for the rules and twice an Index at its limit: an Index passes its limit until the user tidies it,
-// and Hermes cuts a longer hook output down to a preview.
+// Hermes cuts a longer hook output down to a preview; a byte is never less than a character.
 fn context_max_chars(limits: &Limits) -> u64 {
-    let line = PATH_CHARS + limits.summary_max_chars;
-    (hook::RULES.len() + 2 * limits.index_max_notes * line) as u64
+    limits.session_start_max_bytes as u64
 }
 
 fn spill(config: &Value) -> u64 {
@@ -206,7 +202,7 @@ mod tests {
         let needed = json!(context_max_chars(&limits()));
         assert_eq!(
             setup_changes(
-                &json!({"hooks": {"pre_llm_call": [theirs]}}),
+                &json!({"hooks": {"pre_llm_call": [theirs], "output_spill": {"max_chars": 1}}}),
                 exe,
                 &limits()
             ),
@@ -261,10 +257,12 @@ mod tests {
     }
 
     #[test]
-    fn the_output_limit_holds_an_index_at_its_limit() {
-        let limits = limits();
-        let index = limits.index_max_notes * (PATH_CHARS + limits.summary_max_chars);
-        assert!(context_max_chars(&limits) as usize > hook::RULES.len() + index);
-        assert!(context_max_chars(&limits) > DEFAULT_SPILL);
+    fn the_output_limit_is_raised_to_a_session_budget_above_its_default() {
+        let limits = Limits {
+            session_start_max_bytes: 2 * DEFAULT_SPILL as usize,
+            ..limits()
+        };
+        let changes = setup_changes(&json!({}), Path::new("/pp"), &limits);
+        assert!(changes.contains(&Change::Set(SPILL_KEY, json!(2 * DEFAULT_SPILL))));
     }
 }
