@@ -63,9 +63,36 @@ start_model() {
   export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
 }
 
+# session_view_of <agent> <file>: what that agent's hook replies at session start, from a folder without a project.
+session_view_of() {
+  (cd "$(mktemp -d)" && echo '{}' | "$pp" hook session-start --agent "$1") > "$2"
+}
+
+# oversize_memory <agent>: more preferences than a session loads within its budget; check_calls then expects
+# the whole session view that agent's hook produces for them, and removes them.
+# The view before the update check has found a release is taken now, with the check off so it starts nothing:
+# the session's own hook starts the check, and check_update still waits for it.
+oversize_memory() {
+  session_agent=$1
+  i=0
+  while [ "$i" -lt 150 ]; do
+    printf -- '---\ntype: user\nscope: all repos\nsummary: preference %s, worded like a real one-line summary of a rule the user stated about how they work\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n**Why:** x\n' "$i" > "$HOME/agent-memory/Preferences/oversize-$i.md"
+    i=$((i + 1))
+  done
+  PETIT_POUCET_NO_UPDATE_CHECK=1 session_view_of "$1" "$HOME/session-start-before.json"
+}
+
 # check_calls <tools marker> [calls.mjs options]: what the session sent the model; see calls.mjs.
 check_calls() {
+  if [ -n "${session_agent:-}" ]; then
+    # A call carries the view from before the update check or, once it has recorded its release, the one with its notice.
+    check_update
+    session_view_of "$session_agent" "$HOME/session-start-after.json"
+    budget=$(sed -n 's/^session_start_max_bytes = //p' "$HOME/.config/petit-poucet/config.toml")
+    set -- "$@" "--session=$HOME/session-start-before.json" "--session=$HOME/session-start-after.json" "--budget=$budget"
+  fi
   node "$repo/tests/agents/calls.mjs" "$calls" "$@" || fail "petit-poucet didn't reach the model as expected"
+  rm -f "$HOME"/agent-memory/Preferences/oversize-*.md
 }
 
 # check_update: the update check that session start leaves running in the background outlived the agent's hook.

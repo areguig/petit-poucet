@@ -4,6 +4,8 @@
 // With --presence=<a,b,c> it only prints, per call, whether each name appears (a diagnostic: exit 1 with a fixed message if the capture has no usable calls).
 // With --catalog=<a,b,c> [--codex-version=<v>] it prints instead whether each name is an entry of the skills catalog section, with the entry and character counts,
 // and exits 1 if a call has no parsable catalog section or lacks one of the names.
+// With --session=<the hook's reply file> (once or twice: the view before and after the update check adds its notice) --budget=<bytes>,
+// the memory each call carries is exactly one of those whole session views, which must be partial (the vault is oversized) and within the budget.
 // The skill looked for is tidy-memory, unless --skill names another for an agent that doesn't get it.
 import { readFileSync } from "node:fs";
 
@@ -82,9 +84,44 @@ if (catalog) reportCatalog(catalog, options.find((o) => o.startsWith("--codex-ve
 
 const calls = readCalls();
 
-let ok = calls.length === (reminded ? 4 : 3);
+const budget = Number(options.find((o) => o.startsWith("--budget="))?.slice("--budget=".length));
+const sessionFiles = options.filter((o) => o.startsWith("--session=")).map((o) => o.slice("--session=".length));
+// The views the hook builds: before the update check has found a release and after, which adds its notice line.
+const views = [
+  ...new Set(
+    sessionFiles.map((file) => strings(JSON.parse(readFileSync(file, "utf8"))).find((text) => text.startsWith("Agent memory (petit-poucet)"))),
+  ),
+];
+const viewOk = !sessionFiles.length || views.every((view) => view && view.includes("Not loaded (over the") && Buffer.byteLength(view) <= budget);
+if (!viewOk) console.log("a session view is missing, not partial, or over the budget");
+// The texts a request gives the model as context, in the formats the mock serves (Anthropic, OpenAI chat and responses, Gemini):
+// system and instructions, and the system, developer and user messages; never tool results, tool-call arguments or other fields.
+const CONTEXT_ROLES = ["system", "developer", "user"];
+const texts = (content) =>
+  typeof content === "string"
+    ? [content]
+    : Array.isArray(content)
+      ? content.flatMap((part) => (["text", "input_text"].includes(part?.type) && typeof part.text === "string" ? [part.text] : []))
+      : [];
+const contextTexts = (request) => [
+  ...texts(request.system),
+  ...texts(request.instructions),
+  ...(typeof request.input === "string" ? [request.input] : []),
+  ...[...(request.messages ?? []), ...(Array.isArray(request.input) ? request.input : [])]
+    .filter((m) => CONTEXT_ROLES.includes(m?.role) && (m.type ?? "message") === "message")
+    .flatMap((m) => texts(m.content)),
+  ...[request.systemInstruction, ...(request.contents ?? []).filter((c) => c?.role === "user")].flatMap((c) =>
+    (c?.parts ?? []).flatMap((part) => (typeof part?.text === "string" ? [part.text] : [])),
+  ),
+];
+const memoryIn = (call) =>
+  sessionFiles.length
+    ? contextTexts(JSON.parse(call)).reduce((sum, text) => sum + views.reduce((n, view) => n + count(text, view.trimEnd()), 0), 0)
+    : count(call, MEMORY);
+
+let ok = viewOk && calls.length === (reminded ? 4 : 3);
 const reminders = calls.map((call, i) => {
-  const memory = count(call, MEMORY);
+  const memory = memoryIn(call);
   const offered = call.includes(tools);
   const skills = call.includes(skill);
   const rule = call.includes(CLEAN_AS_YOU_GO);
