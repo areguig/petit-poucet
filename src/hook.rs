@@ -19,7 +19,8 @@ const EVERY: u32 = 10;
 
 // Do not require silence: some harnesses retry or error on an empty response.
 const REMINDER: &str = "Memory check: did this session produce a user decision, correction or preference, \
-or a verified fact, that memory doesn't hold yet or holds wrongly? If yes, save or fix it with memory_save. \
+or a fact you verified that the code, git history or the repo's docs don't already record, \
+that memory doesn't hold yet or holds wrongly? If yes, save or fix it with memory_save. \
 If you were waiting for the user's answer or approval, keep waiting. \
 Otherwise carry on with any unfinished task, or end your turn as usual.";
 

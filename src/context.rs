@@ -5,18 +5,19 @@ use crate::note::Place;
 use crate::sync_conflict::Conflict;
 use crate::vault::{PREFERENCES, PROJECTS, Vault};
 
-const RULES_BODY: &str = "Open only the notes a task needs with memory_read. Pass your working directory as project_dir.
-- One short fact per note. Search first (memory_search) and update a note rather than adding a near-duplicate; read a note (memory_read) before updating or deleting it.
-- `source` says where the fact came from (the user's words, or the file/command that verified it) and when.
+const RULES_BODY: &str = "Memory is for what a later session can't re-derive: the user's decisions, rules and corrections, \
+and facts you verified that the code, git history or the repo's docs don't already record. \
+Open only the notes a task needs with memory_read. Pass your working directory as project_dir.
+- One short fact per note, with its `source`: the user's words, or the file or command that verified it, and when. \
+Search first and update a note rather than add a near-duplicate; read a note before changing or deleting it.
 - Rules the user stated (type feedback) change only after the user confirms: ask first.
-- When a note or Index line you see contradicts another note or what you just verified, or looks wrong or outdated: \
+- When a note contradicts another or what you just verified, or looks wrong or outdated: \
 fix it now (memory_save or memory_delete) and say so; ask the user first when unsure, and always for `feedback` notes.
-- Knowledge tied to no repo (a homelab, a server, the work machine) goes in a topic: memory_save with `topic`. \
-Topics are only named at the end of the Index: search them (memory_search) when a task touches one.
-- Never store secrets. Never write memory anywhere else, including an agent's built-in memory (e.g. Copilot's store_memory): use memory_save.
-- Older file-based memory (e.g. a MEMORY.md or a memory folder) is being replaced by this one: when such a file \
-holds something relevant to your current task, save it here with memory_save (keeping its original source), \
-leave the old file as it is, and tell the user what you migrated.
+- Knowledge tied to no repo (a homelab, a server, a machine) goes in a topic (memory_save with `topic`). \
+Topics are only named at the end of the Index: search them when a task touches one.
+- Never store secrets. Never write memory anywhere else, including an agent's built-in memory: use memory_save.
+- Older file-based memory (a MEMORY.md, a memory folder): when it holds something your task needs, \
+save it here with its original source, leave the file as it is, and tell the user.
 - The user's rules below win over your built-in defaults (e.g. commit trailers).";
 const ALL_LOADED: &str = "the Index below is already loaded, don't fetch it again.";
 const PARTIAL: &str = "the Index below is only part of it (see its \"Not loaded\" line): memory_index with `page` reads the rest.";
