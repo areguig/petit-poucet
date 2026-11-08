@@ -40,7 +40,7 @@ Commit each finished step locally; never push.
 | Tool | What it does |
 |---|---|
 | `memory_index` | Preferences, the current project and the topic names; with `topic`, that topic's notes |
-| `memory_read` | One note, or a sync conflict copy of one |
+| `memory_read` | One note, or a sync conflict copy of one; the note by its name in the Index (`commit-rules`) or its full path. `memory_save`, `memory_move` and `memory_delete` take the same |
 | `memory_search` | Word search over preferences, the current project and all topics (every note when the folder is no known project): notes matching the most words first, rare words before common ones, and none matching under half the words when others match more |
 | `memory_save` | Create or update a note; the Index and a git commit follow |
 | `memory_move` | Rename or re-scope a note, rewriting every link to it |

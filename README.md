@@ -62,11 +62,11 @@ At the start of every session, the agent gets your rules and an Index of what ap
 
 ```markdown
 ## Preferences (all repos)
-- [[Preferences/commit-rules]] — commit locally per step, 1-2 line message, never push
-- [[Preferences/never-read-secrets]] — use secret values only by piping them into commands, never print them
+- [[commit-rules]] — commit locally per step, 1-2 line message, never push
+- [[never-read-secrets]] — use secret values only by piping them into commands, never print them
 
 ## Projects / chargepath-api
-- [[Projects/chargepath-api/prod-db-no-postgis]] — the prod database has no PostGIS: spatial queries must work without it
+- [[prod-db-no-postgis]] — the prod database has no PostGIS: spatial queries must work without it
 ```
 
 ## On several machines
