@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
 use std::time::SystemTime;
 
 use jiff::civil::Date;
@@ -7,6 +6,7 @@ use jiff::civil::Date;
 use crate::config::{Config, Limits};
 use crate::index::NO_SUMMARY;
 use crate::note::Note;
+use crate::paging::{Item, paginate};
 use crate::usage::{self, Activity};
 use crate::vault::{Vault, folder};
 use crate::{check, cleanup, priority, unused};
@@ -15,8 +15,6 @@ use crate::{check, cleanup, priority, unused};
 pub const PAGE_BYTES: usize = 3 * 1024;
 
 const LEGEND: &str = "slug | type | created[/updated] | reads and last read | summary";
-
-type Item = (String, String);
 
 // Every note in a small vault or on demand, else folders by priority; then the whole vault's problems, never cut.
 pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<String, String> {
@@ -52,7 +50,9 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
         let reserved = header(&root, &scope_of(shown.len()), usize::MAX, usize::MAX).len()
             + more(usize::MAX, full).len();
         let items: Vec<Item> = shown.iter().chain(&findings).cloned().collect();
-        paginate(&items, PAGE_BYTES.saturating_sub(reserved))
+        paginate(&items, PAGE_BYTES.saturating_sub(reserved), "", |section| {
+            format!("## {section}\n")
+        })
     };
     let shown: Vec<Item> = match full || vault.notes.len() <= limits.full_review_max_notes {
         true => vault.notes.iter().map(|n| item(n, &activity)).collect(),
@@ -142,40 +142,6 @@ fn scope(
             t.strftime("%Y-%m-%d")
         ),
     }
-}
-
-// Items are (section, line); a page that continues a section repeats its heading, and a line too long for a page goes on over the next ones.
-fn paginate(items: &[Item], budget: usize) -> Vec<String> {
-    let mut pages = vec![String::new()];
-    let mut heading = "";
-    for (section, line) in items {
-        let mut rest = line.as_str();
-        loop {
-            let page = pages.last_mut().unwrap();
-            let starts = page.is_empty() || section != heading;
-            let title = if starts { section.len() + 4 } else { 0 };
-            let room = budget.saturating_sub(page.len() + title + 1);
-            if rest.len() > room && !page.is_empty() {
-                pages.push(String::new());
-                continue;
-            }
-            // One character at least, so a budget too small for anything still moves on.
-            let end = rest
-                .floor_char_boundary(room)
-                .max(rest.ceil_char_boundary(1));
-            if starts {
-                writeln!(page, "## {section}").unwrap();
-                heading = section;
-            }
-            writeln!(page, "{}", &rest[..end]).unwrap();
-            rest = &rest[end..];
-            if rest.is_empty() {
-                break;
-            }
-            pages.push(String::new());
-        }
-    }
-    pages
 }
 
 fn item(note: &Note, activity: &Activity) -> Item {
@@ -476,49 +442,5 @@ mod tests {
             }
         }
         assert!(lines.contains(&summary), "{lines}");
-    }
-
-    #[test]
-    fn pages_fit_the_budget_repeat_their_heading_and_keep_every_line_in_order() {
-        let items: Vec<(String, String)> = (0..150)
-            .map(|i| {
-                let section = if i < 100 { "Projects/big" } else { "check" };
-                (
-                    section.to_string(),
-                    format!("- line {i} of about the length of a real one"),
-                )
-            })
-            .collect();
-
-        let pages = paginate(&items, PAGE_BYTES);
-        assert!(pages.len() > 2);
-        let mut lines = Vec::new();
-        for page in &pages {
-            assert!(page.len() <= PAGE_BYTES, "{} bytes", page.len());
-            assert!(page.starts_with("## "), "{page}");
-            lines.extend(page.lines().filter(|l| !l.starts_with("## ")));
-        }
-        let expected: Vec<&str> = items.iter().map(|(_, line)| line.as_str()).collect();
-        assert_eq!(lines, expected);
-    }
-
-    #[test]
-    fn a_line_too_long_for_its_page_goes_on_after_the_repeated_heading_between_characters() {
-        let section = format!("Projects/{}", "a".repeat(100));
-        let long = format!("- x{}", "é".repeat(200));
-        let items = vec![
-            (section.clone(), "- short".to_string()),
-            (section.clone(), long.clone()),
-        ];
-
-        let pages = paginate(&items, 300);
-        assert!(pages.len() > 2);
-        let mut text = String::new();
-        for page in &pages {
-            assert!(page.len() <= 300, "{} bytes: {page}", page.len());
-            let body = page.strip_prefix(&format!("## {section}\n")).unwrap();
-            text.extend(body.lines());
-        }
-        assert_eq!(text, format!("- short{long}"));
     }
 }

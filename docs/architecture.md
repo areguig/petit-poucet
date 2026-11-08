@@ -61,8 +61,9 @@ A folder comes whole so a note is judged next to its neighbours. Reading the las
 Why the limits: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. 10 pages of 200-character summaries hold about 300 notes, about 37k tokens of input per cleanup.
 
 ## Index budget and summary length (`check`)
-Every session loads the preferences and its project's notes, one Index line each, so their count is a cost paid in every session.
-- `check` warns when the preferences alone, or the preferences plus one project, exceed `index_max_notes` (100); the session-start line tells the user to ask for a tidy-up.
+Every session loads the preferences and its project's notes, one Index line each, so their size is a cost paid in every session.
+- The session-start text (rules, warnings, Index lines, topic names, sync conflicts) never passes `session_start_max_bytes` (8,000 UTF-8 bytes). Past it, whole lines are left out in order (preferences, then the project's notes, then the topics line, then conflict details), one "Not loaded" line names what, and `memory_index` with `page` reads the whole Index in pages within the same budget. `Index.md` on disk stays complete.
+- `check`, `setup --check`, the session-start line and a `memory_save` that tips a session over the budget all say how many notes a session leaves out and ask for a tidy-up.
 - `check` warns about a summary over `summary_max_chars` (200 characters): one short fact per note keeps the Index and the review small.
 - `check` warns when a note's title no longer holds at least half of its file name's words (an update never renames the file) and names the `memory_move` target; a few reworded words don't count.
 

@@ -106,3 +106,110 @@ for (const [name, text] of [
     assertSafe(run);
   });
 }
+
+// --session: the whole session view the hook produces reached the model in every call, within the budget.
+const VIEW = [
+  "Agent memory (petit-poucet): the Index below is only part of it.",
+  "Not loaded (over the 4000-byte session budget): 3 preferences.",
+  "fix it now (memory_save or memory_delete)",
+  "- [[Preferences/last-line]] — 日本語 🪨",
+  "",
+].join("\n");
+const NOTICE = "Tell the user once, in one line: petit-poucet: 99.0.0 is out.\n";
+const hookOutput = (text) => fixture(`hook-${Math.random()}.json`, JSON.stringify({ additionalContext: text }));
+const sessionCall = (text) => JSON.stringify({ body: JSON.stringify({ tools: [{ name: "memory_search" }], input: `tidy-memory ${text}` }) });
+const withNotice = VIEW.replace("- [[", `${NOTICE}- [[`);
+const runSession = (texts, { views = [VIEW, withNotice], budget = 4000 } = {}) =>
+  spawnSync(
+    "node",
+    [
+      script(),
+      fixture(`session-${Math.random()}.jsonl`, texts.map(sessionCall).join("\n")),
+      "memory_search",
+      "--no-reminder",
+      ...views.map((view) => `--session=${hookOutput(view)}`),
+      `--budget=${budget}`,
+    ],
+    { encoding: "utf8" },
+  );
+
+test("--session passes when each call holds the whole view, from before or after the update notice", () => {
+  const run = runSession([VIEW, withNotice, VIEW]);
+  assert.strictEqual(run.status, 0, run.stdout + run.stderr);
+});
+
+test("--session fails when a call holds a view that is neither the one before nor the one after the notice", () => {
+  const drifted = withNotice.replace("3 preferences", "4 preferences");
+  assert.strictEqual(runSession([VIEW, drifted, VIEW]).status, 1);
+});
+
+test("--session fails when a call holds the view cut short", () => {
+  const run = runSession([VIEW, VIEW.replace("🪨", ""), VIEW]);
+  assert.strictEqual(run.status, 1);
+});
+
+test("--session fails when the view is over the budget or is not partial", () => {
+  assert.strictEqual(runSession([VIEW, VIEW, VIEW], { budget: Buffer.byteLength(VIEW) - 1 }).status, 1);
+  const whole = VIEW.replace(/Not loaded.*\n/, "");
+  assert.strictEqual(runSession([whole, whole, whole], { views: [whole] }).status, 1);
+});
+
+// Requests in each supported format, with the view where that format gives the model its context.
+const DELIVERED = {
+  "Anthropic system": (view) => ({ system: [{ type: "text", text: view }], messages: [{ role: "user", content: "tidy-memory" }] }),
+  "Anthropic user message": (view) => ({ messages: [{ role: "user", content: [{ type: "text", text: `tidy-memory ${view}` }] }] }),
+  "OpenAI chat system message": (view) => ({ messages: [{ role: "system", content: view }, { role: "user", content: "tidy-memory" }] }),
+  "OpenAI responses developer message": (view) => ({
+    instructions: "tidy-memory",
+    input: [{ type: "message", role: "developer", content: [{ type: "input_text", text: view }] }],
+  }),
+  "Gemini system instruction": (view) => ({ systemInstruction: { parts: [{ text: view }] }, contents: [{ role: "user", parts: [{ text: "tidy-memory" }] }] }),
+};
+// The view where no model reads it as context: request metadata, tool-call arguments, tool results.
+const UNDELIVERED = {
+  "request metadata": (view) => ({ input: "tidy-memory", metadata: { undelivered_debug_context: view } }),
+  "a responses function-call argument": (view) => ({
+    input: [
+      { type: "message", role: "user", content: [{ type: "input_text", text: "tidy-memory" }] },
+      { type: "function_call", name: "memory_search", arguments: view },
+    ],
+  }),
+  "a chat tool-call argument": (view) => ({
+    messages: [
+      { role: "user", content: "tidy-memory" },
+      { role: "assistant", tool_calls: [{ function: { name: "memory_search", arguments: view } }] },
+    ],
+  }),
+  "an Anthropic tool result": (view) => ({
+    messages: [{ role: "user", content: [{ type: "text", text: "tidy-memory" }, { type: "tool_result", content: [{ type: "text", text: view }] }] }],
+  }),
+};
+const runShaped = (shape) =>
+  spawnSync(
+    "node",
+    [
+      script(),
+      fixture(
+        `shaped-${Math.random()}.jsonl`,
+        [1, 2, 3].map(() => JSON.stringify({ body: JSON.stringify({ tools: [{ name: "memory_search" }], ...shape(VIEW) }) })).join("\n"),
+      ),
+      "memory_search",
+      "--no-reminder",
+      `--session=${hookOutput(VIEW)}`,
+      "--budget=4000",
+    ],
+    { encoding: "utf8" },
+  );
+
+for (const [name, shape] of Object.entries(DELIVERED)) {
+  test(`--session passes when the view is in the ${name}`, () => {
+    const run = runShaped(shape);
+    assert.strictEqual(run.status, 0, run.stdout + run.stderr);
+  });
+}
+
+for (const [name, shape] of Object.entries(UNDELIVERED)) {
+  test(`--session fails when the view is only in ${name}`, () => {
+    assert.strictEqual(runShaped(shape).status, 1);
+  });
+}

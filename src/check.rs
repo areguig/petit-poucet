@@ -7,7 +7,7 @@ use crate::note::{self, REQUIRED_TAG};
 use crate::project::IDENTITY_FILE;
 use crate::sync_conflict::{self, Conflict};
 use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, TOPICS, Vault};
-use crate::{budget, checkouts, duplicates, index, secrets, stale_paths};
+use crate::{checkouts, context, duplicates, index, secrets, stale_paths};
 
 // A note is one short fact; past this the body is probably several facts or history.
 pub const MAX_BODY_CHARS: usize = 1500;
@@ -127,7 +127,7 @@ pub fn check(vault: &Vault, limits: &Limits) -> Vec<Issue> {
         });
     }
 
-    for (file, message) in budget::over(vault, limits.index_max_notes) {
+    for (file, message) in context::over_budget(vault, limits.session_start_max_bytes) {
         issues.push(Issue {
             file,
             level: Level::Warning,
@@ -282,24 +282,27 @@ mod tests {
     }
 
     #[test]
-    fn a_session_index_over_its_budget_is_reported() {
+    fn a_session_view_over_its_budget_is_reported() {
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir(tmp.path().join(PREFERENCES)).unwrap();
         for slug in ["a", "b"] {
             fs::write(tmp.path().join(format!("{PREFERENCES}/{slug}.md")), "x").unwrap();
         }
-        let limits = Limits {
-            index_max_notes: 1,
-            ..limits()
+        let vault = Vault::load(tmp.path()).unwrap();
+        let whole = context::session_view(&vault, None, &[], usize::MAX)
+            .text
+            .len();
+        let warned = |session_start_max_bytes| {
+            let limits = Limits {
+                session_start_max_bytes,
+                ..limits()
+            };
+            check(&vault, &limits)
+                .iter()
+                .any(|i| i.file == PREFERENCES && i.level == Level::Warning)
         };
-        let issues: Vec<String> = check(&Vault::load(tmp.path()).unwrap(), &limits)
-            .iter()
-            .map(ToString::to_string)
-            .collect();
-        assert!(
-            issues.contains(&"Preferences: warning: every session loads its 2 notes, over 1: merge or move some".to_string()),
-            "{issues:?}"
-        );
+        assert!(warned(whole - 1));
+        assert!(!warned(whole));
     }
 
     #[test]

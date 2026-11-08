@@ -330,12 +330,17 @@ fn session_start_injects_rules_and_the_project_index() {
         "Copilot has no user message"
     );
 
-    // Past the Index budget, the user is told how to shrink it (#14).
+    // Past the session budget, the agent gets what fits and the user is told how to shrink memory (#14, #212).
     let config = home.path().join(".config/petit-poucet/config.toml");
     let text = fs::read_to_string(&config).unwrap();
+    let max = context.len() - 1;
+    let setting = text
+        .lines()
+        .find(|l| l.starts_with("session_start_max_bytes = "))
+        .unwrap();
     fs::write(
         &config,
-        text.replace("index_max_notes = 100", "index_max_notes = 5"),
+        text.replace(setting, &format!("session_start_max_bytes = {max}")),
     )
     .unwrap();
     let claude: serde_json::Value = serde_json::from_str(&hook(
@@ -344,9 +349,16 @@ fn session_start_injects_rules_and_the_project_index() {
         &event,
     ))
     .unwrap();
+    let tight = claude["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(tight.len() <= max, "{} > {max}", tight.len());
+    assert!(tight.contains("Not loaded (over the"), "{tight}");
     assert_eq!(
         claude["systemMessage"],
-        "🪨 petit-poucet · 10 notes loaded (preferences + alpha), over 5: ask your agent to tidy your memory"
+        format!(
+            "🪨 petit-poucet · 8 notes loaded (preferences + alpha), 2 notes, the topics list left out of the {max}-byte budget: ask your agent to tidy your memory"
+        )
     );
 }
 
@@ -593,12 +605,9 @@ fn session_start_reminds_of_a_due_cleanup() {
         "the clean-as-you-go rule: {context}"
     );
     assert!(
-        copilot["additionalContext"]
-            .as_str()
-            .unwrap()
-            .ends_with(&format!(
-                "Tell the user once, in one line: petit-poucet: {due}."
-            )),
+        context.contains(&format!(
+            "Tell the user once, in one line: petit-poucet: {due}."
+        )),
         "{copilot}"
     );
 
@@ -1016,9 +1025,42 @@ fn an_older_config_gets_the_new_settings_written_in() {
     assert_eq!(
         fs::read_to_string(&config).unwrap(),
         format!(
-            "{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\nsummary_max_chars = 200\nindex_max_notes = 100\ncleanup_reminder_notes = 30\ncleanup_reminder_days = 30\n"
+            "{old}full_review_max_notes = 300\nreview_max_pages = 10\nactive_days = 30\nunused_days = 90\nsummary_max_chars = 200\nsession_start_max_bytes = 8000\ncleanup_reminder_notes = 30\ncleanup_reminder_days = 30\n"
         )
     );
+}
+
+#[test]
+fn setup_check_warns_when_a_session_would_leave_notes_out() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    write(
+        home.path(),
+        "vault/Preferences/rule.md",
+        "---\ntype: feedback\nscope: all repos\nsummary: s\ncreated: 2026-10-27\ntags: [agent-memory]\n---\n\n# Rule\n",
+    );
+    for i in 0..30 {
+        write(
+            home.path(),
+            &format!("vault/Preferences/rule-{i}.md"),
+            "---\ntype: feedback\nscope: all repos\nsummary: another rule the user stated\ncreated: 2026-10-27\ntags: [agent-memory]\n---\n\n# Rule\n",
+        );
+    }
+    let config = |extra: &str| {
+        let vault = toml::Value::from(vault.display().to_string());
+        write(
+            home.path(),
+            ".config/petit-poucet/config.toml",
+            &format!("vault = {vault}\n{extra}"),
+        );
+    };
+    config("");
+    let (_, out) = setup(home.path(), &["--check"]);
+    assert!(!out.contains("warning"), "{out}");
+
+    config("session_start_max_bytes = 2000\n");
+    let (_, out) = setup(home.path(), &["--check"]);
+    assert!(out.contains("vault: warning: Preferences: "), "{out}");
 }
 
 #[test]
@@ -1815,5 +1857,69 @@ fn antigravity_hooks_reply_in_antigravity_format() {
         stop(1),
         "",
         "the stop after our reminder lets the agent stop"
+    );
+}
+
+// Topic names alone can pass the session budget: the user is still told (#212).
+#[test]
+fn session_start_tells_when_only_the_topics_list_is_left_out() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    write(
+        home.path(),
+        "vault/Preferences/rule.md",
+        "---\ntype: feedback\nscope: all repos\nsummary: s\ncreated: 2026-10-27\ntags: [agent-memory]\n---\n\n# Rule\n",
+    );
+    for i in 0..1000 {
+        write(
+            home.path(),
+            &format!("vault/Topics/topic-with-a-long-name-{i}/n.md"),
+            "x",
+        );
+    }
+    let claude: serde_json::Value = serde_json::from_str(&hook(
+        home.path(),
+        &["session-start", "--agent", "claude"],
+        "{}",
+    ))
+    .unwrap();
+    let message = claude["systemMessage"].as_str().unwrap();
+    assert!(
+        message.starts_with(
+            "🪨 petit-poucet · 1 note loaded (preferences), the topics list left out of the "
+        ),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_session_budget_below_the_minimum_stops_every_command_with_a_clear_message() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let config = home.path().join(".config/petit-poucet/config.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    let setting = text
+        .lines()
+        .find(|l| l.starts_with("session_start_max_bytes = "))
+        .unwrap();
+    fs::write(
+        &config,
+        text.replace(setting, "session_start_max_bytes = 10"),
+    )
+    .unwrap();
+    let output = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("session_start_max_bytes is 10, below the minimum of "),
+        "{error}"
     );
 }

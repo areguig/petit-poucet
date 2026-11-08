@@ -19,12 +19,7 @@ YAML
 export OPENAI_API_KEY=dummy
 has "$("$pp" setup)" '^Hermes Agent: set up'
 grep -q "^# The user's own comment.$" "$config" || fail "setup lost the user's comment"
-# More memory than Hermes passes on whole by default (10,000 characters): setup makes room for it.
-i=0
-while [ "$i" -lt 90 ]; do
-  printf -- '---\ntype: user\nscope: all repos\nsummary: preference %s, worded like a real one-line summary of a rule the user stated about how they work\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n**Why:** x\n' "$i" > "$HOME/agent-memory/Preferences/preference-$i.md"
-  i=$((i + 1))
-done
+oversize_memory hermes
 
 work=$(mktemp -d)
 cd "$work"
@@ -38,11 +33,8 @@ done
 cd "$repo"
 # Hermes has no hook after an answer, where the save reminder belongs, and no tidy-memory, whose subagent it can't take.
 check_calls "mcp__petit_poucet__memory_save" --no-reminder --skill=migrate-memory
-grep -q "preference 89, worded" "$calls" || fail "the memory was cut short"
 check_update
 
-# check_review knows big_vault's notes only: the preferences above would fill its first page.
-rm "$HOME"/agent-memory/Preferences/preference-*.md
 big_vault
 cd "$work"
 hermes chat --accept-hooks -Q -q petit-poucet-review </dev/null >/dev/null

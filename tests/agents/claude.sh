@@ -15,6 +15,7 @@ if [ -z "$windows" ]; then
 fi
 has "$(claude mcp list 2>&1)" '^petit-poucet: .*petit-poucet.* serve .*Connected'
 has "$("$pp" setup --check)" '^Claude Code skills: installed'
+oversize_memory claude
 
 export REVIEW_TOOL=mcp__petit-poucet__memory_review
 start_model

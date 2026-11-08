@@ -538,7 +538,7 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
         .assert()
         .success();
     // A session loads a project's 100 notes: over the Index budget, a problem this test isn't about.
-    set_limit(home.path(), "index_max_notes", 200);
+    set_limit(home.path(), "session_start_max_bytes", 1_000_000);
     for project in ["api", "web", "infra"] {
         let dir = vault.join("Projects").join(project);
         std::fs::create_dir_all(&dir).unwrap();
@@ -593,7 +593,7 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
         .assert()
         .success();
     set_limit(other.path(), "review_max_pages", 3);
-    set_limit(other.path(), "index_max_notes", 200);
+    set_limit(other.path(), "session_start_max_bytes", 1_000_000);
     let note = synced.join("Projects/infra/fact-3.md");
     let text = std::fs::read_to_string(&note).unwrap();
     std::fs::write(
@@ -1640,4 +1640,106 @@ fn a_delete_commits_its_reason_and_only_its_own_changes_whether_the_note_was_com
 
     drop(client);
     assert!(child.wait().unwrap().success());
+}
+
+// An Index longer than the session budget is read in pages, each within it (#212).
+#[test]
+fn memory_index_pages_an_index_over_the_session_budget() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    for i in 0..150 {
+        let path = vault.join(format!("Preferences/rule-{i:03}.md"));
+        std::fs::write(
+            path,
+            format!("---\ntype: feedback\nscope: all repos\nsummary: rule {i} 日本語\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Rule {i}\n\n**Why:** test.\n"),
+        )
+        .unwrap();
+    }
+    let max = 6000;
+    set_limit(home.path(), "session_start_max_bytes", max);
+    let (mut child, mut client, _) = start(home.path());
+    let args = |page: Option<usize>| match page {
+        Some(page) => json!({"project_dir": home.path(), "page": page}),
+        None => json!({"project_dir": home.path()}),
+    };
+
+    let (_, first) = client.call("memory_index", args(None));
+    assert_eq!(client.call("memory_index", args(Some(1))).1, first);
+    let mut lines = Vec::new();
+    let mut page = 1;
+    loop {
+        let (is_error, text) = client.call("memory_index", args(Some(page)));
+        assert!(
+            !is_error && text.len() <= max,
+            "{page}: {} {text}",
+            text.len()
+        );
+        lines.extend(
+            text.lines()
+                .filter(|l| l.starts_with("- [[Preferences/"))
+                .map(String::from),
+        );
+        if text.contains(", the last.)") {
+            break;
+        }
+        page += 1;
+    }
+    assert!(page > 1);
+    assert_eq!(lines.len(), 150);
+    assert_eq!(
+        lines
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        150
+    );
+    let (is_error, text) = client.call("memory_index", args(Some(page + 1)));
+    assert!(
+        is_error && text.contains(&format!("page {}", page + 1)),
+        "{text}"
+    );
+    drop(client);
+    child.wait().unwrap();
+}
+
+// The "Not loaded" line sends the agent to memory_index: the sync conflict copies it left out must be there too (#212).
+#[test]
+fn memory_index_pages_hold_the_sync_conflict_copies_a_session_left_out() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let note = |i: usize| {
+        format!(
+            "---\ntype: feedback\nscope: all repos\nsummary: rule {i}\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Rule {i}\n\n**Why:** test.\n"
+        )
+    };
+    for i in 0..150 {
+        std::fs::write(vault.join(format!("Preferences/rule-{i:03}.md")), note(i)).unwrap();
+    }
+    let copy = "Preferences/rule-007.sync-conflict-20260101-000000-ABCDEFG.md";
+    std::fs::write(vault.join(copy), note(7)).unwrap();
+    set_limit(home.path(), "session_start_max_bytes", 6000);
+    let (mut child, mut client, _) = start(home.path());
+    let mut found = false;
+    for page in 1.. {
+        let (is_error, text) = client.call(
+            "memory_index",
+            json!({"project_dir": home.path(), "page": page}),
+        );
+        assert!(!is_error && text.len() <= 6000, "{page}: {text}");
+        found |= text.contains(&format!("- {copy} (older copy of Preferences/rule-007.md)"));
+        if text.contains(", the last.)") {
+            break;
+        }
+    }
+    assert!(found);
+    drop(client);
+    child.wait().unwrap();
 }

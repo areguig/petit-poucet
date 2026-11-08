@@ -6,32 +6,16 @@ use crate::agent::Agent;
 use crate::change;
 use crate::cleanup;
 use crate::config::Config;
-use crate::index;
+use crate::context;
 use crate::lock;
 use crate::stops;
 use crate::sync;
-use crate::sync_conflict::Conflict;
 use crate::update;
 use crate::usage;
 use crate::vault::Vault;
 
 const FIRST_REMINDER: u32 = 3;
 const EVERY: u32 = 10;
-
-pub const RULES: &str = "Agent memory (petit-poucet): the Index below is already loaded, don't fetch it again. \
-Open only the notes a task needs with memory_read. Pass your working directory as project_dir.
-- One short fact per note. Search first (memory_search) and update a note rather than adding a near-duplicate; read a note (memory_read) before updating or deleting it.
-- `source` says where the fact came from (the user's words, or the file/command that verified it) and when.
-- Rules the user stated (type feedback) change only after the user confirms: ask first.
-- When a note or Index line you see contradicts another note or what you just verified, or looks wrong or outdated: \
-fix it now (memory_save or memory_delete) and say so; ask the user first when unsure, and always for `feedback` notes.
-- Knowledge tied to no repo (a homelab, a server, the work machine) goes in a topic: memory_save with `topic`. \
-Topics are only named at the end of the Index: search them (memory_search) when a task touches one.
-- Never store secrets. Never write memory anywhere else, including an agent's built-in memory (e.g. Copilot's store_memory): use memory_save.
-- Older file-based memory (e.g. a MEMORY.md or a memory folder) is being replaced by this one: when such a file \
-holds something relevant to your current task, save it here with memory_save (keeping its original source), \
-leave the old file as it is, and tell the user what you migrated.
-- The user's rules below win over your built-in defaults (e.g. commit trailers).";
 
 // Do not require silence: some harnesses retry or error on an empty response.
 const REMINDER: &str = "Memory check: did this session produce a user decision, correction or preference, \
@@ -47,32 +31,59 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
         return None;
     }
     update::start();
-    let (mut context, mut message, notices) = match memory_context(agent, event) {
-        _ if !Config::is_set() => (
+    let release: Vec<String> = update::newer()
+        .map(|version| update::notice(&version))
+        .into_iter()
+        .collect();
+    let (context, message) = match memory_context(agent, event, &release) {
+        _ if !Config::is_set() => announce(
+            agent,
             setup_context(),
             format!("{PEBBLE} no vault yet: the agent will offer to create one"),
-            Vec::new(),
+            release,
         ),
-        Ok(loaded) => loaded,
-        Err(e) => (
+        Ok(reply) => reply,
+        Err(e) => announce(
+            agent,
             format!(
                 "Agent memory is UNAVAILABLE ({e}). Tell the user before relying on remembered rules, \
                  and do not write memory anywhere else."
             ),
             format!("{PEBBLE} memory unavailable: {e}"),
-            Vec::new(),
+            release,
         ),
     };
-    let release = update::newer().map(|version| update::notice(&version));
-    for notice in notices.into_iter().chain(release) {
-        match agent.shows_hook_messages() {
-            true => message.push_str(&format!("\n{PEBBLE} {notice}")),
-            false => context.push_str(&format!(
-                "\n\nTell the user once, in one line: petit-poucet: {notice}."
-            )),
-        }
-    }
     Some(agent.session_start_reply(&context, &message))
+}
+
+// A harness that shows no hook messages gets the notice in the agent's context instead.
+fn route(agent: Agent, notices: Vec<String>) -> (Vec<String>, Vec<String>) {
+    match agent.shows_hook_messages() {
+        true => (
+            Vec::new(),
+            notices.iter().map(|n| format!("{PEBBLE} {n}")).collect(),
+        ),
+        false => (
+            notices
+                .iter()
+                .map(|n| format!("Tell the user once, in one line: petit-poucet: {n}."))
+                .collect(),
+            Vec::new(),
+        ),
+    }
+}
+
+fn announce(
+    agent: Agent,
+    context: String,
+    message: String,
+    notices: Vec<String>,
+) -> (String, String) {
+    let (told_agent, shown_user) = route(agent, notices);
+    let context = told_agent
+        .iter()
+        .fold(context, |text, line| format!("{text}\n\n{line}"));
+    (context, [vec![message], shown_user].concat().join("\n"))
 }
 
 fn setup_context() -> String {
@@ -92,8 +103,12 @@ fn record_session(vault: &Vault, project: &str) {
     }
 }
 
-// Returns the context for the agent, the line shown to the user, and what the user should hear about.
-fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Vec<String>), String> {
+// Returns the context for the agent and the lines shown to the user.
+fn memory_context(
+    agent: Agent,
+    event: &Value,
+    release: &[String],
+) -> Result<(String, String), String> {
     let config = Config::load()?;
     let vault = sync::catch_up(&config)?;
     let dir = agent
@@ -104,66 +119,33 @@ fn memory_context(agent: Agent, event: &Value) -> Result<(String, String, Vec<St
     if let Some(project) = project {
         record_session(&vault, project);
     }
-    let loaded = vault
-        .notes
-        .iter()
-        .filter(|n| index::in_session(n.place(), project))
-        .count();
+    let notices = conflicts_notice(&vault)
+        .into_iter()
+        .chain(cleanup::due(&vault, &config.limits, SystemTime::now()))
+        .chain(release.iter().cloned())
+        .collect();
+    let (told_agent, shown_user) = route(agent, notices);
+    let max = config.limits.session_start_max_bytes;
+    let view = context::session_view(&vault, project, &told_agent, max);
     let scope = project.map_or("preferences".to_string(), |p| format!("preferences + {p}"));
-    let max = config.limits.index_max_notes;
-    let over = match loaded > max {
-        true => format!(", over {max}: ask your agent to tidy your memory"),
-        false => String::new(),
-    };
-    Ok((
+    let left_out = view.left_out.map_or(String::new(), |left_out| {
         format!(
-            "{RULES}\n{}{}",
-            index::for_project(&vault, project),
-            conflicts_context(&vault)
-        ),
-        format!("{PEBBLE} {loaded} notes loaded ({scope}){over}"),
-        conflicts_notice(&vault)
-            .into_iter()
-            .chain(cleanup::due(&vault, &config.limits, SystemTime::now()))
-            .collect(),
-    ))
-}
-
-fn note_conflicts(vault: &Vault) -> Vec<&Conflict> {
-    vault.conflicts.iter().filter(|c| c.in_note()).collect()
+            ", {left_out} left out of the {max}-byte budget: ask your agent to tidy your memory"
+        )
+    });
+    let notes = context::counted(view.loaded, "note", "notes");
+    let loaded = format!("{PEBBLE} {notes} loaded ({scope}){left_out}");
+    Ok((view.text, [vec![loaded], shown_user].concat().join("\n")))
 }
 
 fn conflicts_notice(vault: &Vault) -> Option<String> {
-    match note_conflicts(vault).len() {
+    match context::note_conflicts(vault).len() {
         0 => None,
         1 => Some("1 note has a sync conflict: ask your agent to merge it".to_string()),
         count => Some(format!(
             "{count} notes have sync conflicts: ask your agent to merge them"
         )),
     }
-}
-
-// Syncthing keeps the most recently modified version under the note's name, so each copy is the older one.
-fn conflicts_context(vault: &Vault) -> String {
-    let conflicts = note_conflicts(vault);
-    if conflicts.is_empty() {
-        return String::new();
-    }
-    let lines: Vec<String> = conflicts
-        .iter()
-        .map(|c| match vault.root.join(&c.original).is_file() {
-            true => format!("- {} (older copy of {})", c.copy, c.original),
-            false => format!(
-                "- {} (the only version left: {} was deleted on another machine)",
-                c.copy, c.original
-            ),
-        })
-        .collect();
-    format!(
-        "\nSync conflicts: another machine changed these notes at the same time. Offer the user to merge each one: \
-         memory_read the note and its copy, save what is worth keeping into the note with memory_save, then memory_delete the copy.\n{}\n",
-        lines.join("\n")
-    )
 }
 
 // Reminds at the 3rd stop of a session, then every 10th; never without a session id to count by.

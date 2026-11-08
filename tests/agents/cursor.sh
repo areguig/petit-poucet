@@ -8,6 +8,7 @@ cursor=cursor-agent
 [ -z "$windows" ] || cursor=cursor-agent.cmd
 has "$("$pp" setup)" '^Cursor: set up'
 has "$("$cursor" mcp list 2>&1)" '^petit-poucet: ready'
+# Unverified: this script has no model session, so how Cursor delivers the session view to the model is not checked.
 has "$("$cursor" mcp list-tools petit-poucet 2>&1)" '^- memory_index '
 has "$("$pp" setup --check)" '^Cursor: set up'
 
