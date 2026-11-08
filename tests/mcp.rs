@@ -70,7 +70,7 @@ fn an_agent_saves_finds_and_reads_a_note() {
     assert!(is_error && text.contains("title needs"), "{text}");
 
     assert!(client.call("memory_index", json!({"project_dir": home.path()})).1.ends_with(
-        "\n\n## Preferences (all repos)\n- [[Preferences/commit-rules]] — commit locally per step, never push"
+        "\n\n## Preferences (all repos)\n- [[commit-rules]] — commit locally per step, never push"
     ));
     assert_eq!(
         client
@@ -117,8 +117,7 @@ fn an_agent_saves_finds_and_reads_a_note() {
     );
     let (_, here) = client.call("memory_index", json!({"project_dir": repo}));
     assert!(
-        here.contains("[[Preferences/commit-rules]]")
-            && here.contains("[[Projects/my-repo/deploy-steps]]"),
+        here.contains("[[commit-rules]]") && here.contains("[[deploy-steps]]"),
         "{here}"
     );
     // From a folder that is no known project, every project's notes are searched.
@@ -174,7 +173,7 @@ fn an_agent_saves_finds_and_reads_a_note() {
     );
     let (_, index) = client.call("memory_index", json!({"project_dir": repo}));
     assert!(
-        index.ends_with("homelab (1)") && !index.contains("[[Topics/"),
+        index.ends_with("homelab (1)") && !index.contains("[[nas-backups]]"),
         "{index}"
     );
     let (_, topic) = client.call(
@@ -183,7 +182,7 @@ fn an_agent_saves_finds_and_reads_a_note() {
     );
     assert_eq!(
         topic,
-        "## Topics / homelab\n- [[Topics/homelab/nas-backups]] — nightly NAS backups go to the offsite disk"
+        "## Topics / homelab\n- [[nas-backups]] — nightly NAS backups go to the offsite disk"
     );
 
     drop(client);
@@ -447,7 +446,7 @@ fn repos_sharing_a_folder_name_keep_separate_projects() {
     );
     let (_, index) = client.call("memory_index", json!({"project_dir": theirs}));
     assert!(
-        index.contains("[[Projects/someone-else-api/theirs]]") && !index.contains("Projects/api/"),
+        index.contains("[[theirs]]") && !index.contains("[[mine]]"),
         "{index}"
     );
 
@@ -899,10 +898,7 @@ fn a_note_saved_on_one_machine_is_loaded_and_committed_on_the_other() {
 
     sync(&vault_a, &vault_b);
     let (reply, errors) = session_start(server.path(), "claude");
-    assert!(
-        reply.contains("[[Preferences/tabs]] — indent with tabs"),
-        "{reply}"
-    );
+    assert!(reply.contains("[[tabs]] — indent with tabs"), "{reply}");
     assert_eq!(errors, "");
     assert!(
         git_log(&vault_b).starts_with("sync: notes changed outside petit-poucet\n"),
@@ -1680,7 +1676,7 @@ fn memory_index_pages_an_index_over_the_session_budget() {
         );
         lines.extend(
             text.lines()
-                .filter(|l| l.starts_with("- [[Preferences/"))
+                .filter(|l| l.starts_with("- [["))
                 .map(String::from),
         );
         if text.contains(", the last.)") {
