@@ -18,6 +18,7 @@ has "$("$pp" setup --check)" '^Claude Code skills: installed'
 oversize_memory claude
 
 export REVIEW_TOOL=mcp__petit-poucet__memory_review
+export READ_TOOL=mcp__petit-poucet__memory_read READ_ARGS='{"path": "{name}"}'
 start_model
 cd "$(mktemp -d)"
 resume=
@@ -35,6 +36,13 @@ ANTHROPIC_BASE_URL="$model_url" ANTHROPIC_API_KEY=dummy claude -p petit-poucet-r
   --allowedTools mcp__petit-poucet__memory_review </dev/null >/dev/null
 cd "$repo"
 check_review
+
+probe_note claude
+cd "$(mktemp -d)"
+ANTHROPIC_BASE_URL="$model_url" ANTHROPIC_API_KEY=dummy claude -p petit-poucet-read \
+  --allowedTools mcp__petit-poucet__memory_read </dev/null >/dev/null
+cd "$repo"
+check_read
 
 has "$("$pp" setup --uninstall)" '^Claude Code: removed'
 if claude mcp list 2>&1 | grep -q petit-poucet; then fail "Claude Code still lists petit-poucet"; fi

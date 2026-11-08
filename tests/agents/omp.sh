@@ -4,6 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 
 export REVIEW_TOOL=mcp__petit_poucet_memory_review
+export READ_TOOL=mcp__petit_poucet_memory_read READ_ARGS='{"path": "{name}"}'
 start_model
 mkdir -p "$HOME/.omp/agent"
 cat > "$HOME/.omp/agent/models.yml" <<YAML
@@ -31,6 +32,12 @@ cd "$(mktemp -d)"
 omp -p --model mock/mock --no-title --approval-mode yolo petit-poucet-review </dev/null >/dev/null
 cd "$repo"
 check_review
+
+probe_note omp
+cd "$(mktemp -d)"
+omp -p --model mock/mock --no-title --approval-mode yolo petit-poucet-read </dev/null >/dev/null
+cd "$repo"
+check_read
 
 has "$("$pp" setup --check)" '^omp: set up'
 

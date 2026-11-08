@@ -131,3 +131,17 @@ big_vault() {
 check_review() {
   node "$repo/tests/agents/review.mjs" "$calls" || fail "the first memory_review page didn't reach the model whole and inline"
 }
+
+# probe_note <agent>: a note whose long slug the session view shortens; the mock model reads it by the name the view shows
+# when a prompt says petit-poucet-read (model.mjs). check_read then expects the note's body in a tool result.
+probe_body="probe-body-3f9a1c"
+probe_note() {
+  printf -- '---\ntype: user\nscope: all repos\nsummary: short-name probe\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Probe\n\n%s\n' "$probe_body" > "$HOME/agent-memory/Preferences/always-probe-the-short-name-before-reading.md"
+  PETIT_POUCET_NO_UPDATE_CHECK=1 session_view_of "$1" "$HOME/probe-view.json"
+  grep -q -F '[[always-probe-the-short]] — short-name probe' "$HOME/probe-view.json" || fail "the session view doesn't show the probe note by its short name"
+  : > "$calls"
+}
+
+check_read() {
+  node "$repo/tests/agents/read.mjs" "$calls" "$probe_body" || fail "the note read by its short name didn't reach the model"
+}

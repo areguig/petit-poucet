@@ -20,6 +20,7 @@ oversize_memory copilot
 
 # Copilot CLI uses another model provider with BYOK, no GitHub sign-in needed.
 export REVIEW_TOOL=petit-poucet-memory_review
+export READ_TOOL=petit-poucet-memory_read READ_ARGS='{"path": "{name}"}'
 start_model
 cd "$(mktemp -d)"
 resume=
@@ -38,6 +39,13 @@ COPILOT_PROVIDER_BASE_URL="$model_url/v1" COPILOT_PROVIDER_API_KEY=dummy COPILOT
   copilot -p petit-poucet-review --allow-all-tools </dev/null >/dev/null
 cd "$repo"
 check_review
+
+probe_note copilot
+cd "$(mktemp -d)"
+COPILOT_PROVIDER_BASE_URL="$model_url/v1" COPILOT_PROVIDER_API_KEY=dummy COPILOT_MODEL=mock \
+  copilot -p petit-poucet-read --allow-all-tools </dev/null >/dev/null
+cd "$repo"
+check_read
 
 has "$("$pp" setup --uninstall)" '^GitHub Copilot: removed'
 if copilot mcp list 2>&1 | grep -q petit-poucet; then fail "Copilot still lists petit-poucet"; fi

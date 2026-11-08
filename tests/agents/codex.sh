@@ -4,6 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 
 export REVIEW_TOOL=memory_review REVIEW_NAMESPACE=mcp__petit_poucet
+export READ_TOOL=memory_read READ_ARGS='{"path": "{name}"}'
 node --test "$repo/tests/agents/calls.test.mjs" "$repo/tests/agents/review.test.mjs"
 start_model
 # The mock as Codex's model provider; top-level keys go before the tables `setup` adds.
@@ -52,6 +53,13 @@ cd "$(mktemp -d)"
 MOCK_API_KEY=dummy $codex petit-poucet-review </dev/null >/dev/null
 cd "$repo"
 check_review
+
+probe_note codex
+printf '\n[mcp_servers.petit-poucet.tools.memory_read]\napproval_mode = "approve"\n' >> "$HOME/.codex/config.toml"
+cd "$(mktemp -d)"
+MOCK_API_KEY=dummy $codex petit-poucet-read </dev/null >/dev/null
+cd "$repo"
+check_read
 
 has "$("$pp" setup --check)" '^Codex: set up'
 
