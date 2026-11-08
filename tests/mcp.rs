@@ -1451,6 +1451,84 @@ fn a_delete_of_an_unread_note_shows_its_text_then_goes_through() {
     assert!(child.wait().unwrap().success());
 }
 
+// Every tool takes the short name the session view shows; the read-before-change guard follows the note it names (#214).
+#[test]
+fn tools_accept_a_notes_short_name_and_the_guard_follows_it() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let note = |title: &str, fact: &str| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("{title} summary"), "fact": fact,
+            "source": "test on 2026-11-08", "how_to_apply": "Test.",
+        })
+    };
+    let title = "Always run the full test suite before committing";
+    client.call("memory_save", note(title, "Run cargo test."));
+    drop(client);
+    child.wait().unwrap();
+    let (mut child, mut client, _) = start(home.path());
+    let (_, index) = client.call("memory_index", json!({"project_dir": home.path()}));
+    assert!(index.contains("- [[always-run-the-full]] — "), "{index}");
+
+    let mut update = note(title, "Run cargo test --all.");
+    update["path"] = json!("always-run-the-full");
+    let (is_error, text) = client.call("memory_save", update.clone());
+    assert!(
+        is_error
+            && text.contains(
+                "read Preferences/always-run-the-full-test-suite-before-committing first"
+            ),
+        "{text}"
+    );
+
+    let (_, text) = client.call("memory_read", json!({"path": "always-run-the-full"}));
+    assert!(text.contains("Run cargo test."), "{text}");
+    let (is_error, text) = client.call("memory_save", update);
+    assert!(!is_error, "{text}");
+    assert!(
+        std::fs::read_to_string(
+            vault.join("Preferences/always-run-the-full-test-suite-before-committing.md")
+        )
+        .unwrap()
+        .contains("Run cargo test --all.")
+    );
+
+    let (is_error, text) = client.call(
+        "memory_move",
+        json!({"path": "always-run-the-full", "new_path": "Preferences/full-suite"}),
+    );
+    assert!(!is_error, "{text}");
+    client.call("memory_read", json!({"path": "full-suite"}));
+    let usage: Value = std::fs::read_dir(vault.join(".usage"))
+        .unwrap()
+        .map(|file| {
+            serde_json::from_str(&std::fs::read_to_string(file.unwrap().path()).unwrap()).unwrap()
+        })
+        .next()
+        .unwrap();
+    assert!(
+        usage["notes"]["Preferences/full-suite"]["reads"] == 2
+            && usage["notes"]["Preferences/always-run-the-full-test-suite-before-committing"]
+                .is_null(),
+        "usage follows the move: {usage}"
+    );
+    let (is_error, text) = client.call(
+        "memory_delete",
+        json!({"path": "full-suite", "reason": "test"}),
+    );
+    assert!(!is_error, "{text}");
+    assert!(!vault.join("Preferences/full-suite.md").exists());
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 // A multi-word query leaves out the notes matching only one common term (#120).
 #[test]
 fn search_drops_notes_matching_under_half_the_terms() {

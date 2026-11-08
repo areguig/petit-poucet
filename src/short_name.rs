@@ -51,6 +51,7 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::change;
 
     fn vault_of(paths: &[&str]) -> (tempfile::TempDir, Vault) {
         let tmp = tempfile::tempdir().unwrap();
@@ -135,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn every_name_is_unique() {
+    fn every_name_is_unique_and_resolves_to_its_own_note() {
         let (_tmp, vault) = vault_of(&[
             "Preferences/a-b-c-d-e-f",
             "Preferences/a-b-c-d-e-g",
@@ -154,6 +155,7 @@ mod tests {
         for note in &vault.notes {
             let name = &names[note.path.as_str()];
             assert!(seen.insert(name.clone()), "{name} names two notes");
+            assert_eq!(change::find_note(&vault, name).unwrap().path, note.path);
         }
     }
 }
