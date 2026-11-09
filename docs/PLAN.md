@@ -281,7 +281,7 @@ Scope decided 2026-10-26 (owner): one memory for coding agents on a laptop and a
 
 ### Later, only when needed
 - Homebrew tap and `cargo install`, once the install script has users.
-- Search that scales: better ranking (stems, BM25) once vaults reach several hundred notes; semantic search stays optional behind `memory_search`.
+- #217 search benchmark: implemented as `cargo run --release --example search_bench`, comparing today, the `bm25` crate and a small guarded BM25 ranker on a synthetic vault with two query sets. Explicit `--vault` and `--queries` paths are supported without changing the synthetic defaults. Production search is unchanged; a method has not been selected. Semantic search stays optional behind `memory_search`.
 
 ### Out of scope
 Team or shared vaults, sharing or exporting notes between vaults, cloud sync services (syncing through Syncthing or the user's own git remote is planned for 0.7), automatic capture from transcripts, and a GUI of our own. (Codex was out of scope until 2026-10-01.)

@@ -1,0 +1,441 @@
+# Labelled queries: `expect` lists the notes that answer it (any one counts); empty means nothing should match.
+
+[[query]]
+category = "exact"
+text = "one conventional line commit messages"
+expect = ["Preferences/commit-messages"]
+
+[[query]]
+category = "exact"
+text = "cursor pagination"
+expect = ["Projects/recipe-api/pagination"]
+
+[[query]]
+category = "exact"
+text = "Pi-hole unbound"
+expect = ["Topics/homelab/dns"]
+
+[[query]]
+category = "exact"
+text = "token bucket rate limit"
+expect = ["Projects/recipe-api/rate-limit"]
+
+[[query]]
+category = "exact"
+text = "Yjs conflicts last-write-wins"
+expect = ["Projects/notes-sync/conflict-resolution"]
+
+[[query]]
+category = "exact"
+text = "set -euo pipefail"
+expect = ["Preferences/shell-strict-mode"]
+
+[[query]]
+category = "exact"
+text = "restic offsite backups"
+expect = ["Topics/homelab/backups"]
+
+[[query]]
+category = "exact"
+text = "fixed timestep 60 Hz"
+expect = ["Projects/pixel-forge/fixed-timestep"]
+
+[[query]]
+category = "exact"
+text = "WireGuard remote access"
+expect = ["Topics/homelab/remote-access"]
+
+[[query]]
+category = "exact"
+text = "gofmt go vet"
+expect = ["Preferences/go-format-and-vet"]
+
+[[query]]
+category = "exact"
+text = "mutation testing core library"
+expect = ["Topics/testing/mutation-testing"]
+
+[[query]]
+category = "exact"
+text = "guillemets français"
+expect = ["Preferences/guillemets-francais"]
+
+[[query]]
+category = "keywords"
+text = "rust lint ci"
+expect = ["Preferences/rust-clippy"]
+
+[[query]]
+category = "keywords"
+text = "python pip global install"
+expect = ["Preferences/python-virtualenv"]
+
+[[query]]
+category = "keywords"
+text = "docker base image digest"
+expect = ["Preferences/docker-slim-images"]
+
+[[query]]
+category = "keywords"
+text = "jwt expiry refresh"
+expect = ["Projects/recipe-api/auth-tokens"]
+
+[[query]]
+category = "keywords"
+text = "database schema migration rollback"
+expect = ["Preferences/sql-migrations-forward-only"]
+
+[[query]]
+category = "keywords"
+text = "wasm deploy github pages"
+expect = ["Projects/pixel-forge/web-build"]
+
+[[query]]
+category = "keywords"
+text = "bundle size limit ci"
+expect = ["Projects/notes-sync/bundle-budget"]
+
+[[query]]
+category = "keywords"
+text = "tls certificates proxy"
+expect = ["Topics/homelab/reverse-proxy"]
+
+[[query]]
+category = "keywords"
+text = "snapshot test accept"
+expect = ["Topics/testing/snapshot-review", "Projects/blog-engine/test-strategy"]
+
+[[query]]
+category = "keywords"
+text = "ups battery shutdown"
+expect = ["Topics/homelab/power-outage"]
+
+[[query]]
+category = "keywords"
+text = "sprite atlas build"
+expect = ["Projects/pixel-forge/sprite-atlas"]
+
+[[query]]
+category = "keywords"
+text = "atom feed sitemap"
+expect = ["Projects/blog-engine/feeds"]
+
+[[query]]
+category = "keywords"
+text = "yaml indent kubernetes"
+expect = ["Preferences/yaml-two-spaces"]
+
+[[query]]
+category = "paraphrase"
+text = "how should I word my git history entries"
+expect = ["Preferences/commit-messages"]
+
+[[query]]
+category = "paraphrase"
+text = "don't rewrite history on main"
+expect = ["Preferences/no-force-push"]
+
+[[query]]
+category = "paraphrase"
+text = "what to do before running a script that removes stuff"
+expect = ["Preferences/dry-run-first"]
+
+[[query]]
+category = "paraphrase"
+text = "a test that sometimes passes and sometimes fails"
+expect = ["Preferences/flaky-tests-are-bugs", "Topics/testing/quarantine-list"]
+
+[[query]]
+category = "paraphrase"
+text = "how long can the server survive a blackout"
+expect = ["Topics/homelab/power-outage"]
+
+[[query]]
+category = "paraphrase"
+text = "how are users logged in"
+expect = ["Projects/recipe-api/auth-tokens"]
+
+[[query]]
+category = "paraphrase"
+text = "where does the ingredient list live in the database"
+expect = ["Projects/recipe-api/ingredients-storage"]
+
+[[query]]
+category = "paraphrase"
+text = "how do we keep passwords out of the shell output"
+expect = ["Preferences/secrets-never-printed"]
+
+[[query]]
+category = "paraphrase"
+text = "should I add a library for this"
+expect = ["Topics/coding/dependency-policy", "Preferences/dependances-justifiees"]
+
+[[query]]
+category = "paraphrase"
+text = "what is the right way to speed things up"
+expect = ["Preferences/measure-before-optimizing"]
+
+[[query]]
+category = "paraphrase"
+text = "quand faut-il éviter de déployer"
+expect = ["Preferences/pas-de-migration-le-vendredi"]
+
+[[query]]
+category = "paraphrase"
+text = "comment bien choisir le nom d'une variable"
+expect = ["Preferences/noms-explicites"]
+
+[[query]]
+category = "paraphrase"
+text = "avant de dire que j'ai fini mon travail"
+expect = ["Preferences/tester-avant-de-conclure"]
+
+[[query]]
+category = "paraphrase"
+text = "mots anglais à éviter dans un article"
+expect = ["Topics/writing/anglicismes"]
+
+[[query]]
+category = "paraphrase"
+text = "how do devices stay in sync while offline"
+expect = ["Projects/notes-sync/architecture", "Projects/notes-sync/conflict-resolution"]
+
+[[query]]
+category = "paraphrase"
+text = "how often are the disks checked for errors"
+expect = ["Topics/homelab/storage-server"]
+
+[[query]]
+category = "rare"
+text = "dexie schema upgrade"
+expect = ["Projects/notes-sync/local-storage"]
+
+[[query]]
+category = "rare"
+text = "unaccent extension"
+expect = ["Projects/recipe-api/search-endpoint"]
+
+[[query]]
+category = "rare"
+text = "iGPU transcoding"
+expect = ["Topics/homelab/media-server"]
+
+[[query]]
+category = "rare"
+text = "Pillow webp"
+expect = ["Projects/blog-engine/image-pipeline"]
+
+[[query]]
+category = "rare"
+text = "tracy profile"
+expect = ["Projects/pixel-forge/frame-budget"]
+
+[[query]]
+category = "rare"
+text = "kira crossfade music"
+expect = ["Projects/pixel-forge/audio"]
+
+[[query]]
+category = "rare"
+text = "starship prompt"
+expect = ["Topics/tooling/shell-zsh"]
+
+[[query]]
+category = "rare"
+text = "libsodium passphrase"
+expect = ["Projects/notes-sync/encryption"]
+
+[[query]]
+category = "rare"
+text = "stow dotfiles"
+expect = ["Topics/tooling/dotfiles"]
+
+[[query]]
+category = "rare"
+text = "gochecknoglobals"
+expect = ["Projects/recipe-api/lint-config"]
+
+[[query]]
+category = "rare"
+text = "RON save migration"
+expect = ["Projects/pixel-forge/save-files"]
+
+[[query]]
+category = "rare"
+text = "Pygments style"
+expect = ["Projects/blog-engine/code-highlighting"]
+
+[[query]]
+category = "cross-language"
+text = "comment écrire les messages de commit"
+expect = ["Preferences/commit-messages"]
+
+[[query]]
+category = "cross-language"
+text = "sauvegardes du serveur maison"
+expect = ["Topics/homelab/backups"]
+
+[[query]]
+category = "cross-language"
+text = "limiter le nombre de requêtes par minute"
+expect = ["Projects/recipe-api/rate-limit"]
+
+[[query]]
+category = "cross-language"
+text = "pagination par curseur"
+expect = ["Projects/recipe-api/pagination"]
+
+[[query]]
+category = "cross-language"
+text = "tests instables dans l'intégration continue"
+expect = ["Preferences/flaky-tests-are-bugs", "Topics/testing/quarantine-list"]
+
+[[query]]
+category = "cross-language"
+text = "chiffrement des documents côté client"
+expect = ["Projects/notes-sync/encryption"]
+
+[[query]]
+category = "cross-language"
+text = "gestion des mots de passe et des secrets"
+expect = ["Preferences/secrets-never-printed", "Topics/tooling/password-manager"]
+
+[[query]]
+category = "cross-language"
+text = "where are recipe images stored"
+expect = ["Projects/recipe-api/images-stockage"]
+
+[[query]]
+category = "cross-language"
+text = "when should production deployments happen"
+expect = ["Preferences/pas-de-migration-le-vendredi"]
+
+[[query]]
+category = "cross-language"
+text = "how are drafts handled in the blog"
+expect = ["Projects/blog-engine/brouillons"]
+
+[[query]]
+category = "cross-language"
+text = "how is the 3D printer networked"
+expect = ["Topics/homelab/imprimante-3d"]
+
+[[query]]
+category = "cross-language"
+text = "which language for commit history"
+expect = ["Preferences/commits-en-anglais"]
+
+[[query]]
+category = "cross-language"
+text = "what language do I answer in"
+expect = ["Preferences/repondre-en-francais"]
+
+[[query]]
+category = "cross-language"
+text = "how are game levels defined"
+expect = ["Projects/pixel-forge/niveaux-toml"]
+
+[[query]]
+category = "cross-language"
+text = "when do we update the servers"
+expect = ["Topics/homelab/mises-a-jour"]
+
+[[query]]
+category = "short"
+text = "run the tests"
+expect = ["Preferences/tester-avant-de-conclure", "Preferences/tests-first"]
+
+[[query]]
+category = "short"
+text = "commit this"
+expect = ["Preferences/commit-messages"]
+
+[[query]]
+category = "short"
+text = "push it"
+expect = ["Preferences/no-force-push"]
+
+[[query]]
+category = "short"
+text = "update the deps"
+expect = ["Preferences/dependency-bumps-separate"]
+
+[[query]]
+category = "short"
+text = "release it"
+expect = ["Preferences/release-notes-from-prs"]
+
+[[query]]
+category = "short"
+text = "clean up"
+expect = ["Preferences/minimal-diffs", "Preferences/ask-before-deleting"]
+
+[[query]]
+category = "short"
+text = "deploy"
+expect = ["Projects/recipe-api/deploy"]
+
+[[query]]
+category = "short"
+text = "add logging"
+expect = ["Preferences/structured-json-logs", "Preferences/no-swallowed-errors"]
+
+[[query]]
+category = "short"
+text = "write the migration"
+expect = ["Preferences/sql-migrations-forward-only", "Preferences/backup-before-migration"]
+
+[[query]]
+category = "short"
+text = "fix the build"
+expect = ["Projects/pixel-forge/ci-targets", "Projects/notes-sync/build-tooling"]
+
+[[query]]
+category = "negative"
+text = "continue"
+expect = []
+
+[[query]]
+category = "negative"
+text = "do it"
+expect = []
+
+[[query]]
+category = "negative"
+text = "ok thanks"
+expect = []
+
+[[query]]
+category = "negative"
+text = "yes"
+expect = []
+
+[[query]]
+category = "negative"
+text = "go ahead"
+expect = []
+
+[[query]]
+category = "negative"
+text = "what is the weather in Lisbon"
+expect = []
+
+[[query]]
+category = "negative"
+text = "recette de crêpes au chocolat"
+expect = []
+
+[[query]]
+category = "negative"
+text = "quantum computing basics"
+expect = []
+
+[[query]]
+category = "negative"
+text = "poème sur la mer"
+expect = []
+
+[[query]]
+category = "negative"
+text = "translate this sentence to Japanese"
+expect = []
