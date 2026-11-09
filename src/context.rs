@@ -46,6 +46,7 @@ pub fn note_conflicts(vault: &Vault) -> Vec<&Conflict> {
 // Everything a session could load, in the order it is loaded.
 struct Pool<'a> {
     sections: Vec<index::Section<'a>>,
+    situational: Option<String>,
     topics: Option<String>,
     conflict_count: Option<String>,
     conflict_lines: Vec<String>,
@@ -55,6 +56,7 @@ struct Pool<'a> {
 struct Left {
     preferences: usize,
     project: usize,
+    situational: bool,
     topics: bool,
     conflicts: usize,
 }
@@ -65,11 +67,14 @@ impl Left {
     }
 
     fn items(&self) -> usize {
-        self.notes() + usize::from(self.topics) + self.conflicts
+        self.notes() + usize::from(self.situational) + usize::from(self.topics) + self.conflicts
     }
 
     fn extras(&self) -> Vec<String> {
         let mut parts = Vec::new();
+        if self.situational {
+            parts.push("the situational preferences line".to_string());
+        }
         if self.topics {
             parts.push("the topics list".to_string());
         }
@@ -110,7 +115,8 @@ impl<'a> Pool<'a> {
     fn new(vault: &'a Vault, project: Option<&'a str>) -> Pool<'a> {
         let conflicts = note_conflicts(vault);
         Pool {
-            sections: index::sections(vault, |place| index::in_session(place, project)),
+            sections: index::session_sections(vault, project),
+            situational: index::situational_line(vault),
             topics: index::topics_line(vault),
             conflict_count: (!conflicts.is_empty()).then(|| conflicts_line(conflicts.len())),
             conflict_lines: conflict_details(vault),
@@ -131,6 +137,7 @@ impl<'a> Pool<'a> {
         Left {
             preferences: self.notes() - project,
             project,
+            situational: self.situational.is_some(),
             topics: self.topics.is_some(),
             conflicts: self.conflict_lines.len(),
         }
@@ -150,6 +157,10 @@ impl<'a> Pool<'a> {
             }
             !full
         };
+        // First, so an over-budget Preferences list can't push it out: it is what tells the agent how to find the rest.
+        if let Some(line) = &self.situational {
+            left.situational = !take(format!("\n{line}\n"));
+        }
         for section in &self.sections {
             let mut heading = Some(index::heading(&section.title));
             for line in &section.lines {
@@ -403,6 +414,47 @@ mod tests {
             3
         );
         assert!(lines.iter().any(|l| l.contains("[[note-alpha-")));
+    }
+
+    fn write_situational(root: &std::path::Path, name: &str) {
+        let path = root.join(format!("Preferences/{name}.md"));
+        fs::write(
+            path,
+            "---\ntype: user\nscope: x\nsummary: s\ncreated: 2026-09-24\napplies_when: editing Rust\n---\nBody\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn situational_preferences_are_counted_not_loaded_and_not_over_budget() {
+        let tmp = tempfile::tempdir().unwrap();
+        fill(tmp.path(), "Preferences", 2);
+        write_situational(tmp.path(), "rust-a");
+        write_situational(tmp.path(), "rust-b");
+        let v = view(&vault(tmp.path()), None, budget());
+        assert!(!v.text.contains("rust-a"), "{}", v.text);
+        assert!(
+            v.text.contains("\n2 situational preferences not loaded (each applies only in some situations): memory_search finds them by what you're doing.\n"),
+            "{}",
+            v.text
+        );
+        assert!(v.text.contains("already loaded"));
+        assert_eq!((v.loaded, v.left_items, v.left_out), (2, 0, None));
+    }
+
+    #[test]
+    fn an_over_budget_view_still_says_where_the_situational_preferences_are() {
+        let tmp = tempfile::tempdir().unwrap();
+        fill(tmp.path(), "Preferences", notes_over_budget());
+        write_situational(tmp.path(), "rust-a");
+        let v = view(&vault(tmp.path()), None, budget());
+        assert!(
+            v.text.contains("1 situational preference not loaded"),
+            "{}",
+            v.text
+        );
+        assert_eq!(v.left_items, notes_over_budget() - v.loaded);
+        assert!(v.text.len() <= budget());
     }
 
     #[test]

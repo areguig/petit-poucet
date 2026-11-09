@@ -68,3 +68,30 @@ fn the_cleanup_agent_still_looks_for_every_kind_of_problem() {
     let (_, tidy) = frontmatter_and_body("skills/tidy-memory/SKILL.md");
     assert!(tidy.contains("review their whole memory"), "{tidy}");
 }
+
+// Preferences are proposed in batches the user confirms, never demoted on the agent's own (#216).
+#[test]
+fn tidy_memory_proposes_preference_batches_for_the_user_to_confirm() {
+    let (_, agent) = frontmatter_and_body("agents/memory-cleanup.md");
+    for item in [
+        "batches",
+        "keep",
+        "make situational",
+        "`applies_when`",
+        "move to a project or topic",
+    ] {
+        assert!(agent.contains(item), "memory-cleanup lost {item:?}");
+    }
+    // The reply format must carry those proposals whole: the 15-item cap is for the other cleanups only.
+    for item in [
+        "`## preferences`",
+        "`make situational: <applies_when line>`",
+        "`move to <project or topic>`",
+        "no cap",
+    ] {
+        assert!(agent.contains(item), "memory-cleanup's reply lost {item:?}");
+    }
+    let (_, tidy) = frontmatter_and_body("skills/tidy-memory/SKILL.md");
+    assert!(tidy.contains("one batch at a time"), "{tidy}");
+    assert!(tidy.contains("ask which of each batch to apply"), "{tidy}");
+}

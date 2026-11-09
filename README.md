@@ -54,7 +54,7 @@ Then restart your agents. To update later: `petit-poucet update`; session start 
 
 ## What your agent sees
 
-At the start of every session, the agent gets your rules and an Index of what applies here: your preferences and the current repo's notes, one line each. It opens only the notes a task needs.
+At the start of every session, the agent gets your rules and an Index of what applies here: your preferences and the current repo's notes, one line each. It opens only the notes a task needs. A preference that applies only in some situations (one stack, one kind of task) is not loaded: the session says how many there are, and the agent finds them by what it is doing.
 
 ```
 🪨 petit-poucet · 20 notes loaded (preferences + chargepath-api)

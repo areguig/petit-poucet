@@ -112,6 +112,7 @@ const VIEW = [
   "Agent memory (petit-poucet): the Index below is only part of it.",
   "Not loaded (over the 4000-byte session budget): 3 preferences.",
   "fix it now (memory_save or memory_delete)",
+  "1 situational preference not loaded (each applies only in some situations): memory_search finds them by what you're doing.",
   "- [[Preferences/last-line]] — 日本語 🪨",
   "",
 ].join("\n");
@@ -152,6 +153,13 @@ test("--session fails when the view is over the budget or is not partial", () =>
   assert.strictEqual(runSession([VIEW, VIEW, VIEW], { budget: Buffer.byteLength(VIEW) - 1 }).status, 1);
   const whole = VIEW.replace(/Not loaded.*\n/, "");
   assert.strictEqual(runSession([whole, whole, whole], { views: [whole] }).status, 1);
+});
+
+test("--session fails when the view lacks the situational line or lists the situational preference", () => {
+  const without = VIEW.replace(/1 situational.*\n/, "");
+  assert.strictEqual(runSession([without, without, without], { views: [without] }).status, 1);
+  const listed = VIEW.replace("- [[", "- [[situational-probe-7c2e]] — situational-probe-7c2e\n- [[");
+  assert.strictEqual(runSession([listed, listed, listed], { views: [listed] }).status, 1);
 });
 
 // Requests in each supported format, with the view where that format gives the model its context.

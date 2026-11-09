@@ -51,7 +51,7 @@ Which notes:
 - **small vault** (at most `full_review_max_notes`, 300): every note, at every cleanup;
 - **on demand** (`full: true`, when the user asks to review their whole memory): every note;
 - **bigger vault:** whole folders, in this order, until the review reaches `review_max_pages` (10):
-  1. `Preferences`, always: they load in every session;
+  1. `Preferences`, always: most load in every session, and the situational ones are reviewed here too (the review shows their `(when: …)`);
   2. every folder with a note changed since `.last-cleanup` (every folder at the first cleanup), always;
   3. folders used in the last `active_days` (30), from reads and session loads in `.usage/`, most recent first;
   4. the other folders, while pages last.
@@ -63,6 +63,7 @@ Why the limits: each tool call re-sends the pages already read, so k pages cost 
 ## Index budget and summary length (`check`)
 Every session loads the preferences and its project's notes, one Index line each, so their size is a cost paid in every session.
 - The session-start text (rules, warnings, Index lines, topic names, sync conflicts) never passes `session_start_max_bytes` (8,000 UTF-8 bytes). Past it, whole lines are left out in order (preferences, then the project's notes, then the topics line, then conflict details), one "Not loaded" line names what, and `memory_index` with `page` reads the whole Index in pages within the same budget. `Index.md` on disk stays complete.
+- A preference with `applies_when` (situational) is not an Index line of the session: one line says how many there are and that `memory_search` finds them. That line is the first chunk loaded, so an over-budget Preferences list can't push it out, and the situational preferences are never counted among the notes left out. `memory_search` and `memory_index` still show them, with `(when: …)` after the summary, and so does `Index.md`.
 - The Index lines the agent sees name a note by its short name, the first four words of its file name, extended until no other note's name starts the same way; the folder is in the section heading. Tools resolve a short name to its note across the whole vault, and refuse one that fits several notes. `Index.md` on disk keeps full paths, as Obsidian links.
 - `check`, `setup --check`, the session-start line and a `memory_save` that tips a session over the budget all say how many notes a session leaves out and ask for a tidy-up.
 - `check` warns about a summary over `summary_max_chars` (200 characters): one short fact per note keeps the Index and the review small.

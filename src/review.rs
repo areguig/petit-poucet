@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use jiff::civil::Date;
 
 use crate::config::{Config, Limits};
-use crate::index::NO_SUMMARY;
+use crate::index::{NO_SUMMARY, when_suffix};
 use crate::note::Note;
 use crate::paging::{Item, paginate};
 use crate::usage::{self, Activity};
@@ -158,9 +158,10 @@ fn item(note: &Note, activity: &Activity) -> Item {
         });
     let slug = note.path.rsplit('/').next().unwrap_or(&note.path);
     let line = format!(
-        "- {slug} | {} | {dates} | {reads} | {}",
+        "- {slug} | {} | {dates} | {reads} | {}{}",
         fm.map_or("invalid", |f| f.note_type.name()),
         note.summary().unwrap_or(NO_SUMMARY),
+        when_suffix(note),
     );
     (folder(&note.path).to_string(), line)
 }
@@ -177,6 +178,26 @@ mod tests {
         format!(
             "---\ntype: feedback\nscope: {scope}\nsummary: s\ncreated: 2026-09-01\n{extra}tags: [agent-memory]\n---\n**Why:** x\n"
         )
+    }
+
+    #[test]
+    fn a_situational_preference_shows_when_it_applies() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("Preferences")).unwrap();
+        fs::write(
+            tmp.path().join("Preferences/rust.md"),
+            note("all repos", "applies_when: editing Rust\n"),
+        )
+        .unwrap();
+        let config = Config {
+            git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
+        };
+        let text = review(&config, 1, false, "test").unwrap();
+        assert!(
+            text.contains("| never | s (when: editing Rust)\n"),
+            "{text}"
+        );
     }
 
     #[test]

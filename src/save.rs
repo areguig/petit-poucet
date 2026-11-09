@@ -12,7 +12,7 @@ use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
 use crate::{change, context, duplicates, git, secrets};
 
-const PREFERENCE_SCOPE_REMINDER: &str = "Preferences load in every session of every repo: make sure this is cross-project and says when it applies, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move).";
+const PREFERENCE_SCOPE_REMINDER: &str = "Preferences are cross-project: make sure this one is, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move). If it applies only in some situations (one stack, one kind of task), give it `applies_when`: it then stays out of the session view and memory_search finds it.";
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(transform = require_fields_in_schema)]
@@ -43,6 +43,8 @@ pub struct SaveRequest {
     pub how_to_apply: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Preferences only: when it applies (one line), if only in some situations; it is then not loaded at session start. Omit for one that always applies; on update, omit to keep and an empty string clears it.
+    pub applies_when: Option<String>,
     /// Required to update a `feedback` note: set only after the user confirmed the change.
     #[serde(default)]
     pub user_confirmed: bool,
@@ -88,6 +90,13 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     };
 
     let updating = req.path.is_some();
+    let applies_when = match req.applies_when.as_deref().map(str::trim) {
+        Some(when) if !when.is_empty() && note::Place::of(&path) != note::Place::Preferences => {
+            return Err("applies_when is only for preferences (scope `all repos`)".to_string());
+        }
+        Some(when) => (!when.is_empty()).then(|| when.to_string()),
+        None => previous.and_then(|fm| fm.applies_when.clone()),
+    };
     // An update keeps the note's tags (some may come from the user, in Obsidian) and adds the requested ones.
     let mut tags = vec![REQUIRED_TAG.to_string()];
     for tag in previous.iter().flat_map(|fm| &fm.tags).chain(&req.tags) {
@@ -102,6 +111,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         created: previous.map_or(today, |fm| fm.created),
         updated: updating.then_some(today),
         tags,
+        applies_when,
     };
     let body = format!(
         "# {}\n\n{}\n\n**Why:** {}\n**How to apply:** {}\n",
@@ -168,14 +178,18 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
 fn validate(req: &SaveRequest) -> Result<NoteType, String> {
     let note_type = require_fields(req)?;
     let tags = req.tags.iter().map(|tag| ("tags", tag));
-    for (name, value) in text_fields(req).into_iter().chain(tags) {
+    let applies_when = req.applies_when.iter().map(|when| ("applies_when", when));
+    for (name, value) in text_fields(req).into_iter().chain(tags).chain(applies_when) {
         if let Some(kind) = secrets::find(value) {
             return Err(format!(
                 "{name} looks like a secret ({kind}): never store secrets"
             ));
         }
     }
-    for (name, value) in [("title", &req.title), ("summary", &req.summary)] {
+    for (name, value) in [("title", &req.title), ("summary", &req.summary)]
+        .into_iter()
+        .chain(req.applies_when.iter().map(|when| ("applies_when", when)))
+    {
         if value.trim().contains('\n') {
             return Err(format!("{name} must be one line"));
         }
@@ -328,6 +342,7 @@ mod tests {
             source: "the user said so on 2026-09-24".into(),
             how_to_apply: "Always.".into(),
             tags: vec!["git".into(), REQUIRED_TAG.into()],
+            applies_when: None,
             user_confirmed: false,
             unknown: Default::default(),
         }
@@ -393,6 +408,79 @@ mod tests {
                 .1
                 .contains("Preferences load")
         );
+    }
+
+    fn update_of(path: &str, title: &str) -> SaveRequest {
+        let mut update = request(title);
+        update.path = Some(path.into());
+        update.user_confirmed = true;
+        update
+    }
+
+    fn when_of(config: &Config, path: &str) -> Option<String> {
+        read(config, path).frontmatter.unwrap().applies_when
+    }
+
+    #[test]
+    fn applies_when_is_set_kept_and_cleared_on_a_preference() {
+        let (_tmp, config) = vault();
+        let mut create = request("Rule aa");
+        create.applies_when = Some("  editing Rust  ".into());
+        save(&config, create, "test").unwrap();
+        let path = "Preferences/rule-aa";
+        assert_eq!(when_of(&config, path).as_deref(), Some("editing Rust"));
+
+        save(&config, update_of(path, "Rule aa"), "test").unwrap();
+        assert_eq!(when_of(&config, path).as_deref(), Some("editing Rust"));
+
+        let mut change = update_of(path, "Rule aa");
+        change.applies_when = Some("writing Java".into());
+        save(&config, change, "test").unwrap();
+        assert_eq!(when_of(&config, path).as_deref(), Some("writing Java"));
+
+        let mut clear = update_of(path, "Rule aa");
+        clear.applies_when = Some(String::new());
+        save(&config, clear, "test").unwrap();
+        assert_eq!(when_of(&config, path), None);
+        let text = fs::read_to_string(config.vault.join(format!("{path}.md"))).unwrap();
+        assert!(!text.contains("applies_when"), "{text}");
+    }
+
+    #[test]
+    fn applies_when_is_refused_on_project_and_topic_notes_and_across_lines() {
+        let (tmp, config) = vault();
+        let repo = tmp.path().join("my-repo");
+        fs::create_dir(&repo).unwrap();
+        let mut project = request("Deploy steps");
+        project.note_type = Some(NoteType::Project);
+        project.scope = None;
+        project.project_dir = Some(repo);
+        project.applies_when = Some("deploying".into());
+        let err = save(&config, project, "test").unwrap_err();
+        assert!(err.contains("only for preferences"), "{err}");
+
+        let mut topic = request("NAS backups");
+        topic.topic = Some("homelab".into());
+        topic.applies_when = Some("backing up".into());
+        let err = save(&config, topic, "test").unwrap_err();
+        assert!(err.contains("only for preferences"), "{err}");
+
+        let mut lines = request("Rule aa");
+        lines.applies_when = Some("a\nb".into());
+        let err = save(&config, lines, "test").unwrap_err();
+        assert!(err.contains("applies_when must be one line"), "{err}");
+    }
+
+    #[test]
+    fn making_a_stated_rule_situational_needs_the_users_confirmation() {
+        let (_tmp, config) = vault();
+        save(&config, request("Rule aa"), "test").unwrap();
+        let mut update = update_of("rule-aa", "Rule aa");
+        update.applies_when = Some("editing Rust".into());
+        update.user_confirmed = false;
+        let err = save(&config, update, "test").unwrap_err();
+        assert!(err.contains("user_confirmed"), "{err}");
+        assert_eq!(when_of(&config, "Preferences/rule-aa"), None);
     }
 
     #[test]

@@ -40,6 +40,9 @@ pub struct Frontmatter {
     pub updated: Option<Date>,
     #[serde(default)]
     pub tags: Vec<String>,
+    // Preferences only: when it applies; absent means always.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applies_when: Option<String>,
 }
 
 // `path` is relative to the vault root, without `.md`, as in `[[links]]`.
@@ -78,6 +81,17 @@ impl Note {
     pub fn summary(&self) -> Option<&str> {
         let summary = self.frontmatter.as_ref().ok()?.summary.as_deref()?.trim();
         (!summary.is_empty()).then_some(summary)
+    }
+
+    pub fn applies_when(&self) -> Option<&str> {
+        let when = self
+            .frontmatter
+            .as_ref()
+            .ok()?
+            .applies_when
+            .as_deref()?
+            .trim();
+        (!when.is_empty()).then_some(when)
     }
 }
 
