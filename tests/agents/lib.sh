@@ -69,7 +69,8 @@ session_view_of() {
 }
 
 # oversize_memory <agent>: more preferences than a session loads within its budget; check_calls then expects
-# the whole session view that agent's hook produces for them, and removes them.
+# the whole session view that agent's hook produces for them, and removes them; one more is situational (#216): the view
+# names it without listing it.
 # The view before the update check has found a release is taken now, with the check off so it starts nothing:
 # the session's own hook starts the check, and check_update still waits for it.
 oversize_memory() {
@@ -79,6 +80,7 @@ oversize_memory() {
     printf -- '---\ntype: user\nscope: all repos\nsummary: preference %s, worded like a real one-line summary of a rule the user stated about how they work\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n**Why:** x\n' "$i" > "$HOME/agent-memory/Preferences/oversize-$i.md"
     i=$((i + 1))
   done
+  printf -- '---\ntype: user\nscope: all repos\nsummary: situational-probe-7c2e\ncreated: 2026-09-01\napplies_when: the agent test probes a situational preference\ntags: [agent-memory]\n---\n**Why:** x\n' > "$HOME/agent-memory/Preferences/oversize-situational.md"
   PETIT_POUCET_NO_UPDATE_CHECK=1 session_view_of "$1" "$HOME/session-start-before.json"
 }
 

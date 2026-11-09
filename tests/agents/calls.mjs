@@ -5,7 +5,8 @@
 // With --catalog=<a,b,c> [--codex-version=<v>] it prints instead whether each name is an entry of the skills catalog section, with the entry and character counts,
 // and exits 1 if a call has no parsable catalog section or lacks one of the names.
 // With --session=<the hook's reply file> (once or twice: the view before and after the update check adds its notice) --budget=<bytes>,
-// the memory each call carries is exactly one of those whole session views, which must be partial (the vault is oversized) and within the budget.
+// the memory each call carries is exactly one of those whole session views, which must be partial (the vault is oversized), within the budget,
+// and name the situational preference without listing it.
 // The skill looked for is tidy-memory, unless --skill names another for an agent that doesn't get it.
 import { readFileSync } from "node:fs";
 
@@ -13,6 +14,9 @@ const [log, tools, ...options] = process.argv.slice(2);
 const reminded = !options.includes("--no-reminder");
 const skill = options.find((o) => o.startsWith("--skill="))?.slice("--skill=".length) ?? "tidy-memory";
 const MEMORY = "the Index below is already loaded";
+// The vault's one situational preference (lib.sh oversize_memory): its summary must stay out of the view, which only counts it.
+const SITUATIONAL_PROBE = "situational-probe-7c2e";
+const SITUATIONAL_LINE = "situational preference not loaded (each applies only in some situations)";
 const CLEAN_AS_YOU_GO = "fix it now (memory_save or memory_delete)";
 const count = (text, part) => text.split(part).length - 1;
 
@@ -92,8 +96,17 @@ const views = [
     sessionFiles.map((file) => strings(JSON.parse(readFileSync(file, "utf8"))).find((text) => text.startsWith("Agent memory (petit-poucet)"))),
   ),
 ];
-const viewOk = !sessionFiles.length || views.every((view) => view && view.includes("Not loaded (over the") && Buffer.byteLength(view) <= budget);
-if (!viewOk) console.log("a session view is missing, not partial, or over the budget");
+const viewOk =
+  !sessionFiles.length ||
+  views.every(
+    (view) =>
+      view &&
+      view.includes("Not loaded (over the") &&
+      view.includes(SITUATIONAL_LINE) &&
+      !view.includes(SITUATIONAL_PROBE) &&
+      Buffer.byteLength(view) <= budget,
+  );
+if (!viewOk) console.log("a session view is missing, not partial, lacks the situational line, lists a situational preference, or is over the budget");
 // The texts a request gives the model as context, in the formats the mock serves (Anthropic, OpenAI chat and responses, Gemini):
 // system and instructions, and the system, developer and user messages; never tool results, tool-call arguments or other fields.
 const CONTEXT_ROLES = ["system", "developer", "user"];
