@@ -311,9 +311,10 @@ impl Server {
             .iter()
             .map(|n| {
                 format!(
-                    "- [[{}]] — {}",
+                    "- [[{}]] — {}{}",
                     n.path,
-                    n.summary().unwrap_or(index::NO_SUMMARY)
+                    n.summary().unwrap_or(index::NO_SUMMARY),
+                    index::when_suffix(n)
                 )
             })
             .collect();

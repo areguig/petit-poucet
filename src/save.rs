@@ -12,7 +12,7 @@ use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
 use crate::{change, context, duplicates, git, secrets};
 
-const PREFERENCE_SCOPE_REMINDER: &str = "Preferences load in every session of every repo: make sure this is cross-project and says when it applies, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move).";
+const PREFERENCE_SCOPE_REMINDER: &str = "Preferences are cross-project: make sure this one is, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move). If it applies only in some situations (one stack, one kind of task), give it `applies_when`: it then stays out of the session view and memory_search finds it.";
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(transform = require_fields_in_schema)]

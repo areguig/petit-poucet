@@ -22,6 +22,12 @@ pub fn generate(vault: &Vault) -> String {
     HEADER.to_string() + &render(&build(vault, |_| true, full_path))
 }
 
+// The condition after a situational preference's summary.
+pub fn when_suffix(note: &Note) -> String {
+    note.applies_when()
+        .map_or(String::new(), |when| format!(" (when: {when})"))
+}
+
 pub fn in_session(place: Place, project: Option<&str>) -> bool {
     place == Place::Preferences || project.is_some_and(|p| place == Place::Project(p))
 }
@@ -65,21 +71,50 @@ pub fn for_topic(vault: &Vault, topic: &str) -> String {
 // What the model sees: each note by its short name, the section heading already naming the folder.
 pub fn sections<'a>(vault: &'a Vault, keep: impl Fn(Place) -> bool) -> Vec<Section<'a>> {
     let names = short_name::all(vault);
-    build(vault, keep, |note| names[note.path.as_str()].clone())
+    build(
+        vault,
+        |note| keep(note.place()),
+        |note| names[note.path.as_str()].clone(),
+    )
+}
+
+// What a session loads: situational preferences are left out, only counted by `situational_line`.
+pub fn session_sections<'a>(vault: &'a Vault, project: Option<&str>) -> Vec<Section<'a>> {
+    let names = short_name::all(vault);
+    build(
+        vault,
+        |note| in_session(note.place(), project) && !is_situational(note),
+        |note| names[note.path.as_str()].clone(),
+    )
+}
+
+fn is_situational(note: &Note) -> bool {
+    note.place() == Place::Preferences && note.applies_when().is_some()
+}
+
+pub fn situational_line(vault: &Vault) -> Option<String> {
+    let count = vault.notes.iter().filter(|n| is_situational(n)).count();
+    (count > 0).then(|| {
+        format!(
+            "{} not loaded (each applies only in some situations): memory_search finds them by what you're doing.",
+            crate::context::counted(count, "situational preference", "situational preferences")
+        )
+    })
 }
 
 fn build<'a>(
     vault: &'a Vault,
-    keep: impl Fn(Place) -> bool,
+    keep: impl Fn(&Note) -> bool,
     name: impl Fn(&Note) -> String,
 ) -> Vec<Section<'a>> {
     let mut sections: BTreeMap<Place, Vec<String>> = BTreeMap::new();
-    for note in vault.notes.iter().filter(|n| keep(n.place())) {
+    for note in vault.notes.iter().filter(|n| keep(n)) {
         let summary = note.summary().unwrap_or(NO_SUMMARY);
-        sections
-            .entry(note.place())
-            .or_default()
-            .push(format!("- [[{}]] — {summary}", name(note)));
+        sections.entry(note.place()).or_default().push(format!(
+            "- [[{}]] — {summary}{}",
+            name(note),
+            when_suffix(note)
+        ));
     }
     sections
         .into_iter()

@@ -82,6 +82,17 @@ impl Note {
         let summary = self.frontmatter.as_ref().ok()?.summary.as_deref()?.trim();
         (!summary.is_empty()).then_some(summary)
     }
+
+    pub fn applies_when(&self) -> Option<&str> {
+        let when = self
+            .frontmatter
+            .as_ref()
+            .ok()?
+            .applies_when
+            .as_deref()?
+            .trim();
+        (!when.is_empty()).then_some(when)
+    }
 }
 
 // Where a note lives; its folder decides its scope.

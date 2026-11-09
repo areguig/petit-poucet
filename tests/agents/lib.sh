@@ -148,7 +148,7 @@ check_read() {
 
 # The mock model creates a preference when a prompt says petit-poucet-save (model.mjs); check_save then expects the scope
 # reminder (#215) in a tool result. preference_json is the call's arguments.
-scope_reminder="Preferences load in every session of every repo: make sure this is cross-project and says when it applies, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move)."
+scope_reminder="Preferences are cross-project: make sure this one is, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move). If it applies only in some situations (one stack, one kind of task), give it \`applies_when\`: it then stays out of the session view and memory_search finds it."
 preference_json='{"type": "feedback", "scope": "all repos", "title": "Scope probe", "summary": "scope probe", "fact": "A fact.", "source": "the agent test", "how_to_apply": "Never."}'
 before_save() { : > "$calls"; }
 

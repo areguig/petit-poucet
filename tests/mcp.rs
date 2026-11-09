@@ -8,7 +8,7 @@ use common::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-const PREFERENCE_SCOPE_REMINDER: &str = "Preferences load in every session of every repo: make sure this is cross-project and says when it applies, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move).";
+const PREFERENCE_SCOPE_REMINDER: &str = "Preferences are cross-project: make sure this one is, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move). If it applies only in some situations (one stack, one kind of task), give it `applies_when`: it then stays out of the session view and memory_search finds it.";
 
 fn saved_preference(name: &str) -> String {
     format!("saved Preferences/{name}\n{PREFERENCE_SCOPE_REMINDER}")
@@ -1319,6 +1319,71 @@ fn search_finds_two_letter_names_as_whole_words() {
     assert!(search(&mut client, "CI").starts_with("- [[Preferences/ci-runners]]"));
     assert_eq!(search(&mut client, "db"), "no matches");
     assert_eq!(search(&mut client, "is it on"), "no matches");
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn a_situational_preference_stays_out_of_the_session_view_but_is_found_and_listed() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let save = |client: &mut Client, title: &str, extra: Value| {
+        let mut args = json!({
+            "type": "user", "scope": "all repos", "title": title, "summary": format!("{title} summary"),
+            "fact": "A fact.", "source": "test on 2026-11-09", "how_to_apply": "Always.",
+        });
+        args.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let (is_error, text) = client.call("memory_save", args);
+        assert!(!is_error, "{text}");
+    };
+    save(&mut client, "Always on", json!({}));
+    save(
+        &mut client,
+        "Rust style",
+        json!({"applies_when": "editing Rust code"}),
+    );
+
+    let (start_text, _) = session_start(home.path(), "claude");
+    let start: Value = serde_json::from_str(&start_text).unwrap();
+    let context = start["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("[[always-on]]"), "{context}");
+    assert!(!context.contains("rust-style"), "{context}");
+    assert!(
+        context.contains("1 situational preference not loaded (each applies only in some situations): memory_search finds them by what you're doing."),
+        "{context}"
+    );
+    assert!(!context.contains("Not loaded (over"), "{context}");
+
+    let (_, found) = client.call(
+        "memory_search",
+        json!({"query": "Rust", "project_dir": home.path()}),
+    );
+    assert_eq!(
+        found,
+        "- [[Preferences/rust-style]] — Rust style summary (when: editing Rust code)"
+    );
+    let (_, by_condition) = client.call(
+        "memory_search",
+        json!({"query": "editing", "project_dir": home.path()}),
+    );
+    assert!(by_condition.contains("rust-style"), "{by_condition}");
+    let (_, index) = client.call("memory_index", json!({"project_dir": home.path()}));
+    assert!(
+        index.contains("[[rust-style]] — Rust style summary (when: editing Rust code)"),
+        "{index}"
+    );
+    let on_disk = std::fs::read_to_string(vault.join("Index.md")).unwrap();
+    assert!(on_disk.contains("(when: editing Rust code)"), "{on_disk}");
 
     drop(client);
     assert!(child.wait().unwrap().success());
