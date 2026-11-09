@@ -40,6 +40,9 @@ pub struct Frontmatter {
     pub updated: Option<Date>,
     #[serde(default)]
     pub tags: Vec<String>,
+    // Preferences only: when it applies; absent means always.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applies_when: Option<String>,
 }
 
 // `path` is relative to the vault root, without `.md`, as in `[[links]]`.
