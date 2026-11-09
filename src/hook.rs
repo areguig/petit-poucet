@@ -58,7 +58,7 @@ pub fn session_start(agent: Agent, event: &Value) -> Option<Value> {
 }
 
 // A harness that shows no hook messages gets the notice in the agent's context instead.
-fn route(agent: Agent, notices: Vec<String>) -> (Vec<String>, Vec<String>) {
+pub(crate) fn route(agent: Agent, notices: Vec<String>) -> (Vec<String>, Vec<String>) {
     match agent.shows_hook_messages() {
         true => (
             Vec::new(),
@@ -139,7 +139,7 @@ fn memory_context(
     Ok((view.text, [vec![loaded], shown_user].concat().join("\n")))
 }
 
-fn conflicts_notice(vault: &Vault) -> Option<String> {
+pub(crate) fn conflicts_notice(vault: &Vault) -> Option<String> {
     match context::note_conflicts(vault).len() {
         0 => None,
         1 => Some("1 note has a sync conflict: ask your agent to merge it".to_string()),

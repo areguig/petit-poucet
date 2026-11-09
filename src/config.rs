@@ -41,6 +41,14 @@ impl Limits {
     }
 }
 
+pub struct Read {
+    pub config: Config,
+    pub missing: Vec<String>,
+    pub unknown: usize,
+    path: PathBuf,
+    updated: Option<String>,
+}
+
 impl Config {
     pub fn new(vault: PathBuf) -> Config {
         Config {
@@ -69,38 +77,72 @@ impl Config {
     }
 
     pub fn load() -> Result<Config, String> {
+        let read = Self::read()?;
+        if let Some(text) = read.updated
+            && let Err(e) = crate::vault::write_atomic(&read.path, &text)
+        {
+            eprintln!(
+                "petit-poucet: {}: settings not written in: {e}",
+                read.path.display()
+            );
+        }
+        Ok(read.config)
+    }
+
+    pub fn read() -> Result<Read, String> {
         let path = Config::path()?;
+        let mut missing = Vec::new();
+        let mut unknown = 0;
+        let mut updated = None;
         let file = match fs::read_to_string(&path) {
             Ok(text) => {
                 let error = |e: String| format!("{}: {e}", path.display());
-                let updated = with_missing(&text).map_err(error)?;
-                // The file stays the one place every value is seen; a read-only one still loads.
-                if updated != text
-                    && let Err(e) = crate::vault::write_atomic(&path, &updated)
-                {
-                    eprintln!(
-                        "petit-poucet: {}: settings not written in: {e}",
-                        path.display()
-                    );
-                }
-                let config = toml::from_str::<Config>(&updated)
-                    .map_err(|e| error(e.message().to_string()))?;
+                let completed = with_missing(&text).map_err(error)?;
+                let config: Config =
+                    toml::from_str(&completed).map_err(|e| error(e.message().to_string()))?;
                 config.limits.validate().map_err(error)?;
+                let supplied: toml::Table =
+                    toml::from_str(&text).map_err(|e| error(e.message().to_string()))?;
+                let known: toml::Table =
+                    toml::from_str(&toml::to_string(&config).map_err(|e| e.to_string())?)
+                        .map_err(|e| e.to_string())?;
+                missing = known
+                    .keys()
+                    .filter(|key| !supplied.contains_key(*key))
+                    .cloned()
+                    .collect();
+                unknown = supplied
+                    .keys()
+                    .filter(|key| !known.contains_key(*key))
+                    .count();
+                if completed != text {
+                    updated = Some(completed);
+                }
                 Some(config)
             }
-            Err(_) => None,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("{}: {e}", path.display())),
         };
-        match (std::env::var_os(VAULT_ENV), file) {
-            (Some(vault), Some(config)) => Ok(Config {
+        let config = match (std::env::var_os(VAULT_ENV), file) {
+            (Some(vault), Some(config)) => Config {
                 vault: vault.into(),
                 ..config
-            }),
-            (Some(vault), None) => Ok(Config::new(vault.into())),
-            (None, Some(config)) => Ok(config),
-            (None, None) => Err(format!(
-                "no vault configured: run `petit-poucet init <path>` or set {VAULT_ENV}"
-            )),
-        }
+            },
+            (Some(vault), None) => Config::new(vault.into()),
+            (None, Some(config)) => config,
+            (None, None) => {
+                return Err(format!(
+                    "no vault configured: run `petit-poucet init <path>` or set {VAULT_ENV}"
+                ));
+            }
+        };
+        Ok(Read {
+            config,
+            missing,
+            unknown,
+            path,
+            updated,
+        })
     }
 
     pub fn save(&self) -> Result<(), String> {

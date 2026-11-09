@@ -42,6 +42,13 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 has() { printf '%s\n' "$1" | grep -q -- "$2" || fail "expected /$2/ in:
 $1"; }
 
+# The test binary is the installed PATH binary; the fixture has an explicit git identity and stays offline.
+doctor() {
+  PATH="$(dirname "$pp"):$PATH" PETIT_POUCET_NO_UPDATE_CHECK=1 \
+    GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid \
+    GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid "$pp" doctor
+}
+
 # start_model: runs the mock model (model.mjs, after `npm ci --prefix tests/agents`); agents reach it at $model_url.
 start_model() {
   calls="$HOME/calls.jsonl"

@@ -15,6 +15,7 @@ jiff = { version = "0.2.37", features = ["serde"] }
 petgraph = { version = "0.8.3", default-features = false }
 regex = "1.13.1"
 rmcp = { version = "3.4.1", features = ["server", "transport-io", "macros"] }
+same-file = "1.0.6"
 schemars = "1.2.2"
 self-replace = "1.5.0"
 semver = "1.0.28"
@@ -31,6 +32,7 @@ toml = "1.1.6"
 toml_edit = "0.25.15"
 walkdir = "2.5.0"
 whatlang = "0.18.0"
+which = "8.0.6"
 
 [dev-dependencies]
 assert_cmd = "2.2.2"

@@ -17,6 +17,7 @@ providers:
     models: [{id: mock, name: mock}]
 YAML
 has "$("$pp" setup)" '^omp: set up'
+doctor
 oversize_memory omp
 # A subagent of its own folder: omp skips ~/.claude/agents.
 [ -f "$HOME/.omp/agent/agents/memory-cleanup.md" ] || fail "no memory-cleanup subagent for omp"

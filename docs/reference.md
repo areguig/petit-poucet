@@ -61,11 +61,16 @@ A preference without `applies_when` loads in every session. One with it is situa
 | Command | What it does |
 |---|---|
 | `petit-poucet setup` | Set up memory for every agent on this machine and create the vault if there's none; `--check` reports what's missing, `--uninstall` removes petit-poucet from the agents (never the vault), `--agent <name>` limits it to one |
+| `petit-poucet doctor` | Read-only installation report: binary and PATH, config values, vault and git identity, agent wiring and session payloads, sync conflicts and peer usage files; each problem ends with a command |
 | `petit-poucet update` | Install the latest release over the binary the install script placed, after checking its SHA-256, then run `setup` with it |
 | `petit-poucet sync [device id]` | Share the vault through the Syncthing installed on this machine; with another machine's device ID, pair with it. Lists the machines it syncs with, and this machine's own `.stignore` lines. Without Syncthing, says how to install and start it ([guide](syncthing.md)) |
 | `petit-poucet check` | Validate the vault: frontmatter, summaries and their length, scopes, links, secrets, near-duplicates, file names whose title changed, paths gone from a project's checkout, the Index and its size per session; and report the latest release |
 | `petit-poucet init [path]` | Create a vault (default `~/agent-memory`) and the config file |
 | `petit-poucet migrate` | Upgrade a hand-maintained vault: summaries from its old Index, full-path links, project identities, git |
+
+`doctor` exits **0** when healthy, **1** for errors, **2** for warnings only. Agents that are not installed and a release lookup that is disabled or unavailable are informational. The release request is limited to two seconds and 1 MiB; it does not write an update cache. `PETIT_POUCET_NO_UPDATE_CHECK=1` skips it. `setup --check` remains available with its existing behavior.
+
+Each installed agent gets a preview for the current folder: UTF-8 text bytes against `session_start_max_bytes`, including notices known to doctor, and what would be left out. The transport's JSON wrapper is not part of this budget. Overflow points to `petit-poucet check` for details; ask an agent to tidy or re-scope the notes. Peer usage files show that data from other machines is present; they do not prove those machines are connected now. No hooks, repairs, config migrations, machine IDs or usage writes run during diagnosis.
 
 ## Rules enforced in code
 

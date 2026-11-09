@@ -23,6 +23,7 @@ TOML
 has "$("$pp" setup)" '^Codex: set up'
 has "$(codex mcp get petit-poucet 2>&1)" 'command: .*petit-poucet'
 has "$(codex mcp list 2>/dev/null)" '^petit-poucet .* enabled'
+doctor
 oversize_memory codex
 
 # Users trust the hooks once in Codex's /hooks; `codex exec` would skip untrusted ones silently.

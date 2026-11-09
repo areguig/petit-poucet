@@ -25,6 +25,7 @@ cat > "$HOME/.config/opencode/opencode.json" <<JSON
 }
 JSON
 has "$("$pp" setup)" '^OpenCode: set up'
+doctor
 oversize_memory opencode
 # OpenCode's background service starts here, with this script's environment, and outlives each `opencode run`:
 # the reminder the plugin sends once a turn ends still runs.

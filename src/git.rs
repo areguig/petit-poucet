@@ -23,6 +23,12 @@ pub fn is_repo(dir: &Path) -> bool {
     git(dir, &["rev-parse", "--git-dir"]).is_ok()
 }
 
+pub fn has_identity(dir: &Path) -> bool {
+    ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"]
+        .iter()
+        .all(|ident| git(dir, &["-c", "user.useConfigOnly=true", "var", ident]).is_ok())
+}
+
 pub fn init(dir: &Path) -> Result<(), String> {
     git(dir, &["init", "--quiet"]).map(drop)
 }

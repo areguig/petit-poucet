@@ -147,7 +147,7 @@ pub fn setup(dir: &Path, exe: &Path) -> Result<String, String> {
 
 pub fn check(dir: &Path) -> Result<(String, bool), String> {
     let config = read_config(dir)?;
-    let limits = Config::load()?.limits;
+    let limits = Config::read()?.config.limits;
     let mut missing = Vec::new();
     match config["mcp_servers"]["petit-poucet"]["command"].as_str() {
         None => missing.push("the MCP server".to_string()),
