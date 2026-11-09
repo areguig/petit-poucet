@@ -16,6 +16,8 @@ export REVIEW_TOOL=call_mcp_tool
 export REVIEW_ARGS='{"ServerName":"petit-poucet","ToolName":"memory_review","Arguments":{}}'
 export READ_TOOL=call_mcp_tool
 export READ_ARGS='{"ServerName":"petit-poucet","ToolName":"memory_read","Arguments":{"path":"{name}"}}'
+export SAVE_TOOL=call_mcp_tool
+export SAVE_ARGS="{\"ServerName\":\"petit-poucet\",\"ToolName\":\"memory_save\",\"Arguments\":$preference_json}"
 start_model
 cd "$(mktemp -d)"
 session=$(for turn in one two three; do printf '{"event":"user","message":{"content":"%s"}}\n' "$turn"; done |
@@ -28,9 +30,9 @@ check_calls "# petit-poucet"
 check_update
 
 big_vault
-# Headless agy denies MCP calls it can't ask about: allow these two tools, as a user would.
+# Headless agy denies MCP calls it can't ask about: allow these three tools, as a user would.
 mkdir -p "$HOME/.gemini/antigravity-cli"
-echo '{"permissions": {"allow": ["mcp(petit-poucet/memory_review)", "mcp(petit-poucet/memory_read)"]}}' > "$HOME/.gemini/antigravity-cli/settings.json"
+echo '{"permissions": {"allow": ["mcp(petit-poucet/memory_review)", "mcp(petit-poucet/memory_read)", "mcp(petit-poucet/memory_save)"]}}' > "$HOME/.gemini/antigravity-cli/settings.json"
 cd "$(mktemp -d)"
 printf '{"event":"user","message":{"content":"petit-poucet-review"}}\n' |
   AGY_LLM_GATEWAY_URL="$model_url" AGY_LLM_GATEWAY_API_KEY=dummy \
@@ -45,6 +47,14 @@ printf '{"event":"user","message":{"content":"petit-poucet-read"}}\n' |
   agy --input-format stream-json --output-format stream-json -p="" >/dev/null
 cd "$repo"
 check_read
+
+before_save
+cd "$(mktemp -d)"
+printf '{"event":"user","message":{"content":"petit-poucet-save"}}\n' |
+  AGY_LLM_GATEWAY_URL="$model_url" AGY_LLM_GATEWAY_API_KEY=dummy \
+  agy --input-format stream-json --output-format stream-json -p="" >/dev/null
+cd "$repo"
+check_save
 
 has "$("$pp" setup --check)" '^Antigravity CLI: set up'
 

@@ -19,6 +19,7 @@ oversize_memory claude
 
 export REVIEW_TOOL=mcp__petit-poucet__memory_review
 export READ_TOOL=mcp__petit-poucet__memory_read READ_ARGS='{"path": "{name}"}'
+export SAVE_TOOL=mcp__petit-poucet__memory_save SAVE_ARGS="$preference_json"
 start_model
 cd "$(mktemp -d)"
 resume=
@@ -43,6 +44,13 @@ ANTHROPIC_BASE_URL="$model_url" ANTHROPIC_API_KEY=dummy claude -p petit-poucet-r
   --allowedTools mcp__petit-poucet__memory_read </dev/null >/dev/null
 cd "$repo"
 check_read
+
+before_save
+cd "$(mktemp -d)"
+ANTHROPIC_BASE_URL="$model_url" ANTHROPIC_API_KEY=dummy claude -p petit-poucet-save \
+  --allowedTools mcp__petit-poucet__memory_save </dev/null >/dev/null
+cd "$repo"
+check_save
 
 has "$("$pp" setup --uninstall)" '^Claude Code: removed'
 if claude mcp list 2>&1 | grep -q petit-poucet; then fail "Claude Code still lists petit-poucet"; fi

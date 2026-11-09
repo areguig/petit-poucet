@@ -5,6 +5,7 @@
 
 export REVIEW_TOOL=memory_review REVIEW_NAMESPACE=mcp__petit_poucet
 export READ_TOOL=memory_read READ_ARGS='{"path": "{name}"}'
+export SAVE_TOOL=memory_save SAVE_ARGS="$preference_json"
 node --test "$repo/tests/agents/calls.test.mjs" "$repo/tests/agents/review.test.mjs"
 start_model
 # The mock as Codex's model provider; top-level keys go before the tables `setup` adds.
@@ -60,6 +61,13 @@ cd "$(mktemp -d)"
 MOCK_API_KEY=dummy $codex petit-poucet-read </dev/null >/dev/null
 cd "$repo"
 check_read
+
+before_save
+printf '\n[mcp_servers.petit-poucet.tools.memory_save]\napproval_mode = "approve"\n' >> "$HOME/.codex/config.toml"
+cd "$(mktemp -d)"
+MOCK_API_KEY=dummy $codex petit-poucet-save </dev/null >/dev/null
+cd "$repo"
+check_save
 
 has "$("$pp" setup --check)" '^Codex: set up'
 

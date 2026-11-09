@@ -26,6 +26,9 @@ const read = process.env.READ_TOOL;
 const PROBE_LINE = /\[\[([a-z0-9]+(?:-[a-z0-9]+)*)\]\] — short-name probe/;
 let probeName;
 if (read) callOnce("petit-poucet-read", read, () => probeName && process.env.READ_ARGS.replace("{name}", probeName));
+// With SAVE_TOOL set, the first request naming petit-poucet-save gets one call to that tool, with SAVE_ARGS.
+const save = process.env.SAVE_TOOL;
+if (save) callOnce("petit-poucet-save", save, () => process.env.SAVE_ARGS);
 mock.on({ predicate: () => true }, { content: "ok" });
 await mock.start();
 
@@ -43,7 +46,7 @@ const recorder = createServer(async (req, res) => {
     body: body.length ? body : undefined,
   });
   if (namespace) {
-    const text = [review, read].reduce(
+    const text = [review, read, save].reduce(
       (text, tool) => (tool ? text.replaceAll(`"name":"${tool}"`, `"name":"${tool}","namespace":"${namespace}"`) : text),
       await answer.text(),
     );

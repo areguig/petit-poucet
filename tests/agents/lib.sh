@@ -143,5 +143,15 @@ probe_note() {
 }
 
 check_read() {
-  node "$repo/tests/agents/read.mjs" "$calls" "$probe_body" || fail "the note read by its short name didn't reach the model"
+  node "$repo/tests/agents/holds.mjs" "$calls" "$probe_body" || fail "the note read by its short name didn't reach the model"
+}
+
+# The mock model creates a preference when a prompt says petit-poucet-save (model.mjs); check_save then expects the scope
+# reminder (#215) in a tool result. preference_json is the call's arguments.
+scope_reminder="Preferences load in every session of every repo: make sure this is cross-project and says when it applies, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move)."
+preference_json='{"type": "feedback", "scope": "all repos", "title": "Scope probe", "summary": "scope probe", "fact": "A fact.", "source": "the agent test", "how_to_apply": "Never."}'
+before_save() { : > "$calls"; }
+
+check_save() {
+  node "$repo/tests/agents/holds.mjs" "$calls" "$scope_reminder" || fail "the scope reminder of a new preference didn't reach the model"
 }

@@ -5,6 +5,7 @@
 
 export REVIEW_TOOL=mcp__petit_poucet_memory_review
 export READ_TOOL=mcp__petit_poucet_memory_read READ_ARGS='{"path": "{name}"}'
+export SAVE_TOOL=mcp__petit_poucet_memory_save SAVE_ARGS="$preference_json"
 start_model
 mkdir -p "$HOME/.omp/agent"
 cat > "$HOME/.omp/agent/models.yml" <<YAML
@@ -38,6 +39,12 @@ cd "$(mktemp -d)"
 omp -p --model mock/mock --no-title --approval-mode yolo petit-poucet-read </dev/null >/dev/null
 cd "$repo"
 check_read
+
+before_save
+cd "$(mktemp -d)"
+omp -p --model mock/mock --no-title --approval-mode yolo petit-poucet-save </dev/null >/dev/null
+cd "$repo"
+check_save
 
 has "$("$pp" setup --check)" '^omp: set up'
 
