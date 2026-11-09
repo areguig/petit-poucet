@@ -12,6 +12,8 @@ use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
 use crate::{change, context, duplicates, git, secrets};
 
+const PREFERENCE_SCOPE_REMINDER: &str = "Preferences load in every session of every repo: make sure this is cross-project and says when it applies, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move).";
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(transform = require_fields_in_schema)]
 pub struct SaveRequest {
@@ -154,6 +156,9 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         reply.push(format!(
             "warning: a session{whose} now leaves {left_out} out of its {max}-byte budget: tidy memory with the user (merge or move notes)"
         ));
+    }
+    if !updating && path.starts_with(&format!("{PREFERENCES}/")) {
+        reply.push(PREFERENCE_SCOPE_REMINDER.to_string());
     }
     reply.extend(commit_warning);
     Ok((path, reply.join("\n")))
@@ -351,6 +356,46 @@ mod tests {
     }
 
     #[test]
+    fn a_new_preference_asks_to_confirm_its_scope_but_updates_and_other_notes_do_not() {
+        let (tmp, config) = vault();
+        let reply = save(&config, request("Rule aa"), "test").unwrap().1;
+        assert!(reply.lines().any(|l| l == PREFERENCE_SCOPE_REMINDER));
+        assert!(read(&config, "Preferences/rule-aa").frontmatter.is_ok());
+
+        let mut update = request("Rule aa");
+        update.path = Some("rule-aa".into());
+        update.user_confirmed = true;
+        assert!(
+            !save(&config, update, "test")
+                .unwrap()
+                .1
+                .contains("Preferences load")
+        );
+
+        let repo = tmp.path().join("my-repo");
+        fs::create_dir(&repo).unwrap();
+        let mut project = request("Deploy steps");
+        project.note_type = Some(NoteType::Project);
+        project.scope = None;
+        project.project_dir = Some(repo);
+        assert!(
+            !save(&config, project, "test")
+                .unwrap()
+                .1
+                .contains("Preferences load")
+        );
+
+        let mut topic = request("NAS backups");
+        topic.topic = Some("homelab".into());
+        assert!(
+            !save(&config, topic, "test")
+                .unwrap()
+                .1
+                .contains("Preferences load")
+        );
+    }
+
+    #[test]
     fn a_save_that_fits_the_session_budget_adds_no_warning() {
         let (_tmp, mut config) = tight_vault();
         config.limits.session_start_max_bytes *= 2;
@@ -445,7 +490,10 @@ mod tests {
     fn creates_a_valid_note_and_updates_the_index() {
         let (_tmp, config) = vault();
         let reply = save(&config, request("Commit rules"), "test").unwrap().1;
-        assert_eq!(reply, "saved Preferences/commit-rules");
+        assert_eq!(
+            reply,
+            format!("saved Preferences/commit-rules\n{PREFERENCE_SCOPE_REMINDER}")
+        );
 
         let note = read(&config, "Preferences/commit-rules");
         let fm = note.frontmatter.as_ref().unwrap();
@@ -685,8 +733,8 @@ mod tests {
         second.summary = "commit each step locally, no push".into();
         let reply = save(&config, second, "test").unwrap().1;
         assert!(
-            reply.ends_with(
-                "similar notes, merge if they say the same: [[Preferences/commit-rules]]"
+            reply.contains(
+                "similar notes, merge if they say the same: [[Preferences/commit-rules]]\n"
             ),
             "{reply}"
         );

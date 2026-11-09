@@ -8,6 +8,7 @@ config="$HOME/.hermes/config.yaml"
 # Hermes lists MCP tools in a catalog and calls them through its `tool_call` tool.
 export REVIEW_TOOL=tool_call REVIEW_ARGS='{"name": "mcp__petit_poucet__memory_review", "arguments": {}}'
 export READ_TOOL=tool_call READ_ARGS='{"name": "mcp__petit_poucet__memory_read", "arguments": {"path": "{name}"}}'
+export SAVE_TOOL=tool_call SAVE_ARGS="{\"name\": \"mcp__petit_poucet__memory_save\", \"arguments\": $preference_json}"
 start_model
 mkdir -p "$HOME/.hermes"
 cat > "$config" <<YAML
@@ -47,6 +48,12 @@ cd "$work"
 hermes chat --accept-hooks -Q -q petit-poucet-read </dev/null >/dev/null
 cd "$repo"
 check_read
+
+before_save
+cd "$work"
+hermes chat --accept-hooks -Q -q petit-poucet-save </dev/null >/dev/null
+cd "$repo"
+check_save
 
 has "$("$pp" setup --check)" '^Hermes Agent: set up'
 has "$("$pp" setup --uninstall)" '^Hermes Agent: removed'

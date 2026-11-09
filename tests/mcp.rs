@@ -8,6 +8,12 @@ use common::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
+const PREFERENCE_SCOPE_REMINDER: &str = "Preferences load in every session of every repo: make sure this is cross-project and says when it applies, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move).";
+
+fn saved_preference(name: &str) -> String {
+    format!("saved Preferences/{name}\n{PREFERENCE_SCOPE_REMINDER}")
+}
+
 #[test]
 fn an_agent_saves_finds_and_reads_a_note() {
     let home = TempDir::new().unwrap();
@@ -60,7 +66,7 @@ fn an_agent_saves_finds_and_reads_a_note() {
     });
     assert_eq!(
         client.call("memory_save", save.clone()),
-        (false, "saved Preferences/commit-rules".into())
+        (false, saved_preference("commit-rules"))
     );
     let (is_error, text) = client.call("memory_save", save.clone());
     assert!(is_error && text.contains("already exists"), "{text}");
@@ -561,7 +567,7 @@ fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {
         json!({"type": "user", "scope": "all repos", "title": "Tabs", "summary": "the user prefers tabs",
                "fact": "Tabs.", "source": "the user on 2026-10-04", "how_to_apply": "When indenting."}),
     );
-    assert_eq!(saved, "saved Preferences/tabs");
+    assert_eq!(saved, saved_preference("tabs"));
 
     let (first, notes) = review_pages(&mut client, false);
     assert!(
@@ -942,7 +948,7 @@ fn session_starts_beside_saves_and_synced_files_keep_the_vault_whole() {
                            "summary": format!("about saved{i}"), "fact": "A fact.",
                            "source": "test on 2026-10-26", "how_to_apply": "Test."}),
                 );
-                assert_eq!(reply, format!("saved Preferences/saved{i}"));
+                assert_eq!(reply, saved_preference(&format!("saved{i}")));
             }
             drop(client);
             assert!(child.wait().unwrap().success());
@@ -1130,7 +1136,7 @@ fn two_agents_writing_at_once_lose_nothing() {
                     // One word each, so saves never report each other as similar.
                     let title = format!("{agent}{i}");
                     let (_, reply) = client.call("memory_save", note(title));
-                    assert_eq!(reply, format!("saved Preferences/{agent}{i}"));
+                    assert_eq!(reply, saved_preference(&format!("{agent}{i}")));
                     client.call("memory_read", json!({"path": "Preferences/shared"}));
                 }
                 drop(client);
@@ -1261,7 +1267,7 @@ fn a_secret_in_tags_is_refused_on_save_and_reported_by_check() {
     ordinary_tags["tags"] = json!(["deploy", "token-rotation"]);
     assert_eq!(
         client.call("memory_save", ordinary_tags),
-        (false, "saved Preferences/deploy".into())
+        (false, saved_preference("deploy"))
     );
     drop(client);
     assert!(child.wait().unwrap().success());
