@@ -42,7 +42,7 @@ pub struct IndexRequest {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadRequest {
-    /// Note path as listed in the Index, e.g. `Preferences/commit-rules`.
+    /// The note as listed in the Index: its name, e.g. `commit-rules`, or its full path.
     path: String,
 }
 
@@ -70,6 +70,11 @@ impl Server {
 
     fn lock(&self) -> Result<fs::File, String> {
         lock::vault(&self.config.vault)
+    }
+
+    // The path of the note a tool call names, which may be the short name the session view shows.
+    fn resolve(&self, name: &str) -> Result<String, String> {
+        Ok(change::find_note(&self.vault()?, name)?.path.clone())
     }
 }
 
@@ -220,8 +225,9 @@ impl Server {
     ) -> Result<String, String> {
         let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
-        if let Some(path) = &req.path {
-            self.reads.check(&self.config.vault, &note_file(path))?;
+        if let Some(name) = &req.path {
+            let path = self.resolve(name)?;
+            self.reads.check(&self.config.vault, &note_file(&path))?;
         }
         let (path, reply) = save::save(&self.config, req, &agent)?;
         self.reads
@@ -247,9 +253,9 @@ impl Server {
             self.reads.forget(&conflict.copy);
             return Ok(reply);
         }
+        let path = self.resolve(&req.path)?;
         self.reads
-            .check_delete(&self.config.vault, &note_file(&req.path))?;
-        let path = req.path.trim_end_matches(".md").to_string();
+            .check_delete(&self.config.vault, &note_file(&path))?;
         let (reply, rewritten) = delete::delete(&self.config, req, &agent)?;
         self.reads.forget(&note_file(&path));
         for file in &rewritten {
@@ -268,7 +274,7 @@ impl Server {
     ) -> Result<String, String> {
         let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
-        let path = req.path.trim_end_matches(".md").to_string();
+        let path = self.resolve(&req.path)?;
         let new_path = req.new_path.trim_end_matches(".md").to_string();
         let (reply, rewritten) = move_note::move_note(&self.config, req, &agent)?;
         self.reads.forget(&note_file(&path));

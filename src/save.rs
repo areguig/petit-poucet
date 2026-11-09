@@ -15,7 +15,7 @@ use crate::{change, context, duplicates, git, secrets};
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(transform = require_fields_in_schema)]
 pub struct SaveRequest {
-    /// Existing note to update, e.g. `Preferences/commit-rules`; omit to create a note.
+    /// Existing note to update, by its Index name (`commit-rules`) or full path; omit to create a note.
     pub path: Option<String>,
     // The fields below default to empty so that `validate` can report every missing one at once.
     #[serde(rename = "type", default)]

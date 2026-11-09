@@ -2,39 +2,11 @@
 // its header, then its notes in order from the first up to where src/review.rs ends page 1, then its line naming page 2.
 // Only the first page is called for, so the later pages are not checked.
 // Usage: node review.mjs <log file>; prints one line per tool result, never what the calls contain.
-import { readFileSync } from "node:fs";
+import { resultsIn, texts } from "./tool_results.mjs";
 
 const fail = (reason) => {
   console.error(`review check error: ${reason}`);
   process.exit(1);
-};
-
-// Where each API carries a tool's result: Anthropic, OpenAI Chat Completions, OpenAI Responses, Gemini.
-const toolResults = (node) => {
-  if (Array.isArray(node)) return node.flatMap(toolResults);
-  if (!node || typeof node !== "object") return [];
-  if (node.type === "tool_result") return [node.content];
-  if (node.role === "tool") return [node.content];
-  if (node.type === "function_call_output") return [node.output];
-  if (node.functionResponse) return [node.functionResponse.response];
-  return Object.values(node).flatMap(toolResults);
-};
-// Some agents pass the MCP result on as JSON text, which Hermes frames in an untrusted-data block,
-// so the JSON a string is, or holds between its first { and last }, is searched inside too.
-const json = (text) => {
-  for (const candidate of [text, text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)]) {
-    try {
-      const parsed = JSON.parse(candidate);
-      if (parsed && typeof parsed === "object") return parsed;
-    } catch {}
-  }
-};
-const texts = (value) => {
-  if (typeof value === "string") {
-    const parsed = json(value);
-    return parsed ? [value, ...texts(parsed)] : [value];
-  }
-  return value && typeof value === "object" ? Object.values(value).flatMap(texts) : [];
 };
 
 // big_vault's notes, in the order the review lists them.
@@ -64,10 +36,7 @@ const holdsFirstPage = (text) => {
 
 let results;
 try {
-  results = readFileSync(process.argv[2], "utf8")
-    .split("\n")
-    .filter((line) => line.trim())
-    .flatMap((line) => toolResults(JSON.parse(JSON.parse(line).body)));
+  results = resultsIn(process.argv[2]);
 } catch {
   fail("unreadable or malformed capture");
 }

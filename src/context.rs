@@ -324,9 +324,10 @@ mod tests {
 
     fn fill(root: &std::path::Path, folder: &str, count: usize) {
         for i in 0..count {
+            let owner = folder.rsplit('/').next().unwrap();
             write(
                 root,
-                &format!("{folder}/note-{i:04}.md"),
+                &format!("{folder}/note-{owner}-{i:04}.md"),
                 &format!("fact number {i} with some detail"),
             );
         }
@@ -384,7 +385,7 @@ mod tests {
         fill(tmp.path(), "Projects/alpha", 5);
         let v = view(&vault(tmp.path()), Some("alpha"), budget());
         assert!(
-            !v.text.contains("[[Projects/alpha/"),
+            !v.text.contains("[[note-alpha-"),
             "preferences fill the budget first"
         );
         assert!(v.text.contains("5 notes of alpha"), "{}", v.text);
@@ -397,11 +398,11 @@ mod tests {
         assert_eq!(
             lines
                 .iter()
-                .filter(|l| l.contains("[[Preferences/"))
+                .filter(|l| l.contains("[[note-Preferences-"))
                 .count(),
             3
         );
-        assert!(lines.iter().any(|l| l.contains("[[Projects/alpha/")));
+        assert!(lines.iter().any(|l| l.contains("[[note-alpha-")));
     }
 
     #[test]

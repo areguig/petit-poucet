@@ -5,15 +5,35 @@ use crate::config::Config;
 use crate::note::{self, Note, NoteType};
 use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{INDEX_FILE, PROJECTS, Vault, write_atomic};
-use crate::{checkouts, git, index, lock, usage};
+use crate::{checkouts, git, index, lock, short_name, usage};
 
-pub fn find_note<'a>(vault: &'a Vault, path: &str) -> Result<&'a Note, String> {
-    let path = path.strip_suffix(".md").unwrap_or(path);
-    vault
-        .notes
-        .iter()
-        .find(|n| n.path == path)
-        .ok_or(format!("no note at {path}"))
+// A note by its path, else by its slug, else by the one slug that starts with the name (the short names of the session view).
+pub fn find_note<'a>(vault: &'a Vault, name: &str) -> Result<&'a Note, String> {
+    let name = name.strip_suffix(".md").unwrap_or(name);
+    if let Some(note) = vault.notes.iter().find(|n| n.path == name) {
+        return Ok(note);
+    }
+    let prefix = format!("{name}-");
+    let by_slug = |keep: &dyn Fn(&str) -> bool| -> Vec<&Note> {
+        let slug_kept = |n: &&Note| keep(short_name::slug_of(&n.path));
+        vault.notes.iter().filter(slug_kept).collect()
+    };
+    let mut candidates = by_slug(&|slug| slug == name);
+    if candidates.is_empty() {
+        candidates = by_slug(&|slug| slug.starts_with(&prefix));
+    }
+    match candidates[..] {
+        [] => Err(format!("no note at {name}")),
+        [note] => Ok(note),
+        _ => Err(format!(
+            "{name} names several notes, use one full path: {}",
+            candidates
+                .iter()
+                .map(|n| n.path.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
 }
 
 pub fn require_confirmation(note: &Note, user_confirmed: bool) -> Result<(), String> {
@@ -122,6 +142,75 @@ pub fn identify(config: &Config, vault: &Vault, dir: &Path, agent: &str) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn vault_of(paths: &[&str]) -> (tempfile::TempDir, Vault) {
+        let tmp = tempfile::tempdir().unwrap();
+        for path in paths {
+            let file = tmp.path().join(format!("{path}.md"));
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, "x").unwrap();
+        }
+        let vault = Vault::load(tmp.path()).unwrap();
+        (tmp, vault)
+    }
+
+    fn found(vault: &Vault, name: &str) -> Result<String, String> {
+        find_note(vault, name).map(|n| n.path.clone())
+    }
+
+    #[test]
+    fn a_note_is_found_by_path_slug_or_unique_slug_prefix() {
+        let (_tmp, vault) = vault_of(&[
+            "Preferences/always-run-the-full-test-suite",
+            "Projects/app/deploy-steps",
+            "Preferences/use-tabs-in-go-files",
+            "Preferences/use-tabs-in-makefiles",
+            "Preferences/use",
+        ]);
+        let suite = "Preferences/always-run-the-full-test-suite";
+        assert_eq!(found(&vault, suite).as_deref(), Ok(suite));
+        assert_eq!(found(&vault, &format!("{suite}.md")).as_deref(), Ok(suite));
+        assert_eq!(
+            found(&vault, "deploy-steps").as_deref(),
+            Ok("Projects/app/deploy-steps")
+        );
+        assert_eq!(found(&vault, "always-run-the-full").as_deref(), Ok(suite));
+        assert_eq!(
+            found(&vault, "use").as_deref(),
+            Ok("Preferences/use"),
+            "the exact slug wins over longer ones"
+        );
+    }
+
+    #[test]
+    fn an_ambiguous_or_unknown_name_is_an_error_naming_the_candidates() {
+        let (_tmp, vault) = vault_of(&[
+            "Preferences/use-tabs-in-go-files",
+            "Projects/app/use-tabs-in-makefiles",
+            "Preferences/style",
+            "Topics/lab/style",
+        ]);
+        let error = found(&vault, "use-tabs").unwrap_err();
+        assert!(
+            error.contains("Preferences/use-tabs-in-go-files")
+                && error.contains("Projects/app/use-tabs-in-makefiles"),
+            "{error}"
+        );
+        let error = found(&vault, "style").unwrap_err();
+        assert!(
+            error.contains("Preferences/style") && error.contains("Topics/lab/style"),
+            "{error}"
+        );
+        assert_eq!(
+            found(&vault, "nothing-here"),
+            Err("no note at nothing-here".to_string())
+        );
+        assert!(found(&vault, "").is_err());
+        assert!(
+            found(&vault, "use-tab").is_err(),
+            "a prefix must end at a word"
+        );
+    }
 
     fn identity(root: &Path, key: &str, remotes: &str) {
         let dir = root.join(PROJECTS).join(key);

@@ -286,8 +286,8 @@ fn session_start_injects_rules_and_the_project_index() {
         "{context}"
     );
     assert!(context.contains("Older file-based memory"), "{context}");
-    assert!(context.contains("[[Preferences/user-commits-themselves]]"));
-    assert!(context.contains("[[Projects/alpha/plugin-design]]"));
+    assert!(context.contains("[[user-commits-themselves]]"));
+    assert!(context.contains("[[plugin-design]]"));
     assert!(!context.contains("Projects/beta"));
     assert!(!context.contains("[[Topics/"), "topic notes are not loaded");
     // The session counts as a use of its project, in this machine's usage file in the vault (#88).
@@ -455,7 +455,7 @@ fn session_start_tells_ssh_ports_apart() {
             .as_str()
             .unwrap()
             .to_string();
-        context.contains("[[Projects/app/port-rule]]")
+        context.contains("[[port-rule]]")
     };
     assert!(!loads_app("2223"));
     assert!(loads_app("2222"));
@@ -1621,10 +1621,7 @@ fn cursor_hooks_reply_in_cursor_format() {
     ))
     .unwrap();
     let context = start["additional_context"].as_str().unwrap();
-    assert!(
-        context.contains("[[Projects/alpha/plugin-design]]"),
-        "{context}"
-    );
+    assert!(context.contains("[[plugin-design]]"), "{context}");
     assert_eq!(start.as_object().unwrap().len(), 1, "{start}");
 
     let stop = |loop_count: u32| {

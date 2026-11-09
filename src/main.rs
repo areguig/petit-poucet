@@ -39,6 +39,7 @@ mod search;
 mod secrets;
 mod server;
 mod setup;
+mod short_name;
 mod skills;
 mod stale_paths;
 mod state;

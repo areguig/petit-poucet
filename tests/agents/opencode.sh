@@ -8,6 +8,7 @@ unset XDG_CONFIG_HOME
 export OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1
 # OpenCode's Code Mode offers MCP tools through its `execute` tool, which runs code calling them.
 export REVIEW_TOOL=execute REVIEW_ARGS='{"code": "return await tools[\"petit-poucet\"].memory_review({})"}'
+export READ_TOOL=execute READ_ARGS='{"code": "return await tools[\"petit-poucet\"].memory_read({path: \"{name}\"})"}'
 start_model
 mkdir -p "$HOME/.config/opencode"
 cat > "$HOME/.config/opencode/opencode.json" <<JSON
@@ -54,6 +55,12 @@ cd "$work"
 opencode run --auto petit-poucet-review </dev/null >/dev/null
 cd "$repo"
 check_review
+
+probe_note opencode
+cd "$work"
+opencode run --auto petit-poucet-read </dev/null >/dev/null
+cd "$repo"
+check_read
 
 has "$("$pp" setup --check)" '^OpenCode: set up'
 
