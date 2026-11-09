@@ -5,7 +5,7 @@
 ```
 ~/agent-memory/
 ├─ Index.md            generated from the notes' summaries
-├─ Preferences/        your rules for every repo, loaded in every session
+├─ Preferences/        your rules for every repo, loaded in every session (situational ones are searched)
 ├─ Projects/<repo>/    a repo's notes, loaded in that repo
 └─ Topics/<topic>/     knowledge tied to no repo (a homelab, a server…), searched on demand
 ```
@@ -25,6 +25,7 @@ scope: all repos          # or the project or topic, from its folder
 summary: commit locally per step, 1-2 line message, never push
 created: 2026-09-14
 tags: [agent-memory, git]
+applies_when: editing Rust code   # preferences only, optional: omit it when the rule always applies
 ---
 
 # Commit rules
@@ -35,6 +36,8 @@ Commit each finished step locally; never push.
 **How to apply:** after each step.
 ```
 
+A preference without `applies_when` loads in every session. One with it is situational: it stays cross-project but is not loaded at session start. The session says how many there are, `memory_search` finds them (it searches the `applies_when` line too) and shows `(when: …)` after each hit, and `memory_index` and `Index.md` list them with the same suffix. `memory_save` takes `applies_when` on a preference (an empty string clears it; omitting it keeps it) and refuses it on project and topic notes. `tidy-memory` proposes, batch by batch, which preferences to keep always-on, make situational or move to a project or topic; nothing changes until you confirm.
+
 ## Tools (MCP)
 
 | Tool | What it does |
@@ -42,7 +45,7 @@ Commit each finished step locally; never push.
 | `memory_index` | Preferences, the current project and the topic names; with `topic`, that topic's notes |
 | `memory_read` | One note, or a sync conflict copy of one; the note by its name in the Index (`commit-rules`) or its full path. `memory_save`, `memory_move` and `memory_delete` take the same |
 | `memory_search` | Word search over preferences, the current project and all topics (every note when the folder is no known project): notes matching the most words first, rare words before common ones, and none matching under half the words when others match more |
-| `memory_save` | Create or update a note; the Index and a git commit follow |
+| `memory_save` | Create or update a note, a preference with an optional `applies_when`; the Index and a git commit follow |
 | `memory_move` | Rename or re-scope a note, rewriting every link to it |
 | `memory_delete` | Delete a note (with a reason) and unlink it everywhere, or a sync conflict copy once merged |
 | `memory_review` | For the cleanup agent: the notes to review and the problems found in the whole vault, in pages small enough for every agent ([how](architecture.md#the-cleanup-review-memory_review)) |
