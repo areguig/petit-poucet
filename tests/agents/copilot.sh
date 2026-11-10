@@ -16,6 +16,7 @@ if [ -z "$windows" ]; then
 fi
 has "$(copilot mcp list 2>&1)" 'petit-poucet'
 has "$("$pp" setup --check)" '^GitHub Copilot skills: installed'
+doctor
 oversize_memory copilot
 
 # Copilot CLI uses another model provider with BYOK, no GitHub sign-in needed.

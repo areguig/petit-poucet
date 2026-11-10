@@ -93,7 +93,7 @@ fn vault(mode: Mode) -> Result<(Vec<String>, bool), String> {
 }
 
 // An agent not on this machine is only mentioned when the user named it.
-fn report(agent: Agent, mode: Mode, dirs: &Dirs, named: bool) -> (Vec<String>, bool) {
+pub(crate) fn report(agent: Agent, mode: Mode, dirs: &Dirs, named: bool) -> (Vec<String>, bool) {
     let name = agent.name();
     if !agent.installed(dirs) {
         let line = named.then(|| format!("{name}: not found on this machine"));

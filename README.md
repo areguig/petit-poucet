@@ -50,7 +50,7 @@ irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | ie
 petit-poucet setup
 ```
 
-Then restart your agents. To update later: `petit-poucet update`; session start tells you when a release is out. Already keeping memory elsewhere? Ask your agent to run the `migrate-memory` skill. Details, per-agent notes and settings: [install and set up](docs/setup.md).
+Then restart your agents. Run `petit-poucet doctor` to check the installation without changing it; each problem names the next command. To update later: `petit-poucet update`; session start tells you when a release is out. Already keeping memory elsewhere? Ask your agent to run the `migrate-memory` skill. Details, per-agent notes and settings: [install and set up](docs/setup.md).
 
 ## What your agent sees
 

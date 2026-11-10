@@ -6,6 +6,7 @@
 mkdir -p "$HOME/.gemini/config"
 has "$("$pp" setup)" '^Antigravity CLI: set up'
 has "$(agy mcp list 2>&1)" '^petit-poucet .*enabled'
+doctor
 oversize_memory antigravity
 # A subagent only: not one of the agents a session runs as.
 if agy agents 2>&1 | grep -q memory-cleanup; then fail "memory-cleanup is offered as a main agent"; fi

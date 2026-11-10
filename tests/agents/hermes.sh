@@ -21,6 +21,7 @@ YAML
 export OPENAI_API_KEY=dummy
 has "$("$pp" setup)" '^Hermes Agent: set up'
 grep -q "^# The user's own comment.$" "$config" || fail "setup lost the user's comment"
+doctor
 oversize_memory hermes
 
 work=$(mktemp -d)
