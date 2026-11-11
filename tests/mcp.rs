@@ -563,6 +563,61 @@ fn notes_naming_paths_gone_from_the_checkout_are_reported() {
     assert!(child.wait().unwrap().success());
 }
 
+// A path written from a folder deeper in the checkout, or found in another project's checkout, is not gone (#200).
+#[test]
+fn a_path_found_deeper_in_the_checkout_or_in_another_project_s_is_not_reported() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let api = home.path().join("src/api");
+    checkout(&api, "git@github.com:me/api.git");
+    std::fs::create_dir_all(api.join("src/main/resources/prompts")).unwrap();
+    std::fs::write(api.join("src/main/resources/prompts/system.txt"), "").unwrap();
+    let web = home.path().join("src/web");
+    checkout(&web, "git@github.com:me/web.git");
+    std::fs::create_dir_all(web.join("src/components")).unwrap();
+    std::fs::write(web.join("src/components/App.tsx"), "").unwrap();
+    let (mut child, mut client, _) = start(home.path());
+    let (_, saved) = client.call(
+        "memory_save",
+        json!({"type": "project", "project_dir": api, "title": "Prompt",
+               "summary": "where the prompt is",
+               "fact": "The prompt is `prompts/system.txt`, under `main/resources/`; the web app shows it in `src/components/App.tsx`. `prompts/old.txt` was its first version.",
+               "source": "test on 2026-11-11", "how_to_apply": "When changing the prompt."}),
+    );
+    assert_eq!(saved, "saved Projects/api/prompt");
+    client.call(
+        "memory_save",
+        json!({"type": "project", "project_dir": web, "title": "Stack",
+               "summary": "what the web app is built with", "fact": "React.",
+               "source": "test on 2026-11-11", "how_to_apply": "When adding a page."}),
+    );
+    // Loading each project records where it is checked out.
+    client.call("memory_index", json!({"project_dir": api}));
+    client.call("memory_index", json!({"project_dir": web}));
+
+    let (pages, _) = review_pages(&mut client, false);
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    for text in [pages.concat(), stdout(&check)] {
+        let missing: Vec<&str> = text
+            .lines()
+            .filter(|l| l.contains("missing from"))
+            .collect();
+        assert_eq!(missing.len(), 1, "{text}");
+        assert!(
+            missing[0].contains(
+                "Projects/api/prompt.md: warning: names `prompts/old.txt`, missing from "
+            ),
+            "{text}"
+        );
+    }
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 // What Syncthing would bring to another machine, with the vault's `.stignore`: the files with their times,
 // not git, petit-poucet's own state, the generated Index, nor `.stignore` itself.
 fn sync(from: &Path, to: &Path) {
