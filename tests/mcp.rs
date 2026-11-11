@@ -597,6 +597,67 @@ fn set_limit(home: &Path, key: &str, value: usize) {
     std::fs::write(&path, text).unwrap();
 }
 
+// Each call used to rebuild the pages from the vault as it then was: the last page records the cleanup and a read
+// changes a note's line, so a page number meant other notes from one call to the next (#199).
+#[test]
+fn a_review_s_pages_stay_the_same_until_page_1_is_asked_again() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    set_limit(home.path(), "session_start_max_bytes", 1_000_000);
+    for project in ["api", "web", "infra", "docs"] {
+        let dir = vault.join("Projects").join(project);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("_project.md"),
+            format!("---\ntype: project-identity\nremotes: []\nfolders: [{project}]\n---\n"),
+        )
+        .unwrap();
+        for i in 0..80 {
+            std::fs::write(
+                dir.join(format!("fact-{i}.md")),
+                format!("---\ntype: project\nscope: {project}\nsummary: fact {project}{i} detail{i}{project}\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Fact {i}\n\n**Why:** test.\n"),
+            )
+            .unwrap();
+        }
+    }
+    let (mut child, mut client, _) = start(home.path());
+    let page = |client: &mut Client, page: usize| {
+        let (is_error, text) = client.call("memory_review", json!({"page": page}));
+        assert!(!is_error, "page {page}: {text}");
+        text
+    };
+
+    let (first, _) = review_pages(&mut client, false);
+    assert!(
+        first[0].contains("\nfirst cleanup: all 320 notes"),
+        "{}",
+        first[0]
+    );
+    assert!(
+        vault.join(".last-cleanup").is_file(),
+        "the last page records the cleanup"
+    );
+    client.call("memory_read", json!({"path": "Projects/api/fact-1"}));
+    for number in [2, first.len(), 1 + first.len() / 2] {
+        assert_eq!(
+            page(&mut client, number),
+            first[number - 1],
+            "page {number}"
+        );
+    }
+
+    let again = page(&mut client, 1);
+    assert!(again.contains(" of 320 notes: preferences, "), "{again}");
+    assert!(again.contains("| 1r "), "the read shows: {again}");
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
+
 // Over 300 notes, a later cleanup sends preferences, changed and recently used folders whole, then the rest while pages last (#89).
 #[test]
 fn a_cleanup_reviews_the_whole_vault_first_then_folders_by_priority() {

@@ -45,6 +45,8 @@ The `memory-cleanup` agent reads it page by page:
 1. the notes, one line each under their folder: `slug | type | created[/updated] | reads | summary`;
 2. the problems found in the whole vault, always, never cut: what `check` finds, then the notes nobody opens (`## unused`).
 
+Page 1 builds the review and the agent's server keeps it: the following pages come from it, so a page number means the same notes whatever was read, saved or recorded meanwhile (reading the last page records the cleanup, which alone would change the next review). Asking for page 1 again, or for the other extent (`full`), builds a new one.
+
 A note is unused when it wasn't read, written or updated in the last `unused_days` (90). `feedback` notes are never listed: they apply from their Index line without being read. Nothing is listed until usage has counted for `unused_days`, so an upgrade doesn't call every old note unused.
 
 Which notes:
