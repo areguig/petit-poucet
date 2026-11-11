@@ -133,6 +133,11 @@ Keep descriptions short and responses terse (plain text, no tips, no suggestions
 
 `project_dir` is explicit because Copilot CLI starts MCP servers in the plugin's folder, not the workspace (known gotcha from the karate-runner-cli plugin).
 
+No default for it (#116, decided 2026-11-11): the agent names its folder at each call, and a forgotten `project_dir` stays an error the agent corrects, never a guess that could file a note in the wrong project.
+- MCP roots: deprecated by the protocol (SEP-2577), and answered by three of the seven agents checked (OpenCode, omp, Antigravity; not Claude Code, Codex, Copilot CLI or Hermes).
+- The server's working directory: the session's folder in every CLI checked on Linux and macOS, but fixed when the server starts, and one Hermes server process served two separate sessions.
+- The tool schemas, the session-start text and the save error already state the rule: users' own instruction files don't need it.
+
 ## 6. Search and indexing
 
 No SQLite in v1. A personal vault is tens to a few hundred short notes: every tool call re-reads them from disk (≈10 ms for 300 notes), so edits made in Obsidian are always seen and there is no second copy to go stale. **(decided 2026-09-24:** no in-memory copy and no `notify` watcher until a vault gets slow**)**
