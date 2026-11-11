@@ -10,30 +10,23 @@ use tempfile::TempDir;
 
 struct Install {
     home: TempDir,
-    bin: PathBuf,
 }
 
 impl Install {
     fn fresh() -> Self {
-        let home = tempfile::tempdir().unwrap();
-        let bin = home.path().join("bin");
-        fs::create_dir(&bin).unwrap();
-        fs::copy(
-            env!("CARGO_BIN_EXE_petit-poucet"),
-            bin.join(format!("petit-poucet{}", std::env::consts::EXE_SUFFIX)),
-        )
-        .unwrap();
-        Self { home, bin }
+        Self {
+            home: tempfile::tempdir().unwrap(),
+        }
     }
 
+    // The built binary itself, its folder first on the PATH: executing a copy made while another test
+    // forks fails with "text file busy" on Linux.
     fn command(&self) -> Command {
-        let mut command = common::command_for(
-            &self
-                .bin
-                .join(format!("petit-poucet{}", std::env::consts::EXE_SUFFIX)),
-            self.home.path(),
-        );
-        let path = std::env::join_paths(std::iter::once(self.bin.clone()).chain(
+        let mut command = common::command(self.home.path());
+        let bin = Path::new(env!("CARGO_BIN_EXE_petit-poucet"))
+            .parent()
+            .unwrap();
+        let path = std::env::join_paths(std::iter::once(bin.to_path_buf()).chain(
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
         ))
         .unwrap();

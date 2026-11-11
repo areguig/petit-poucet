@@ -1236,6 +1236,56 @@ fn two_agents_writing_at_once_lose_nothing() {
     assert!(pending.is_empty(), "all committed: {pending:?}");
 }
 
+// Obsidian's own keys and plugin keys are the user's: a rewrite of the frontmatter keeps them (#232).
+#[test]
+fn an_update_and_a_move_to_another_scope_keep_the_frontmatter_keys_the_user_added() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(
+        vault.join("Preferences/n7.md"),
+        "---\ntype: reference\nscope: all repos\nsummary: s\ncreated: 2026-09-14\ntags: [agent-memory]\naliases: [seven]\ncssclasses: wide\nplugin:\n  depth: 2\n---\n\n# N7\n\nA fact.\n\n**Why:** test.\n",
+    )
+    .unwrap();
+    let user_keys = "aliases:\n- seven\ncssclasses: wide\nplugin:\n  depth: 2\n---\n";
+    let (mut child, mut client, _) = start(home.path());
+
+    client.call("memory_read", json!({"path": "Preferences/n7"}));
+    let (is_error, text) = client.call(
+        "memory_save",
+        json!({
+            "path": "Preferences/n7", "type": "reference", "title": "N7",
+            "summary": "a new summary", "fact": "A fact.",
+            "source": "test on 2026-11-11", "how_to_apply": "Test.",
+        }),
+    );
+    assert!(!is_error, "{text}");
+    let updated = std::fs::read_to_string(vault.join("Preferences/n7.md")).unwrap();
+    assert!(
+        updated.contains("summary: a new summary\n") && updated.contains(user_keys),
+        "{updated}"
+    );
+
+    let (is_error, text) = client.call(
+        "memory_move",
+        json!({"path": "Preferences/n7", "new_path": "Topics/homelab/n7"}),
+    );
+    assert!(!is_error, "{text}");
+    let moved = std::fs::read_to_string(vault.join("Topics/homelab/n7.md")).unwrap();
+    assert!(
+        moved.contains("scope: homelab\n") && moved.contains(user_keys),
+        "{moved}"
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+    let check = petit_poucet(home.path()).arg("check").output().unwrap();
+    assert!(check.status.success(), "{}", stdout(&check));
+}
+
 #[test]
 fn an_update_keeps_tags_and_is_committed_as_an_update() {
     let home = TempDir::new().unwrap();
