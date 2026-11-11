@@ -80,6 +80,7 @@ The limits live in `~/.config/petit-poucet/config.toml`. `init` writes every set
 ## Paths gone from the checkout (`check`)
 - **Checkout:** identifying a project (session start, or a tool given the agent's directory) records its git root on this machine in `.petit-poucet/checkouts.json`. Each machine has its own, so it is never synced; a project never opened on this machine is skipped.
 - **Paths:** words joined by slashes in backticks in a project note's body, that name a file (`src/main.rs`) or a folder (`docs/`). Branches (`feat/x`), remotes (`github.com/me/app`), climbs (`../x`), absolute and home paths are left out.
+- **Missing:** not at that place in the project's checkout, nor in any other project's checkout known on this machine (a note often names the repo next door), nor deeper in one of them (`prompts/system.txt` for `src/main/resources/prompts/system.txt`). Deeper is looked up in the files git tracks or doesn't ignore, so a build folder is never searched.
 - **Report only:** a warning per missing path; the note may be right about history, so nothing is changed.
 
 ## Near-duplicates (`check`)
