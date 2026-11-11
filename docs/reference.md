@@ -46,7 +46,7 @@ A preference without `applies_when` loads in every session. One with it is situa
 | `memory_read` | One note, or a sync conflict copy of one; the note by its name in the Index (`commit-rules`) or its full path. `memory_save`, `memory_move` and `memory_delete` take the same |
 | `memory_search` | Word search over preferences, the current project and all topics (every note when the folder is no known project): notes matching the most words first, rare words before common ones, and none matching under half the words when others match more |
 | `memory_save` | Create or update a note, a preference with an optional `applies_when`; the Index and a git commit follow |
-| `memory_move` | Rename or re-scope a note, rewriting every link to it |
+| `memory_move` | Rename or re-scope a note, rewriting every link to it; the new name in lowercase letters, digits and hyphens, like the names `memory_save` gives |
 | `memory_delete` | Delete a note (with a reason) and unlink it everywhere, or a sync conflict copy once merged |
 | `memory_review` | For the cleanup agent: the notes to review and the problems found in the whole vault, in pages small enough for every agent ([how](architecture.md#the-cleanup-review-memory_review)) |
 
