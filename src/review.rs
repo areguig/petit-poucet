@@ -11,7 +11,7 @@ use crate::usage::{self, Activity};
 use crate::vault::{Vault, folder};
 use crate::{check, cleanup, priority, unused};
 
-// Antigravity CLI saves a tool result over about 4 KB to a file: the smallest limit of the supported agents.
+// An older Antigravity CLI saved a tool result over about 4 KB to a file; 1.5.3 passes at least 7,825 bytes inline.
 pub const PAGE_BYTES: usize = 3 * 1024;
 
 const LEGEND: &str = "slug | type | created[/updated] | reads and last read | summary";
