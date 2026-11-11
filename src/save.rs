@@ -112,6 +112,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         updated: updating.then_some(today),
         tags,
         applies_when,
+        other: previous.map(|fm| fm.other.clone()).unwrap_or_default(),
     };
     let body = format!(
         "# {}\n\n{}\n\n**Why:** {}\n**How to apply:** {}\n",
