@@ -16,8 +16,29 @@ pub const PAGE_BYTES: usize = 3 * 1024;
 
 const LEGEND: &str = "slug | type | created[/updated] | reads and last read | summary";
 
+// A review's pages as built at one moment: reading its last page records the cleanup and a read changes a note's line,
+// so pages built again for each call would not be the same review.
+pub struct Review {
+    pub full: bool,
+    pub started: SystemTime,
+    pages: Vec<String>,
+}
+
+impl Review {
+    pub fn page(&self, page: usize) -> Result<&str, String> {
+        self.pages
+            .get(page.wrapping_sub(1))
+            .map(String::as_str)
+            .ok_or_else(|| format!("no page {page}: the review has {} pages", self.pages.len()))
+    }
+
+    pub fn ends_at(&self, page: usize) -> bool {
+        page == self.pages.len()
+    }
+}
+
 // Every note in a small vault or on demand, else folders by priority; then the whole vault's problems, never cut.
-pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<String, String> {
+pub fn review(config: &Config, full: bool) -> Result<Review, String> {
     let started = SystemTime::now();
     let vault = Vault::load(&config.vault)?;
     let since = cleanup::last(&vault.root);
@@ -60,20 +81,24 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
             pages_of(items).len()
         }),
     };
-    let pages = pages_of(&shown);
-    let Some(body) = pages.get(page.wrapping_sub(1)) else {
-        return Err(format!(
-            "no page {page}: the review has {} pages",
-            pages.len()
-        ));
-    };
-    let mut out = header(&root, &scope_of(shown.len()), page, pages.len()) + body;
-    if page < pages.len() {
-        out.push_str(&more(page + 1, full));
-    } else {
-        cleanup::record(config, started, agent)?;
-    }
-    Ok(out)
+    let bodies = pages_of(&shown);
+    let scope = scope_of(shown.len());
+    let pages = (1..)
+        .zip(&bodies)
+        .map(|(page, body)| {
+            let next = if page < bodies.len() {
+                more(page + 1, full)
+            } else {
+                String::new()
+            };
+            header(&root, &scope, page, bodies.len()) + body + &next
+        })
+        .collect();
+    Ok(Review {
+        full,
+        started,
+        pages,
+    })
 }
 
 fn header(root: &str, scope: &str, page: usize, pages: usize) -> String {
@@ -174,6 +199,11 @@ mod tests {
 
     use super::*;
 
+    // Built anew for each page, as a session that asks for a page without having read page 1 gets it.
+    fn page_of(config: &Config, page: usize, full: bool) -> Result<String, String> {
+        review(config, full)?.page(page).map(str::to_string)
+    }
+
     fn note(scope: &str, extra: &str) -> String {
         format!(
             "---\ntype: feedback\nscope: {scope}\nsummary: s\ncreated: 2026-09-01\n{extra}tags: [agent-memory]\n---\n**Why:** x\n"
@@ -193,7 +223,7 @@ mod tests {
             git_autocommit: false,
             ..Config::new(tmp.path().to_path_buf())
         };
-        let text = review(&config, 1, false, "test").unwrap();
+        let text = page_of(&config, 1, false).unwrap();
         assert!(
             text.contains("| never | s (when: editing Rust)\n"),
             "{text}"
@@ -223,7 +253,7 @@ mod tests {
             ..Config::new(tmp.path().to_path_buf())
         };
 
-        let text = review(&config, 1, false, "test").unwrap();
+        let text = page_of(&config, 1, false).unwrap();
         assert!(
             text.contains("\nfirst cleanup: all 3 notes, then the problems"),
             "{text}"
@@ -246,10 +276,10 @@ mod tests {
         );
         assert!(!text.contains("more:"), "{text}");
         assert_eq!(
-            review(&config, 2, false, "test").unwrap_err(),
+            page_of(&config, 2, false).unwrap_err(),
             "no page 2: the review has 1 pages"
         );
-        assert!(review(&config, 0, false, "test").is_err());
+        assert!(page_of(&config, 0, false).is_err());
     }
 
     // A valid note, so the vault's only problem is its missing Index.
@@ -300,7 +330,7 @@ mod tests {
     fn every_page(config: &Config, full: bool) -> String {
         let mut text = String::new();
         for page in 1.. {
-            let next = review(config, page, full, "test").unwrap();
+            let next = page_of(config, page, full).unwrap();
             text.push_str(&next);
             if !next.contains("more:") {
                 return text;
@@ -362,10 +392,6 @@ mod tests {
         assert!(text.contains("## check\n"), "{text}");
         assert!(text.contains("- Index.md: error: missing\n"), "{text}");
         assert!(!text.contains(cleanup::FILE), "{text}");
-        assert!(
-            cleanup::last(root).unwrap() > cleanup + day,
-            "the review read to its end is the new cleanup"
-        );
     }
 
     #[test]
@@ -399,38 +425,6 @@ mod tests {
     }
 
     #[test]
-    fn a_cleanup_counts_only_once_its_last_page_is_read() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir(tmp.path().join("Preferences")).unwrap();
-        for i in 0..80 {
-            fs::write(
-                tmp.path().join(format!("Preferences/rule-{i}.md")),
-                note("all repos", ""),
-            )
-            .unwrap();
-        }
-        let config = Config {
-            git_autocommit: false,
-            ..Config::new(tmp.path().to_path_buf())
-        };
-
-        let first = review(&config, 1, false, "test").unwrap();
-        assert!(
-            first.contains("more: call memory_review with page=2"),
-            "{first}"
-        );
-        assert_eq!(cleanup::last(tmp.path()), None);
-        let mut page = 2;
-        while review(&config, page, false, "test")
-            .unwrap()
-            .contains("more:")
-        {
-            page += 1;
-        }
-        assert!(cleanup::last(tmp.path()).is_some());
-    }
-
-    #[test]
     fn oversized_summary_is_paginated_without_loss() {
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir(tmp.path().join("Preferences")).unwrap();
@@ -447,7 +441,7 @@ mod tests {
 
         let mut lines = String::new();
         for page in 1.. {
-            let text = review(&config, page, false, "test").unwrap();
+            let text = page_of(&config, page, false).unwrap();
             assert!(
                 text.len() <= PAGE_BYTES,
                 "page {page}: {} bytes",

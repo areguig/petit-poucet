@@ -14,9 +14,10 @@ use crate::delete::{self, DeleteRequest};
 use crate::guard::ReadLog;
 use crate::move_note::{self, MoveRequest};
 use crate::note::Place;
+use crate::review_session::ReviewSession;
 use crate::save::{self, SaveRequest};
 use crate::vault::{Vault, note_file};
-use crate::{change, cleanup, context, index, lock, review, search, usage};
+use crate::{change, cleanup, context, index, lock, search, usage};
 
 // Clients that don't run hooks (Copilot in JetBrains IDEs) never get the session-start context.
 const INSTRUCTIONS: &str = "petit-poucet holds the user's memory: rules, decisions and verified facts. \
@@ -26,6 +27,7 @@ as project_dir before starting a task, and follow the rules it returns.";
 pub struct Server {
     config: Config,
     reads: ReadLog,
+    review: ReviewSession,
     #[expect(dead_code, reason = "read by the code #[tool_handler] generates")]
     tool_router: ToolRouter<Self>,
 }
@@ -191,7 +193,7 @@ impl Server {
     }
 
     #[tool(
-        description = "For a memory cleanup review, in pages: the notes, one line each under their folder (every note in a small vault, else preferences, changed folders and recently used folders), then the problems found in the whole vault. Reading the last page marks the cleanup done; `done: true` marks it again once its fixes are applied. Only for the memory-cleanup agent and the tidy-memory skill."
+        description = "For a memory cleanup review, in pages: the notes, one line each under their folder (every note in a small vault, else preferences, changed folders and recently used folders), then the problems found in the whole vault. Page 1 builds the review; the next pages come from it unchanged. Reading the last page marks the cleanup done; `done: true` marks it again once its fixes are applied. Only for the memory-cleanup agent and the tidy-memory skill."
     )]
     fn memory_review(
         &self,
@@ -206,7 +208,7 @@ impl Server {
                 "cleanup recorded: its fixes won't count towards the next reminder".to_string(),
             );
         }
-        review::review(
+        self.review.page(
             &self.config,
             req.page.unwrap_or(1),
             req.full.unwrap_or(false),
@@ -339,6 +341,7 @@ pub fn serve(config: Config) -> Result<(), String> {
     let server = Server {
         config,
         reads: ReadLog::default(),
+        review: ReviewSession::default(),
         tool_router: Server::tool_router(),
     };
     let runtime = tokio::runtime::Builder::new_current_thread()

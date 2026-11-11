@@ -35,6 +35,7 @@ mod priority;
 mod project;
 mod replace;
 mod review;
+mod review_session;
 mod save;
 mod search;
 mod secrets;
