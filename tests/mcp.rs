@@ -1830,6 +1830,68 @@ fn tools_accept_a_notes_short_name_and_the_guard_follows_it() {
     assert!(child.wait().unwrap().success());
 }
 
+// Agents link by the short name the session view shows; the link must survive check and a move (#246).
+#[test]
+fn a_link_by_short_name_is_saved_by_full_path_and_follows_a_move() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    let note = |title: &str, fact: &str| {
+        json!({
+            "type": "reference", "scope": "all repos", "title": title,
+            "summary": format!("{title} summary"), "fact": fact,
+            "source": "test on 2026-11-16", "how_to_apply": "Test.",
+        })
+    };
+    client.call(
+        "memory_save",
+        note(
+            "Always run the full test suite before committing",
+            "Run cargo test.",
+        ),
+    );
+    let (_, index) = client.call("memory_index", json!({"project_dir": home.path()}));
+    assert!(index.contains("- [[always-run-the-full]] — "), "{index}");
+
+    let (is_error, reply) = client.call(
+        "memory_save",
+        note(
+            "Push rules",
+            "Tests first: [[always-run-the-full]]. See [[gone-note]].",
+        ),
+    );
+    assert!(
+        !is_error && reply.contains("\nwarning: broken link [[gone-note]]\n"),
+        "{reply}"
+    );
+    let (is_error, text) = client.call(
+        "memory_move",
+        json!({"path": "always-run-the-full", "new_path": "Preferences/full-suite"}),
+    );
+    assert!(!is_error, "{text}");
+    let push_rules = std::fs::read_to_string(vault.join("Preferences/push-rules.md")).unwrap();
+    assert!(
+        push_rules.contains("Tests first: [[Preferences/full-suite]]. See [[gone-note]]."),
+        "{push_rules}"
+    );
+    drop(client);
+    assert!(child.wait().unwrap().success());
+
+    let check = petit_poucet(home.path())
+        .env("PETIT_POUCET_VAULT", &vault)
+        .arg("check")
+        .output()
+        .unwrap();
+    assert_eq!(
+        stdout(&check),
+        "Preferences/push-rules.md: error: broken link [[gone-note]]\nnotes: 2, errors: 1, warnings: 0\n"
+    );
+}
+
 // A multi-word query leaves out the notes matching only one common term (#120).
 #[test]
 fn search_drops_notes_matching_under_half_the_terms() {

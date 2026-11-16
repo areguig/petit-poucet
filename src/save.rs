@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::check::MAX_BODY_CHARS;
+use crate::check::{self, MAX_BODY_CHARS};
 use crate::config::Config;
 use crate::note::{self, ALL_REPOS, Frontmatter, NoteType, REQUIRED_TAG};
 use crate::project::{self, IDENTITY_FILE};
@@ -121,6 +121,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         req.source.trim(),
         req.how_to_apply.trim()
     );
+    let body = links_by_full_path(&vault, &body);
 
     let file = format!("{path}.md");
     let mut changed = vec![file.clone()];
@@ -153,6 +154,10 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
             list.join(", ")
         ));
     }
+    for message in note::links(&saved.body).filter_map(|target| check::broken_link(&vault, target))
+    {
+        reply.push(format!("warning: {message}"));
+    }
     if body.chars().count() > MAX_BODY_CHARS {
         reply.push(format!(
             "warning: longer than {MAX_BODY_CHARS} characters: one short fact per note"
@@ -173,6 +178,14 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     }
     reply.extend(commit_warning);
     Ok((path, reply.join("\n")))
+}
+
+// Agents copy the short names the session view shows; check, Obsidian and moves follow full paths only (#246).
+fn links_by_full_path(vault: &Vault, body: &str) -> String {
+    note::map_links(body, |target| {
+        let note = change::find_note(vault, target).ok()?;
+        (note.path != target).then(|| note.path.clone())
+    })
 }
 
 // Returns the note type once every required field is there.
@@ -573,6 +586,29 @@ mod tests {
         update.user_confirmed = true;
         let reply = save(&config, update, "test").unwrap().1;
         assert_eq!(warning_of(&reply), None, "{reply}");
+    }
+
+    #[test]
+    fn links_by_short_name_are_saved_by_full_path_and_unknown_ones_warned() {
+        let (_tmp, config) = vault();
+        save(
+            &config,
+            request("Commit rules and their exceptions"),
+            "test",
+        )
+        .unwrap();
+        let mut req = request("Push rules");
+        req.fact = "See [[commit-rules-and-their]], [[Preferences/commit-rules-and-their-exceptions|its rules]] and [[nowhere]].".into();
+        let reply = save(&config, req, "test").unwrap().1;
+        assert!(
+            reply.contains("\nwarning: broken link [[nowhere]]\n"),
+            "{reply}"
+        );
+        assert!(
+            read(&config, "Preferences/push-rules").body.contains(
+                "See [[Preferences/commit-rules-and-their-exceptions]], [[Preferences/commit-rules-and-their-exceptions|its rules]] and [[nowhere]]."
+            )
+        );
     }
 
     #[test]
