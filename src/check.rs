@@ -7,7 +7,7 @@ use crate::note::{self, REQUIRED_TAG};
 use crate::project::IDENTITY_FILE;
 use crate::sync_conflict::{self, Conflict};
 use crate::vault::{INDEX_FILE, PREFERENCES, PROJECTS, TOPICS, Vault};
-use crate::{checkouts, context, duplicates, index, secrets, stale_paths};
+use crate::{change, checkouts, context, duplicates, index, secrets, stale_paths};
 
 // A note is one short fact; past this the body is probably several facts or history.
 pub const MAX_BODY_CHARS: usize = 1500;
@@ -77,10 +77,8 @@ pub fn check(vault: &Vault, limits: &Limits) -> Vec<Issue> {
         if !note.body.contains("**Why:**") {
             error("missing **Why:** line".into());
         }
-        for target in note::links(&note.body) {
-            if !link_exists(vault, target) {
-                error(format!("broken link [[{target}]]"));
-            }
+        for message in note::links(&note.body).filter_map(|target| broken_link(vault, target)) {
+            error(message);
         }
         let tags = note.frontmatter.as_ref().map_or(&[][..], |fm| &fm.tags);
         if let Some(kind) = secrets::find(&note.body)
@@ -189,9 +187,19 @@ pub fn check(vault: &Vault, limits: &Limits) -> Vec<Issue> {
     issues
 }
 
-fn link_exists(vault: &Vault, target: &str) -> bool {
-    let target = target.strip_suffix(".md").unwrap_or(target);
-    vault.has_note(target) || vault.root.join(target).is_file()
+// Agents may link by the short name the session view shows, which only a full path keeps working (#246).
+pub fn broken_link(vault: &Vault, target: &str) -> Option<String> {
+    let path = target.strip_suffix(".md").unwrap_or(target);
+    if vault.has_note(path) || vault.root.join(target).is_file() {
+        return None;
+    }
+    Some(match change::find_note(vault, target) {
+        Ok(note) => format!(
+            "broken link [[{target}]]: use the full path [[{}]]",
+            note.path
+        ),
+        Err(_) => format!("broken link [[{target}]]"),
+    })
 }
 
 // Syncthing keeps the most recently modified version under the original name, so a copy is the older one.
@@ -279,6 +287,32 @@ mod tests {
 
     fn limits() -> Limits {
         crate::config::Config::new(std::path::PathBuf::new()).limits
+    }
+
+    #[test]
+    fn a_link_by_short_name_is_broken_and_names_the_full_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join(PREFERENCES)).unwrap();
+        fs::write(
+            tmp.path().join(format!(
+                "{PREFERENCES}/commit-rules-and-their-exceptions.md"
+            )),
+            "x",
+        )
+        .unwrap();
+        let vault = Vault::load(tmp.path()).unwrap();
+        assert_eq!(
+            broken_link(&vault, "commit-rules-and-their"),
+            Some("broken link [[commit-rules-and-their]]: use the full path [[Preferences/commit-rules-and-their-exceptions]]".into())
+        );
+        assert_eq!(
+            broken_link(&vault, "nowhere"),
+            Some("broken link [[nowhere]]".into())
+        );
+        assert_eq!(
+            broken_link(&vault, "Preferences/commit-rules-and-their-exceptions"),
+            None
+        );
     }
 
     #[test]
