@@ -95,6 +95,22 @@ pub fn changed(dir: &Path) -> Result<Vec<String>, String> {
         .collect())
 }
 
+// Tracked files and the untracked ones git doesn't ignore, from `dir` down; none when it is no repository.
+pub fn files(dir: &Path) -> Vec<String> {
+    git(
+        dir,
+        &[
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
+    )
+    .map(|out| out.split_terminator('\0').map(str::to_string).collect())
+    .unwrap_or_default()
+}
+
 pub fn toplevel(dir: &Path) -> Option<String> {
     git(dir, &["rev-parse", "--show-toplevel"])
         .ok()
