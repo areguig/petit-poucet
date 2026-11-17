@@ -2180,3 +2180,57 @@ fn memory_index_pages_hold_the_sync_conflict_copies_a_session_left_out() {
     drop(client);
     child.wait().unwrap();
 }
+
+// A topic listing names notes by short name under the folder heading; agents put the folder back in front (#253).
+#[test]
+fn a_short_name_written_with_its_folder_finds_the_note() {
+    let home = TempDir::new().unwrap();
+    let vault = home.path().join("vault");
+    petit_poucet(home.path())
+        .args(["init", vault.to_str().unwrap()])
+        .assert()
+        .success();
+    let (mut child, mut client, _) = start(home.path());
+    for title in [
+        "Reading workload logs through cloud logging",
+        "Reverse proxy ports",
+    ] {
+        let (is_error, text) = client.call(
+            "memory_save",
+            json!({
+                "type": "reference", "topic": "lab", "title": title,
+                "summary": format!("{title} summary"), "fact": format!("{title} fact."),
+                "source": "test on 2026-11-17", "how_to_apply": "Test.",
+            }),
+        );
+        assert!(!is_error, "{text}");
+    }
+    let (_, listing) = client.call(
+        "memory_index",
+        json!({"project_dir": home.path(), "topic": "lab"}),
+    );
+    assert!(
+        listing.contains("- [[reading-workload-logs-through]] — "),
+        "{listing}"
+    );
+
+    let (is_error, text) = client.call(
+        "memory_read",
+        json!({"path": "Topics/lab/reading-workload-logs-through"}),
+    );
+    assert!(
+        !is_error && text.contains("Reading workload logs through cloud logging fact."),
+        "{text}"
+    );
+    let (is_error, text) = client.call(
+        "memory_read",
+        json!({"path": "Topics/other/reading-workload-logs-through"}),
+    );
+    assert!(
+        is_error && text.contains("no note at Topics/other/reading-workload-logs-through"),
+        "{text}"
+    );
+
+    drop(client);
+    assert!(child.wait().unwrap().success());
+}
