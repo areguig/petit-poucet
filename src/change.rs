@@ -14,13 +14,21 @@ pub fn find_note<'a>(vault: &'a Vault, name: &str) -> Result<&'a Note, String> {
         return Ok(note);
     }
     let prefix = format!("{name}-");
-    let by_slug = |keep: &dyn Fn(&str) -> bool| -> Vec<&Note> {
-        let slug_kept = |n: &&Note| keep(short_name::slug_of(&n.path));
-        vault.notes.iter().filter(slug_kept).collect()
+    // Agents put the folder from the Index heading in front of a short name (#253).
+    let with_folder = name.contains('/');
+    let key = |path: &'a str| {
+        if with_folder {
+            path
+        } else {
+            short_name::slug_of(path)
+        }
     };
-    let mut candidates = by_slug(&|slug| slug == name);
+    let by_key = |keep: &dyn Fn(&str) -> bool| -> Vec<&Note> {
+        vault.notes.iter().filter(|n| keep(key(&n.path))).collect()
+    };
+    let mut candidates = by_key(&|key| key == name);
     if candidates.is_empty() {
-        candidates = by_slug(&|slug| slug.starts_with(&prefix));
+        candidates = by_key(&|key| key.starts_with(&prefix));
     }
     match candidates[..] {
         [] => Err(format!("no note at {name}")),
@@ -175,6 +183,15 @@ mod tests {
             Ok("Projects/app/deploy-steps")
         );
         assert_eq!(found(&vault, "always-run-the-full").as_deref(), Ok(suite));
+        assert_eq!(
+            found(&vault, "Preferences/always-run-the-full").as_deref(),
+            Ok(suite),
+            "a short name written with its folder"
+        );
+        assert!(
+            found(&vault, "Projects/always-run-the-full").is_err(),
+            "the folder must be the note's"
+        );
         assert_eq!(
             found(&vault, "use").as_deref(),
             Ok("Preferences/use"),
