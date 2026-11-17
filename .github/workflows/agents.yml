@@ -38,16 +38,18 @@ jobs:
           - agent: cursor
             install: sh .github/download.sh https://cursor.com/install | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
             install-windows: irm @download 'https://cursor.com/install?win32=true' | iex
-          # On Windows, the v2026.9.24 installer can't switch to a pinned commit (checkout aborts on "local changes"):
-          # the current installer runs instead, which takes Hermes's latest stable release.
-          # Hermes Agent v2026.9.24: its installer is taken from the same commit, since newer ones expect newer files.
+          # Hermes Agent v0.23.2: its installer is taken from the same commit, since newer ones expect newer files.
+          # v2026.9.24 died now and then importing prompt_toolkit at startup, before petit-poucet ran (3 of 63 Linux jobs).
           - agent: hermes
-            version: f97608f178d1ffeca59860195ab7da295f7c8e5f
+            version: ae2a81ccc00e9b7c06301523e5bb09608397149c
             install: |
               ref=$VERSION; commit="--commit $VERSION"
               [ "$VERSION" = latest ] && ref=main commit=
               sh .github/download.sh "https://raw.githubusercontent.com/NousResearch/hermes-agent/$ref/scripts/install.sh" | bash -s -- $commit --non-interactive --skip-browser --skip-computer-use && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-            install-windows: "& ([scriptblock]::Create((irm @download https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1))) -NonInteractive -SkipComputerUse"
+            install-windows: |
+              $ref = $VERSION; $commit = @{ Commit = $VERSION }
+              if ($VERSION -eq 'latest') { $ref = 'main'; $commit = @{} }
+              & ([scriptblock]::Create((irm @download "https://raw.githubusercontent.com/NousResearch/hermes-agent/$ref/scripts/install.ps1"))) -NonInteractive -SkipComputerUse @commit
           # Antigravity's installer always fetches the manifest's current release and takes no version: always the latest.
           - agent: antigravity
             install: sh .github/download.sh https://antigravity.google/cli/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
