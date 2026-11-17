@@ -8,6 +8,9 @@ unset XDG_CONFIG_HOME
 export OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1
 # OpenCode's Code Mode offers MCP tools through its `execute` tool, which runs code calling them.
 export REVIEW_TOOL=execute REVIEW_ARGS='{"code": "return await tools[\"petit-poucet\"].memory_review({})"}'
+export READ_TOOL=execute READ_ARGS='{"code": "return await tools[\"petit-poucet\"].memory_read({path: \"{name}\"})"}'
+# A JSON object is a JS object literal too, once its quotes are escaped for the code string.
+export SAVE_TOOL=execute SAVE_ARGS="{\"code\": \"return await tools[\\\"petit-poucet\\\"].memory_save($(printf '%s' "$preference_json" | sed 's/"/\\"/g'))\"}"
 start_model
 mkdir -p "$HOME/.config/opencode"
 cat > "$HOME/.config/opencode/opencode.json" <<JSON
@@ -22,6 +25,8 @@ cat > "$HOME/.config/opencode/opencode.json" <<JSON
 }
 JSON
 has "$("$pp" setup)" '^OpenCode: set up'
+doctor
+oversize_memory opencode
 # OpenCode's background service starts here, with this script's environment, and outlives each `opencode run`:
 # the reminder the plugin sends once a turn ends still runs.
 trap 'opencode service stop >/dev/null 2>&1; kill $model_pid' EXIT
@@ -53,6 +58,18 @@ cd "$work"
 opencode run --auto petit-poucet-review </dev/null >/dev/null
 cd "$repo"
 check_review
+
+probe_note opencode
+cd "$work"
+opencode run --auto petit-poucet-read </dev/null >/dev/null
+cd "$repo"
+check_read
+
+before_save
+cd "$work"
+opencode run --auto petit-poucet-save </dev/null >/dev/null
+cd "$repo"
+check_save
 
 has "$("$pp" setup --check)" '^OpenCode: set up'
 

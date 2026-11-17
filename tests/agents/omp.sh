@@ -4,6 +4,8 @@
 . "$(dirname "$0")/lib.sh"
 
 export REVIEW_TOOL=mcp__petit_poucet_memory_review
+export READ_TOOL=mcp__petit_poucet_memory_read READ_ARGS='{"path": "{name}"}'
+export SAVE_TOOL=mcp__petit_poucet_memory_save SAVE_ARGS="$preference_json"
 start_model
 mkdir -p "$HOME/.omp/agent"
 cat > "$HOME/.omp/agent/models.yml" <<YAML
@@ -15,6 +17,8 @@ providers:
     models: [{id: mock, name: mock}]
 YAML
 has "$("$pp" setup)" '^omp: set up'
+doctor
+oversize_memory omp
 # A subagent of its own folder: omp skips ~/.claude/agents.
 [ -f "$HOME/.omp/agent/agents/memory-cleanup.md" ] || fail "no memory-cleanup subagent for omp"
 
@@ -30,6 +34,18 @@ cd "$(mktemp -d)"
 omp -p --model mock/mock --no-title --approval-mode yolo petit-poucet-review </dev/null >/dev/null
 cd "$repo"
 check_review
+
+probe_note omp
+cd "$(mktemp -d)"
+omp -p --model mock/mock --no-title --approval-mode yolo petit-poucet-read </dev/null >/dev/null
+cd "$repo"
+check_read
+
+before_save
+cd "$(mktemp -d)"
+omp -p --model mock/mock --no-title --approval-mode yolo petit-poucet-save </dev/null >/dev/null
+cd "$repo"
+check_save
 
 has "$("$pp" setup --check)" '^omp: set up'
 

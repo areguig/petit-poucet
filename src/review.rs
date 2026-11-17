@@ -1,25 +1,44 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
 use std::time::SystemTime;
 
 use jiff::civil::Date;
 
 use crate::config::{Config, Limits};
-use crate::index::NO_SUMMARY;
+use crate::index::{NO_SUMMARY, when_suffix};
 use crate::note::Note;
+use crate::paging::{Item, paginate};
 use crate::usage::{self, Activity};
 use crate::vault::{Vault, folder};
 use crate::{check, cleanup, priority, unused};
 
-// Antigravity CLI saves a tool result over about 4 KB to a file: the smallest limit of the supported agents.
+// An older Antigravity CLI saved a tool result over about 4 KB to a file; 1.5.3 passes at least 7,825 bytes inline.
 pub const PAGE_BYTES: usize = 3 * 1024;
 
 const LEGEND: &str = "slug | type | created[/updated] | reads and last read | summary";
 
-type Item = (String, String);
+// A review's pages as built at one moment: reading its last page records the cleanup and a read changes a note's line,
+// so pages built again for each call would not be the same review.
+pub struct Review {
+    pub full: bool,
+    pub started: SystemTime,
+    pages: Vec<String>,
+}
+
+impl Review {
+    pub fn page(&self, page: usize) -> Result<&str, String> {
+        self.pages
+            .get(page.wrapping_sub(1))
+            .map(String::as_str)
+            .ok_or_else(|| format!("no page {page}: the review has {} pages", self.pages.len()))
+    }
+
+    pub fn ends_at(&self, page: usize) -> bool {
+        page == self.pages.len()
+    }
+}
 
 // Every note in a small vault or on demand, else folders by priority; then the whole vault's problems, never cut.
-pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<String, String> {
+pub fn review(config: &Config, full: bool) -> Result<Review, String> {
     let started = SystemTime::now();
     let vault = Vault::load(&config.vault)?;
     let since = cleanup::last(&vault.root);
@@ -52,7 +71,9 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
         let reserved = header(&root, &scope_of(shown.len()), usize::MAX, usize::MAX).len()
             + more(usize::MAX, full).len();
         let items: Vec<Item> = shown.iter().chain(&findings).cloned().collect();
-        paginate(&items, PAGE_BYTES.saturating_sub(reserved))
+        paginate(&items, PAGE_BYTES.saturating_sub(reserved), "", |section| {
+            format!("## {section}\n")
+        })
     };
     let shown: Vec<Item> = match full || vault.notes.len() <= limits.full_review_max_notes {
         true => vault.notes.iter().map(|n| item(n, &activity)).collect(),
@@ -60,20 +81,24 @@ pub fn review(config: &Config, page: usize, full: bool, agent: &str) -> Result<S
             pages_of(items).len()
         }),
     };
-    let pages = pages_of(&shown);
-    let Some(body) = pages.get(page.wrapping_sub(1)) else {
-        return Err(format!(
-            "no page {page}: the review has {} pages",
-            pages.len()
-        ));
-    };
-    let mut out = header(&root, &scope_of(shown.len()), page, pages.len()) + body;
-    if page < pages.len() {
-        out.push_str(&more(page + 1, full));
-    } else {
-        cleanup::record(config, started, agent)?;
-    }
-    Ok(out)
+    let bodies = pages_of(&shown);
+    let scope = scope_of(shown.len());
+    let pages = (1..)
+        .zip(&bodies)
+        .map(|(page, body)| {
+            let next = if page < bodies.len() {
+                more(page + 1, full)
+            } else {
+                String::new()
+            };
+            header(&root, &scope, page, bodies.len()) + body + &next
+        })
+        .collect();
+    Ok(Review {
+        full,
+        started,
+        pages,
+    })
 }
 
 fn header(root: &str, scope: &str, page: usize, pages: usize) -> String {
@@ -144,40 +169,6 @@ fn scope(
     }
 }
 
-// Items are (section, line); a page that continues a section repeats its heading, and a line too long for a page goes on over the next ones.
-fn paginate(items: &[Item], budget: usize) -> Vec<String> {
-    let mut pages = vec![String::new()];
-    let mut heading = "";
-    for (section, line) in items {
-        let mut rest = line.as_str();
-        loop {
-            let page = pages.last_mut().unwrap();
-            let starts = page.is_empty() || section != heading;
-            let title = if starts { section.len() + 4 } else { 0 };
-            let room = budget.saturating_sub(page.len() + title + 1);
-            if rest.len() > room && !page.is_empty() {
-                pages.push(String::new());
-                continue;
-            }
-            // One character at least, so a budget too small for anything still moves on.
-            let end = rest
-                .floor_char_boundary(room)
-                .max(rest.ceil_char_boundary(1));
-            if starts {
-                writeln!(page, "## {section}").unwrap();
-                heading = section;
-            }
-            writeln!(page, "{}", &rest[..end]).unwrap();
-            rest = &rest[end..];
-            if rest.is_empty() {
-                break;
-            }
-            pages.push(String::new());
-        }
-    }
-    pages
-}
-
 fn item(note: &Note, activity: &Activity) -> Item {
     let fm = note.frontmatter.as_ref().ok();
     let dates = fm.map_or("-".to_string(), |f| match f.updated {
@@ -192,9 +183,10 @@ fn item(note: &Note, activity: &Activity) -> Item {
         });
     let slug = note.path.rsplit('/').next().unwrap_or(&note.path);
     let line = format!(
-        "- {slug} | {} | {dates} | {reads} | {}",
+        "- {slug} | {} | {dates} | {reads} | {}{}",
         fm.map_or("invalid", |f| f.note_type.name()),
         note.summary().unwrap_or(NO_SUMMARY),
+        when_suffix(note),
     );
     (folder(&note.path).to_string(), line)
 }
@@ -207,10 +199,35 @@ mod tests {
 
     use super::*;
 
+    // Built anew for each page, as a session that asks for a page without having read page 1 gets it.
+    fn page_of(config: &Config, page: usize, full: bool) -> Result<String, String> {
+        review(config, full)?.page(page).map(str::to_string)
+    }
+
     fn note(scope: &str, extra: &str) -> String {
         format!(
             "---\ntype: feedback\nscope: {scope}\nsummary: s\ncreated: 2026-09-01\n{extra}tags: [agent-memory]\n---\n**Why:** x\n"
         )
+    }
+
+    #[test]
+    fn a_situational_preference_shows_when_it_applies() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("Preferences")).unwrap();
+        fs::write(
+            tmp.path().join("Preferences/rust.md"),
+            note("all repos", "applies_when: editing Rust\n"),
+        )
+        .unwrap();
+        let config = Config {
+            git_autocommit: false,
+            ..Config::new(tmp.path().to_path_buf())
+        };
+        let text = page_of(&config, 1, false).unwrap();
+        assert!(
+            text.contains("| never | s (when: editing Rust)\n"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -236,7 +253,7 @@ mod tests {
             ..Config::new(tmp.path().to_path_buf())
         };
 
-        let text = review(&config, 1, false, "test").unwrap();
+        let text = page_of(&config, 1, false).unwrap();
         assert!(
             text.contains("\nfirst cleanup: all 3 notes, then the problems"),
             "{text}"
@@ -259,10 +276,10 @@ mod tests {
         );
         assert!(!text.contains("more:"), "{text}");
         assert_eq!(
-            review(&config, 2, false, "test").unwrap_err(),
+            page_of(&config, 2, false).unwrap_err(),
             "no page 2: the review has 1 pages"
         );
-        assert!(review(&config, 0, false, "test").is_err());
+        assert!(page_of(&config, 0, false).is_err());
     }
 
     // A valid note, so the vault's only problem is its missing Index.
@@ -313,7 +330,7 @@ mod tests {
     fn every_page(config: &Config, full: bool) -> String {
         let mut text = String::new();
         for page in 1.. {
-            let next = review(config, page, full, "test").unwrap();
+            let next = page_of(config, page, full).unwrap();
             text.push_str(&next);
             if !next.contains("more:") {
                 return text;
@@ -375,10 +392,6 @@ mod tests {
         assert!(text.contains("## check\n"), "{text}");
         assert!(text.contains("- Index.md: error: missing\n"), "{text}");
         assert!(!text.contains(cleanup::FILE), "{text}");
-        assert!(
-            cleanup::last(root).unwrap() > cleanup + day,
-            "the review read to its end is the new cleanup"
-        );
     }
 
     #[test]
@@ -412,38 +425,6 @@ mod tests {
     }
 
     #[test]
-    fn a_cleanup_counts_only_once_its_last_page_is_read() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir(tmp.path().join("Preferences")).unwrap();
-        for i in 0..80 {
-            fs::write(
-                tmp.path().join(format!("Preferences/rule-{i}.md")),
-                note("all repos", ""),
-            )
-            .unwrap();
-        }
-        let config = Config {
-            git_autocommit: false,
-            ..Config::new(tmp.path().to_path_buf())
-        };
-
-        let first = review(&config, 1, false, "test").unwrap();
-        assert!(
-            first.contains("more: call memory_review with page=2"),
-            "{first}"
-        );
-        assert_eq!(cleanup::last(tmp.path()), None);
-        let mut page = 2;
-        while review(&config, page, false, "test")
-            .unwrap()
-            .contains("more:")
-        {
-            page += 1;
-        }
-        assert!(cleanup::last(tmp.path()).is_some());
-    }
-
-    #[test]
     fn oversized_summary_is_paginated_without_loss() {
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir(tmp.path().join("Preferences")).unwrap();
@@ -460,7 +441,7 @@ mod tests {
 
         let mut lines = String::new();
         for page in 1.. {
-            let text = review(&config, page, false, "test").unwrap();
+            let text = page_of(&config, page, false).unwrap();
             assert!(
                 text.len() <= PAGE_BYTES,
                 "page {page}: {} bytes",
@@ -476,49 +457,5 @@ mod tests {
             }
         }
         assert!(lines.contains(&summary), "{lines}");
-    }
-
-    #[test]
-    fn pages_fit_the_budget_repeat_their_heading_and_keep_every_line_in_order() {
-        let items: Vec<(String, String)> = (0..150)
-            .map(|i| {
-                let section = if i < 100 { "Projects/big" } else { "check" };
-                (
-                    section.to_string(),
-                    format!("- line {i} of about the length of a real one"),
-                )
-            })
-            .collect();
-
-        let pages = paginate(&items, PAGE_BYTES);
-        assert!(pages.len() > 2);
-        let mut lines = Vec::new();
-        for page in &pages {
-            assert!(page.len() <= PAGE_BYTES, "{} bytes", page.len());
-            assert!(page.starts_with("## "), "{page}");
-            lines.extend(page.lines().filter(|l| !l.starts_with("## ")));
-        }
-        let expected: Vec<&str> = items.iter().map(|(_, line)| line.as_str()).collect();
-        assert_eq!(lines, expected);
-    }
-
-    #[test]
-    fn a_line_too_long_for_its_page_goes_on_after_the_repeated_heading_between_characters() {
-        let section = format!("Projects/{}", "a".repeat(100));
-        let long = format!("- x{}", "é".repeat(200));
-        let items = vec![
-            (section.clone(), "- short".to_string()),
-            (section.clone(), long.clone()),
-        ];
-
-        let pages = paginate(&items, 300);
-        assert!(pages.len() > 2);
-        let mut text = String::new();
-        for page in &pages {
-            assert!(page.len() <= 300, "{} bytes: {page}", page.len());
-            let body = page.strip_prefix(&format!("## {section}\n")).unwrap();
-            text.extend(body.lines());
-        }
-        assert_eq!(text, format!("- short{long}"));
     }
 }

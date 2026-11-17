@@ -300,10 +300,7 @@ fn two_machines_share_one_vault_through_syncthing() {
         "the server's own .stignore keeps it off"
     );
     let (reply, errors) = session_start(server.home.path(), "claude");
-    assert!(
-        reply.contains("[[Preferences/tabs]] — indent with tabs"),
-        "{reply}"
-    );
+    assert!(reply.contains("[[tabs]] — indent with tabs"), "{reply}");
     assert_eq!(errors, "");
     assert!(git_log(&server.vault).starts_with("sync: notes changed outside petit-poucet\n"));
     petit_poucet(server.home.path())

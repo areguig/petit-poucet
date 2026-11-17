@@ -30,7 +30,7 @@ fn contains(text: &str, term: &str) -> bool {
 }
 
 // Notes matching the most terms come first, and fewer than half of them is noise unless no note matches more;
-// then rare terms beat common ones, and the title weighs most, then the summary.
+// then rare terms beat common ones, and the title weighs most, then the summary and `applies_when`.
 pub fn search<'a>(notes: impl Iterator<Item = &'a Note>, query: &str) -> Vec<&'a Note> {
     let terms: Vec<String> = words(query, 2)
         .into_iter()
@@ -39,7 +39,12 @@ pub fn search<'a>(notes: impl Iterator<Item = &'a Note>, query: &str) -> Vec<&'a
     let weighed: Vec<(Vec<usize>, &Note)> = notes
         .map(|note| {
             let title = note.title().to_lowercase();
-            let summary = note.summary().unwrap_or_default().to_lowercase();
+            let summary = format!(
+                "{} {}",
+                note.summary().unwrap_or_default(),
+                note.applies_when().unwrap_or_default()
+            )
+            .to_lowercase();
             let body = note.body.to_lowercase();
             let weights = terms
                 .iter()

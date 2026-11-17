@@ -50,11 +50,11 @@ irm https://raw.githubusercontent.com/areguig/petit-poucet/main/install.ps1 | ie
 petit-poucet setup
 ```
 
-Then restart your agents. To update later: `petit-poucet update`; session start tells you when a release is out. Already keeping memory elsewhere? Ask your agent to run the `migrate-memory` skill. Details, per-agent notes and settings: [install and set up](docs/setup.md).
+Then restart your agents. Run `petit-poucet doctor` to check the installation without changing it; each problem names the next command. To update later: `petit-poucet update`; session start tells you when a release is out. Already keeping memory elsewhere? Ask your agent to run the `migrate-memory` skill. Details, per-agent notes and settings: [install and set up](docs/setup.md).
 
 ## What your agent sees
 
-At the start of every session, the agent gets your rules and an Index of what applies here: your preferences and the current repo's notes, one line each. It opens only the notes a task needs.
+At the start of every session, the agent gets your rules and an Index of what applies here: your preferences and the current repo's notes, one line each. It opens only the notes a task needs. A preference that applies only in some situations (one stack, one kind of task) is not loaded: the session says how many there are, and the agent finds them by what it is doing.
 
 ```
 🪨 petit-poucet · 20 notes loaded (preferences + chargepath-api)
@@ -62,11 +62,11 @@ At the start of every session, the agent gets your rules and an Index of what ap
 
 ```markdown
 ## Preferences (all repos)
-- [[Preferences/commit-rules]] — commit locally per step, 1-2 line message, never push
-- [[Preferences/never-read-secrets]] — use secret values only by piping them into commands, never print them
+- [[commit-rules]] — commit locally per step, 1-2 line message, never push
+- [[never-read-secrets]] — use secret values only by piping them into commands, never print them
 
 ## Projects / chargepath-api
-- [[Projects/chargepath-api/prod-db-no-postgis]] — the prod database has no PostGIS: spatial queries must work without it
+- [[prod-db-no-postgis]] — the prod database has no PostGIS: spatial queries must work without it
 ```
 
 ## On several machines

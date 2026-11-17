@@ -40,6 +40,12 @@ pub struct Frontmatter {
     pub updated: Option<Date>,
     #[serde(default)]
     pub tags: Vec<String>,
+    // Preferences only: when it applies; absent means always.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applies_when: Option<String>,
+    // Keys petit-poucet doesn't know (Obsidian's aliases, cssclasses, plugin keys): a rewrite keeps them.
+    #[serde(flatten)]
+    pub other: serde_json::Map<String, serde_json::Value>,
 }
 
 // `path` is relative to the vault root, without `.md`, as in `[[links]]`.
@@ -78,6 +84,17 @@ impl Note {
     pub fn summary(&self) -> Option<&str> {
         let summary = self.frontmatter.as_ref().ok()?.summary.as_deref()?.trim();
         (!summary.is_empty()).then_some(summary)
+    }
+
+    pub fn applies_when(&self) -> Option<&str> {
+        let when = self
+            .frontmatter
+            .as_ref()
+            .ok()?
+            .applies_when
+            .as_deref()?
+            .trim();
+        (!when.is_empty()).then_some(when)
     }
 }
 
@@ -224,6 +241,19 @@ mod tests {
         let text = render(&fm, "").unwrap();
         assert!(
             text.contains(&format!("summary: {}\n", fm.summary.as_ref().unwrap())),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn render_keeps_the_keys_it_does_not_know_after_its_own() {
+        let yaml = "aliases: [seven, \"007\"]\ntype: user\nscope: all repos\ncssclasses: wide\nsummary: s\ncreated: 2026-09-14\ntags: [agent-memory]\nplugin:\n  depth: 2\n  enabled: true\n";
+        let fm: Frontmatter = parse_yaml(yaml).unwrap();
+        let text = render(&fm, "").unwrap();
+        assert!(
+            text.ends_with(
+                "tags:\n- agent-memory\naliases:\n- seven\n- \"007\"\ncssclasses: wide\nplugin:\n  depth: 2\n  enabled: true\n---\n\n"
+            ),
             "{text}"
         );
     }

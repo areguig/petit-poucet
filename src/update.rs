@@ -93,12 +93,27 @@ fn keep_own_handles() {
 
 // The latest release's version; None offline, on failure or without curl.
 pub fn latest() -> Option<Version> {
+    latest_with_timeout(Duration::from_secs(10))
+}
+
+pub fn latest_with_timeout(timeout: Duration) -> Option<Version> {
     let url = std::env::var(RELEASE_ENV).unwrap_or_else(|_| RELEASE.to_string());
     let output = Command::new("curl")
-        .args(["-fsSL", "--max-time", "10", &url])
+        .args([
+            "-q",
+            "-fsSL",
+            "--max-time",
+            &timeout.as_secs_f64().to_string(),
+            "--max-filesize",
+            "1048576",
+            &url,
+        ])
         .stderr(Stdio::null())
         .output()
         .ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let release: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
     let tag = release["tag_name"].as_str()?;
     Version::parse(tag.trim_start_matches('v')).ok()

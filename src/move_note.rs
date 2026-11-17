@@ -11,7 +11,7 @@ use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MoveRequest {
     pub path: String,
-    /// `Preferences/<name>` or `Projects/<project>/<name>`, without `.md`.
+    /// `Preferences/<name>`, `Projects/<project>/<name>` or `Topics/<topic>/<name>`, without `.md`; `<name>` in lowercase letters, digits and hyphens.
     pub new_path: String,
     /// Required to move a `feedback` note to another scope: set only after the user confirmed.
     #[serde(default)]
@@ -61,7 +61,8 @@ pub fn move_note(
 }
 
 fn check_destination(vault: &Vault, new: &str) -> Result<(), String> {
-    let valid_name = |name: &str| !name.is_empty() && !name.starts_with(['.', '_']);
+    // The shape memory_save gives names: anything else could write lines into the Index or a path outside the vault.
+    let is_slug = |name: &str| !name.is_empty() && slug::slugify(name) == name;
     let known_project = |key: &str| {
         vault
             .projects
@@ -69,14 +70,14 @@ fn check_destination(vault: &Vault, new: &str) -> Result<(), String> {
             .any(|p| p.key == key && p.identity.is_ok())
     };
     let valid = match new.split('/').collect::<Vec<_>>()[..] {
-        [PREFERENCES, name] => valid_name(name),
-        [PROJECTS, key, name] => valid_name(name) && known_project(key),
-        [TOPICS, key, name] => valid_name(name) && !key.is_empty() && slug::slugify(key) == key,
+        [PREFERENCES, name] => is_slug(name),
+        [PROJECTS, key, name] => is_slug(name) && known_project(key),
+        [TOPICS, key, name] => is_slug(name) && is_slug(key),
         _ => false,
     };
     if !valid {
         return Err(format!(
-            "new_path must be {PREFERENCES}/<name>, {PROJECTS}/<known project>/<name> or {TOPICS}/<topic>/<name>"
+            "new_path must be {PREFERENCES}/<name>, {PROJECTS}/<known project>/<name> or {TOPICS}/<topic>/<name>, with <name> and <topic> in lowercase letters, digits and hyphens"
         ));
     }
     if vault.root.join(format!("{new}.md")).exists() {
@@ -257,6 +258,11 @@ mod tests {
             ("Elsewhere/fact", "new_path must be"),
             ("Topics/Bad Name/fact", "new_path must be"),
             ("Topics//fact", "new_path must be"),
+            ("Preferences/", "new_path must be"),
+            ("Preferences/.hidden", "new_path must be"),
+            ("Preferences/Fact Renamed", "new_path must be"),
+            ("Preferences/x]]\n- [[y", "new_path must be"),
+            (r"Preferences/a\..\escaped", "new_path must be"),
         ] {
             let err =
                 move_note(&config, request("Preferences/other", new_path), "test").unwrap_err();

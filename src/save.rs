@@ -5,17 +5,19 @@ use std::path::PathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::check::MAX_BODY_CHARS;
+use crate::check::{self, MAX_BODY_CHARS};
 use crate::config::Config;
 use crate::note::{self, ALL_REPOS, Frontmatter, NoteType, REQUIRED_TAG};
 use crate::project::{self, IDENTITY_FILE};
 use crate::vault::{PREFERENCES, PROJECTS, TOPICS, Vault, write_atomic};
-use crate::{change, duplicates, git, secrets};
+use crate::{change, context, duplicates, git, secrets};
+
+const PREFERENCE_SCOPE_REMINDER: &str = "Preferences are cross-project: make sure this one is, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move). If it applies only in some situations (one stack, one kind of task), give it `applies_when`: it then stays out of the session view and memory_search finds it.";
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(transform = require_fields_in_schema)]
 pub struct SaveRequest {
-    /// Existing note to update, e.g. `Preferences/commit-rules`; omit to create a note.
+    /// Existing note to update, by its Index name (`commit-rules`) or full path; omit to create a note.
     pub path: Option<String>,
     // The fields below default to empty so that `validate` can report every missing one at once.
     #[serde(rename = "type", default)]
@@ -41,6 +43,8 @@ pub struct SaveRequest {
     pub how_to_apply: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Preferences only: when it applies (one line), if only in some situations; it is then not loaded at session start. Omit for one that always applies; on update, omit to keep and an empty string clears it.
+    pub applies_when: Option<String>,
     /// Required to update a `feedback` note: set only after the user confirmed the change.
     #[serde(default)]
     pub user_confirmed: bool,
@@ -86,6 +90,13 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     };
 
     let updating = req.path.is_some();
+    let applies_when = match req.applies_when.as_deref().map(str::trim) {
+        Some(when) if !when.is_empty() && note::Place::of(&path) != note::Place::Preferences => {
+            return Err("applies_when is only for preferences (scope `all repos`)".to_string());
+        }
+        Some(when) => (!when.is_empty()).then(|| when.to_string()),
+        None => previous.and_then(|fm| fm.applies_when.clone()),
+    };
     // An update keeps the note's tags (some may come from the user, in Obsidian) and adds the requested ones.
     let mut tags = vec![REQUIRED_TAG.to_string()];
     for tag in previous.iter().flat_map(|fm| &fm.tags).chain(&req.tags) {
@@ -100,6 +111,8 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         created: previous.map_or(today, |fm| fm.created),
         updated: updating.then_some(today),
         tags,
+        applies_when,
+        other: previous.map(|fm| fm.other.clone()).unwrap_or_default(),
     };
     let body = format!(
         "# {}\n\n{}\n\n**Why:** {}\n**How to apply:** {}\n",
@@ -108,6 +121,7 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
         req.source.trim(),
         req.how_to_apply.trim()
     );
+    let body = links_by_full_path(&vault, &body);
 
     let file = format!("{path}.md");
     let mut changed = vec![file.clone()];
@@ -120,6 +134,8 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
     fs::create_dir_all(root.join(&file).parent().unwrap()).map_err(|e| e.to_string())?;
     write_atomic(&root.join(&file), &note::render(&frontmatter, &body)?)?;
 
+    let max = config.limits.session_start_max_bytes;
+    let omitted_before = context::omissions(&vault, note::Place::of(&path), max);
     let action = if updating { "update" } else { "create" };
     let (vault, commit_warning) =
         change::finish(config, changed, &format!("{action}: {path} ({agent})"))?;
@@ -138,27 +154,56 @@ pub fn save(config: &Config, req: SaveRequest, agent: &str) -> Result<(String, S
             list.join(", ")
         ));
     }
+    for message in note::links(&saved.body).filter_map(|target| check::broken_link(&vault, target))
+    {
+        reply.push(format!("warning: {message}"));
+    }
     if body.chars().count() > MAX_BODY_CHARS {
         reply.push(format!(
             "warning: longer than {MAX_BODY_CHARS} characters: one short fact per note"
         ));
     }
+    let worsened = context::omissions(&vault, note::Place::of(&path), max)
+        .into_iter()
+        .filter(|(session, (items, _))| *items > omitted_before.get(session).map_or(0, |(n, _)| *n))
+        .max_by_key(|(_, (items, _))| *items);
+    if let Some((session, (_, left_out))) = worsened {
+        let whose = session.map_or(String::new(), |p| format!(" in {p}"));
+        reply.push(format!(
+            "warning: a session{whose} now leaves {left_out} out of its {max}-byte budget: tidy memory with the user (merge or move notes)"
+        ));
+    }
+    if !updating && path.starts_with(&format!("{PREFERENCES}/")) {
+        reply.push(PREFERENCE_SCOPE_REMINDER.to_string());
+    }
     reply.extend(commit_warning);
     Ok((path, reply.join("\n")))
+}
+
+// Agents copy the short names the session view shows; check, Obsidian and moves follow full paths only (#246).
+fn links_by_full_path(vault: &Vault, body: &str) -> String {
+    note::map_links(body, |target| {
+        let note = change::find_note(vault, target).ok()?;
+        (note.path != target).then(|| note.path.clone())
+    })
 }
 
 // Returns the note type once every required field is there.
 fn validate(req: &SaveRequest) -> Result<NoteType, String> {
     let note_type = require_fields(req)?;
     let tags = req.tags.iter().map(|tag| ("tags", tag));
-    for (name, value) in text_fields(req).into_iter().chain(tags) {
+    let applies_when = req.applies_when.iter().map(|when| ("applies_when", when));
+    for (name, value) in text_fields(req).into_iter().chain(tags).chain(applies_when) {
         if let Some(kind) = secrets::find(value) {
             return Err(format!(
                 "{name} looks like a secret ({kind}): never store secrets"
             ));
         }
     }
-    for (name, value) in [("title", &req.title), ("summary", &req.summary)] {
+    for (name, value) in [("title", &req.title), ("summary", &req.summary)]
+        .into_iter()
+        .chain(req.applies_when.iter().map(|when| ("applies_when", when)))
+    {
         if value.trim().contains('\n') {
             return Err(format!("{name} must be one line"));
         }
@@ -311,6 +356,7 @@ mod tests {
             source: "the user said so on 2026-09-24".into(),
             how_to_apply: "Always.".into(),
             tags: vec!["git".into(), REQUIRED_TAG.into()],
+            applies_when: None,
             user_confirmed: false,
             unknown: Default::default(),
         }
@@ -321,11 +367,258 @@ mod tests {
         Note::parse(path.into(), &text)
     }
 
+    fn warning_of(reply: &str) -> Option<&str> {
+        reply.lines().find(|l| l.contains(" now leaves "))
+    }
+
+    // A budget that holds exactly two notes, so a third tips the view over it.
+    fn tight_vault() -> (tempfile::TempDir, Config) {
+        let (tmp, mut config) = vault();
+        save(&config, request("Rule aa"), "test").unwrap();
+        save(&config, request("Rule bb"), "test").unwrap();
+        let vault = Vault::load(&config.vault).unwrap();
+        config.limits.session_start_max_bytes =
+            crate::context::session_view(&vault, None, &[], usize::MAX)
+                .text
+                .len();
+        (tmp, config)
+    }
+
+    #[test]
+    fn a_new_preference_asks_to_confirm_its_scope_but_updates_and_other_notes_do_not() {
+        let (tmp, config) = vault();
+        let reply = save(&config, request("Rule aa"), "test").unwrap().1;
+        assert!(reply.lines().any(|l| l == PREFERENCE_SCOPE_REMINDER));
+        assert!(read(&config, "Preferences/rule-aa").frontmatter.is_ok());
+
+        let mut update = request("Rule aa");
+        update.path = Some("rule-aa".into());
+        update.user_confirmed = true;
+        assert!(
+            !save(&config, update, "test")
+                .unwrap()
+                .1
+                .contains("Preferences load")
+        );
+
+        let repo = tmp.path().join("my-repo");
+        fs::create_dir(&repo).unwrap();
+        let mut project = request("Deploy steps");
+        project.note_type = Some(NoteType::Project);
+        project.scope = None;
+        project.project_dir = Some(repo);
+        assert!(
+            !save(&config, project, "test")
+                .unwrap()
+                .1
+                .contains("Preferences load")
+        );
+
+        let mut topic = request("NAS backups");
+        topic.topic = Some("homelab".into());
+        assert!(
+            !save(&config, topic, "test")
+                .unwrap()
+                .1
+                .contains("Preferences load")
+        );
+    }
+
+    fn update_of(path: &str, title: &str) -> SaveRequest {
+        let mut update = request(title);
+        update.path = Some(path.into());
+        update.user_confirmed = true;
+        update
+    }
+
+    fn when_of(config: &Config, path: &str) -> Option<String> {
+        read(config, path).frontmatter.unwrap().applies_when
+    }
+
+    #[test]
+    fn applies_when_is_set_kept_and_cleared_on_a_preference() {
+        let (_tmp, config) = vault();
+        let mut create = request("Rule aa");
+        create.applies_when = Some("  editing Rust  ".into());
+        save(&config, create, "test").unwrap();
+        let path = "Preferences/rule-aa";
+        assert_eq!(when_of(&config, path).as_deref(), Some("editing Rust"));
+
+        save(&config, update_of(path, "Rule aa"), "test").unwrap();
+        assert_eq!(when_of(&config, path).as_deref(), Some("editing Rust"));
+
+        let mut change = update_of(path, "Rule aa");
+        change.applies_when = Some("writing Java".into());
+        save(&config, change, "test").unwrap();
+        assert_eq!(when_of(&config, path).as_deref(), Some("writing Java"));
+
+        let mut clear = update_of(path, "Rule aa");
+        clear.applies_when = Some(String::new());
+        save(&config, clear, "test").unwrap();
+        assert_eq!(when_of(&config, path), None);
+        let text = fs::read_to_string(config.vault.join(format!("{path}.md"))).unwrap();
+        assert!(!text.contains("applies_when"), "{text}");
+    }
+
+    #[test]
+    fn applies_when_is_refused_on_project_and_topic_notes_and_across_lines() {
+        let (tmp, config) = vault();
+        let repo = tmp.path().join("my-repo");
+        fs::create_dir(&repo).unwrap();
+        let mut project = request("Deploy steps");
+        project.note_type = Some(NoteType::Project);
+        project.scope = None;
+        project.project_dir = Some(repo);
+        project.applies_when = Some("deploying".into());
+        let err = save(&config, project, "test").unwrap_err();
+        assert!(err.contains("only for preferences"), "{err}");
+
+        let mut topic = request("NAS backups");
+        topic.topic = Some("homelab".into());
+        topic.applies_when = Some("backing up".into());
+        let err = save(&config, topic, "test").unwrap_err();
+        assert!(err.contains("only for preferences"), "{err}");
+
+        let mut lines = request("Rule aa");
+        lines.applies_when = Some("a\nb".into());
+        let err = save(&config, lines, "test").unwrap_err();
+        assert!(err.contains("applies_when must be one line"), "{err}");
+    }
+
+    #[test]
+    fn making_a_stated_rule_situational_needs_the_users_confirmation() {
+        let (_tmp, config) = vault();
+        save(&config, request("Rule aa"), "test").unwrap();
+        let mut update = update_of("rule-aa", "Rule aa");
+        update.applies_when = Some("editing Rust".into());
+        update.user_confirmed = false;
+        let err = save(&config, update, "test").unwrap_err();
+        assert!(err.contains("user_confirmed"), "{err}");
+        assert_eq!(when_of(&config, "Preferences/rule-aa"), None);
+    }
+
+    #[test]
+    fn a_save_that_fits_the_session_budget_adds_no_warning() {
+        let (_tmp, mut config) = tight_vault();
+        config.limits.session_start_max_bytes *= 2;
+        let reply = save(&config, request("Rule cc"), "test").unwrap().1;
+        assert_eq!(warning_of(&reply), None, "{reply}");
+    }
+
+    #[test]
+    fn a_save_that_tips_the_session_over_its_budget_says_so_and_still_saves() {
+        let (_tmp, config) = tight_vault();
+        let (path, reply) = save(&config, request("Rule cc"), "test").unwrap();
+        let vault = Vault::load(&config.vault).unwrap();
+        let left =
+            crate::context::session_view(&vault, None, &[], config.limits.session_start_max_bytes);
+        let left_out = left.left_out.expect("the view is over its budget");
+        let max = config.limits.session_start_max_bytes;
+        assert_eq!(
+            warning_of(&reply),
+            Some(
+                format!("warning: a session now leaves {left_out} out of its {max}-byte budget: tidy memory with the user (merge or move notes)").as_str()
+            ),
+            "{reply}"
+        );
+        assert!(vault.has_note(&path));
+    }
+
+    #[test]
+    fn a_preference_that_crowds_out_a_tight_project_s_notes_names_that_project() {
+        let (_tmp, mut config) = vault();
+        save(&config, request("Rule aa"), "test").unwrap();
+        for i in 0..3 {
+            let path = config.vault.join(format!("{PROJECTS}/alpha/fact-{i}.md"));
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, format!("---\ntype: project\nscope: alpha\nsummary: fact {i}\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Fact\n\n**Why:** x\n")).unwrap();
+        }
+        let tight = Vault::load(&config.vault).unwrap();
+        let max = crate::context::session_view(&tight, Some("alpha"), &[], usize::MAX)
+            .text
+            .len();
+        config.limits.session_start_max_bytes = max;
+        let reply = save(&config, request("Rule bb"), "test").unwrap().1;
+        let warning = warning_of(&reply).unwrap_or_else(|| panic!("{reply}"));
+        assert!(
+            warning.starts_with("warning: a session in alpha now leaves "),
+            "{warning}"
+        );
+    }
+
+    #[test]
+    fn a_preference_that_pushes_only_the_topics_list_out_of_the_session_warns() {
+        let (_tmp, mut config) = vault();
+        save(&config, request("Rule aa"), "test").unwrap();
+        save(&config, request("Rule bb"), "test").unwrap();
+        for i in 0..8 {
+            let topic = config
+                .vault
+                .join(format!("Topics/homelab-number-{i}/nas.md"));
+            fs::create_dir_all(topic.parent().unwrap()).unwrap();
+            fs::write(&topic, "x").unwrap();
+        }
+        let before = Vault::load(&config.vault).unwrap();
+        let (path, _) = save(&config, request("Rule cc"), "test").unwrap();
+        let with_cc = Vault::load(&config.vault).unwrap();
+        fs::remove_file(config.vault.join(format!("{path}.md"))).unwrap();
+        let view = |vault: &Vault, max| crate::context::session_view(vault, None, &[], max);
+        let max = (0..20_000)
+            .find(|&max| {
+                view(&before, max).left_out.is_none()
+                    && view(&with_cc, max).left_out.as_deref() == Some("the topics list")
+            })
+            .expect(
+                "a budget that fits two preferences and the topics, then loses only the topics",
+            );
+        config.limits.session_start_max_bytes = max;
+        let reply = save(&config, request("Rule cc"), "test").unwrap().1;
+        let warning = warning_of(&reply).unwrap_or_else(|| panic!("{reply}"));
+        assert!(warning.contains("the topics list"), "{warning}");
+    }
+
+    #[test]
+    fn an_update_that_leaves_the_overflow_as_it_was_adds_no_warning() {
+        let (_tmp, config) = tight_vault();
+        save(&config, request("Rule cc"), "test").unwrap();
+        let mut update = request("Rule cc");
+        update.path = Some("Preferences/rule-cc".into());
+        update.user_confirmed = true;
+        let reply = save(&config, update, "test").unwrap().1;
+        assert_eq!(warning_of(&reply), None, "{reply}");
+    }
+
+    #[test]
+    fn links_by_short_name_are_saved_by_full_path_and_unknown_ones_warned() {
+        let (_tmp, config) = vault();
+        save(
+            &config,
+            request("Commit rules and their exceptions"),
+            "test",
+        )
+        .unwrap();
+        let mut req = request("Push rules");
+        req.fact = "See [[commit-rules-and-their]], [[Preferences/commit-rules-and-their-exceptions|its rules]] and [[nowhere]].".into();
+        let reply = save(&config, req, "test").unwrap().1;
+        assert!(
+            reply.contains("\nwarning: broken link [[nowhere]]\n"),
+            "{reply}"
+        );
+        assert!(
+            read(&config, "Preferences/push-rules").body.contains(
+                "See [[Preferences/commit-rules-and-their-exceptions]], [[Preferences/commit-rules-and-their-exceptions|its rules]] and [[nowhere]]."
+            )
+        );
+    }
+
     #[test]
     fn creates_a_valid_note_and_updates_the_index() {
         let (_tmp, config) = vault();
         let reply = save(&config, request("Commit rules"), "test").unwrap().1;
-        assert_eq!(reply, "saved Preferences/commit-rules");
+        assert_eq!(
+            reply,
+            format!("saved Preferences/commit-rules\n{PREFERENCE_SCOPE_REMINDER}")
+        );
 
         let note = read(&config, "Preferences/commit-rules");
         let fm = note.frontmatter.as_ref().unwrap();
@@ -565,8 +858,8 @@ mod tests {
         second.summary = "commit each step locally, no push".into();
         let reply = save(&config, second, "test").unwrap().1;
         assert!(
-            reply.ends_with(
-                "similar notes, merge if they say the same: [[Preferences/commit-rules]]"
+            reply.contains(
+                "similar notes, merge if they say the same: [[Preferences/commit-rules]]\n"
             ),
             "{reply}"
         );

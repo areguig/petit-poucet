@@ -1,6 +1,5 @@
 mod agent;
 mod antigravity;
-mod budget;
 mod change;
 mod check;
 mod checkouts;
@@ -8,9 +7,11 @@ mod claude;
 mod cleanup;
 mod codex;
 mod config;
+mod context;
 mod copilot;
 mod cursor;
 mod delete;
+mod doctor;
 mod duplicates;
 mod edit;
 mod fillers;
@@ -28,16 +29,19 @@ mod move_note;
 mod note;
 mod omp;
 mod opencode;
+mod paging;
 mod pair;
 mod priority;
 mod project;
 mod replace;
 mod review;
+mod review_session;
 mod save;
 mod search;
 mod secrets;
 mod server;
 mod setup;
+mod short_name;
 mod skills;
 mod stale_paths;
 mod state;
@@ -76,6 +80,8 @@ enum Command {
         #[arg(long)]
         agent: agent::Agent,
     },
+    /// Diagnose the installation without changing it (0 healthy, 1 errors, 2 warnings)
+    Doctor,
     /// Validate the vault
     Check,
     /// Create a vault (default: ~/agent-memory) and the config file
@@ -111,6 +117,13 @@ enum HookEvent {
 
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
+        Command::Doctor => {
+            let items = doctor::run();
+            for item in &items {
+                println!("{item}");
+            }
+            return ExitCode::from(doctor::exit_code(&items));
+        }
         Command::Check => run_check(),
         Command::Init { path } => init::init(path).map(|msg| {
             println!("{msg}");

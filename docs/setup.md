@@ -87,7 +87,7 @@ Every agent shares the one vault. Its path lives in `~/.config/petit-poucet/conf
 | `active_days` | 30 | a folder used within this many days comes early in a big vault's review |
 | `unused_days` | 90 | a note not read, written or updated for this long is listed as unused |
 | `summary_max_chars` | 200 | `check` warns about longer summaries |
-| `index_max_notes` | 100 | `check` and session start warn when a session loads more notes |
+| `session_start_max_bytes` | 8000 | the most UTF-8 bytes a session start sends the agent; past it, whole lines are left out (preferences first), the agent is told what, and `check`, session start and `memory_save` warn; below 2,000 the config is refused |
 | `cleanup_reminder_notes` | 30 | session start reminds of a cleanup after this many changed notes |
 | `cleanup_reminder_days` | 30 | … or this many days since the last one |
 

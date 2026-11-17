@@ -45,24 +45,29 @@ The `memory-cleanup` agent reads it page by page:
 1. the notes, one line each under their folder: `slug | type | created[/updated] | reads | summary`;
 2. the problems found in the whole vault, always, never cut: what `check` finds, then the notes nobody opens (`## unused`).
 
+Page 1 builds the review and the agent's server keeps it: the following pages come from it, so a page number means the same notes whatever was read, saved or recorded meanwhile (reading the last page records the cleanup, which alone would change the next review). Asking for page 1 again, or for the other extent (`full`), builds a new one.
+
 A note is unused when it wasn't read, written or updated in the last `unused_days` (90). `feedback` notes are never listed: they apply from their Index line without being read. Nothing is listed until usage has counted for `unused_days`, so an upgrade doesn't call every old note unused.
 
 Which notes:
 - **small vault** (at most `full_review_max_notes`, 300): every note, at every cleanup;
 - **on demand** (`full: true`, when the user asks to review their whole memory): every note;
 - **bigger vault:** whole folders, in this order, until the review reaches `review_max_pages` (10):
-  1. `Preferences`, always: they load in every session;
+  1. `Preferences`, always: most load in every session, and the situational ones are reviewed here too (the review shows their `(when: …)`);
   2. every folder with a note changed since `.last-cleanup` (every folder at the first cleanup), always;
   3. folders used in the last `active_days` (30), from reads and session loads in `.usage/`, most recent first;
   4. the other folders, while pages last.
 
-A folder comes whole so a note is judged next to its neighbours. Reading the last page records the cleanup in `.last-cleanup`; once the fixes are applied, `tidy-memory` records it again with `done: true`, so they don't count towards the next reminder. Pages hold at most 3 KiB: Antigravity CLI saves a tool result over about 4 KB to a file, the smallest limit of the supported agents. Each page names the next one.
+A folder comes whole so a note is judged next to its neighbours. Reading the last page records the cleanup in `.last-cleanup`; once the fixes are applied, `tidy-memory` records it again with `done: true`, so they don't count towards the next reminder. Pages hold at most 3 KiB: an older Antigravity CLI saved a tool result over about 4 KB to a file, the smallest limit measured; 1.5.3 passes at least 7,825 bytes inline, so 3 KiB stays until it is re-measured. Each page names the next one.
 
 Why the limits: each tool call re-sends the pages already read, so k pages cost about k²/2 pages of input. 10 pages of 200-character summaries hold about 300 notes, about 37k tokens of input per cleanup.
 
 ## Index budget and summary length (`check`)
-Every session loads the preferences and its project's notes, one Index line each, so their count is a cost paid in every session.
-- `check` warns when the preferences alone, or the preferences plus one project, exceed `index_max_notes` (100); the session-start line tells the user to ask for a tidy-up.
+Every session loads the preferences and its project's notes, one Index line each, so their size is a cost paid in every session.
+- The session-start text (rules, warnings, Index lines, topic names, sync conflicts) never passes `session_start_max_bytes` (8,000 UTF-8 bytes). Past it, whole lines are left out in order (preferences, then the project's notes, then the topics line, then conflict details), one "Not loaded" line names what, and `memory_index` with `page` reads the whole Index in pages within the same budget. `Index.md` on disk stays complete.
+- A preference with `applies_when` (situational) is not an Index line of the session: one line says how many there are and that `memory_search` finds them. That line is the first chunk loaded, so an over-budget Preferences list can't push it out, and the situational preferences are never counted among the notes left out. `memory_search` and `memory_index` still show them, with `(when: …)` after the summary, and so does `Index.md`.
+- The Index lines the agent sees name a note by its short name, the first four words of its file name, extended until no other note's name starts the same way; the folder is in the section heading. Tools resolve a short name to its note across the whole vault, and refuse one that fits several notes. `Index.md` on disk keeps full paths, as Obsidian links.
+- `check`, `setup --check`, the session-start line and a `memory_save` that tips a session over the budget all say how many notes a session leaves out and ask for a tidy-up.
 - `check` warns about a summary over `summary_max_chars` (200 characters): one short fact per note keeps the Index and the review small.
 - `check` warns when a note's title no longer holds at least half of its file name's words (an update never renames the file) and names the `memory_move` target; a few reworded words don't count.
 
@@ -75,6 +80,7 @@ The limits live in `~/.config/petit-poucet/config.toml`. `init` writes every set
 ## Paths gone from the checkout (`check`)
 - **Checkout:** identifying a project (session start, or a tool given the agent's directory) records its git root on this machine in `.petit-poucet/checkouts.json`. Each machine has its own, so it is never synced; a project never opened on this machine is skipped.
 - **Paths:** words joined by slashes in backticks in a project note's body, that name a file (`src/main.rs`) or a folder (`docs/`). Branches (`feat/x`), remotes (`github.com/me/app`), climbs (`../x`), absolute and home paths are left out.
+- **Missing:** not at that place in the project's checkout, nor in any other project's checkout known on this machine (a note often names the repo next door), nor deeper in one of them (`prompts/system.txt` for `src/main/resources/prompts/system.txt`). Deeper is looked up in the files git tracks or doesn't ignore, so a build folder is never searched.
 - **Report only:** a warning per missing path; the note may be right about history, so nothing is changed.
 
 ## Near-duplicates (`check`)

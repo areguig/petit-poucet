@@ -23,6 +23,12 @@ pub fn is_repo(dir: &Path) -> bool {
     git(dir, &["rev-parse", "--git-dir"]).is_ok()
 }
 
+pub fn has_identity(dir: &Path) -> bool {
+    ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"]
+        .iter()
+        .all(|ident| git(dir, &["-c", "user.useConfigOnly=true", "var", ident]).is_ok())
+}
+
 pub fn init(dir: &Path) -> Result<(), String> {
     git(dir, &["init", "--quiet"]).map(drop)
 }
@@ -87,6 +93,22 @@ pub fn changed(dir: &Path) -> Result<Vec<String>, String> {
         .filter(|path| !path.is_empty())
         .map(str::to_string)
         .collect())
+}
+
+// Tracked files and the untracked ones git doesn't ignore, from `dir` down; none when it is no repository.
+pub fn files(dir: &Path) -> Vec<String> {
+    git(
+        dir,
+        &[
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
+    )
+    .map(|out| out.split_terminator('\0').map(str::to_string).collect())
+    .unwrap_or_default()
 }
 
 pub fn toplevel(dir: &Path) -> Option<String> {

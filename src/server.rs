@@ -14,9 +14,10 @@ use crate::delete::{self, DeleteRequest};
 use crate::guard::ReadLog;
 use crate::move_note::{self, MoveRequest};
 use crate::note::Place;
+use crate::review_session::ReviewSession;
 use crate::save::{self, SaveRequest};
 use crate::vault::{Vault, note_file};
-use crate::{change, cleanup, hook, index, lock, review, search, usage};
+use crate::{change, cleanup, context, index, lock, search, usage};
 
 // Clients that don't run hooks (Copilot in JetBrains IDEs) never get the session-start context.
 const INSTRUCTIONS: &str = "petit-poucet holds the user's memory: rules, decisions and verified facts. \
@@ -26,6 +27,7 @@ as project_dir before starting a task, and follow the rules it returns.";
 pub struct Server {
     config: Config,
     reads: ReadLog,
+    review: ReviewSession,
     #[expect(dead_code, reason = "read by the code #[tool_handler] generates")]
     tool_router: ToolRouter<Self>,
 }
@@ -36,11 +38,13 @@ pub struct IndexRequest {
     project_dir: PathBuf,
     /// List this topic's notes instead, e.g. `homelab`.
     topic: Option<String>,
+    /// Page to read, from 1. An Index longer than the session budget comes in pages; the first is the default.
+    page: Option<usize>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadRequest {
-    /// Note path as listed in the Index, e.g. `Preferences/commit-rules`.
+    /// The note as listed in the Index: its name, e.g. `commit-rules`, or its full path.
     path: String,
 }
 
@@ -69,6 +73,11 @@ impl Server {
     fn lock(&self) -> Result<fs::File, String> {
         lock::vault(&self.config.vault)
     }
+
+    // The path of the note a tool call names, which may be the short name the session view shows.
+    fn resolve(&self, name: &str) -> Result<String, String> {
+        Ok(change::find_note(&self.vault()?, name)?.path.clone())
+    }
 }
 
 // Clients of protocol 2026-07-28, such as Claude Code, skip `initialize` and name themselves in each request.
@@ -86,6 +95,30 @@ impl Server {
     }
 }
 
+// The whole Index when it fits the budget and no page is asked for; otherwise the page asked for, the first by default.
+fn page_of(
+    sections: &[index::Section],
+    topics: Option<&str>,
+    conflicts: &[String],
+    head: &str,
+    whole: String,
+    page: Option<usize>,
+    max: usize,
+) -> Result<String, String> {
+    if page.is_none() && whole.len() <= max {
+        return Ok(whole);
+    }
+    let pages = index::pages(sections, topics, conflicts, head, max);
+    let number = page.unwrap_or(1);
+    let total = pages.len();
+    number
+        .checked_sub(1)
+        .and_then(|i| pages.into_iter().nth(i))
+        .ok_or_else(|| {
+            format!("page {number} does not exist: this Index has {total} pages, from 1")
+        })
+}
+
 #[tool_router]
 impl Server {
     #[tool(
@@ -99,20 +132,42 @@ impl Server {
     ) -> Result<String, String> {
         let agent = agent_name(&client, &meta);
         let vault = self.vault()?;
+        let max = self.config.limits.session_start_max_bytes;
         if let Some(topic) = &req.topic {
-            let view = index::for_topic(&vault, &slug::slugify(topic));
-            return Ok(match view.trim() {
+            let topic = slug::slugify(topic);
+            let sections = index::sections(&vault, |place| place == Place::Topic(&topic));
+            let whole = index::for_topic(&vault, &topic);
+            let whole = match whole.trim() {
                 "" => format!("no notes in topic {topic}"),
                 view => view.to_string(),
-            });
+            };
+            return page_of(&sections, None, &[], "", whole, req.page, max);
         }
         let project = self.project_key(&vault, &req.project_dir, &agent);
-        let view = index::for_project(&vault, project.as_deref());
+        let project = project.as_deref();
+        let view = index::for_project(&vault, project);
         let view = match view.trim() {
             "" => "no notes yet",
             view => view,
         };
-        Ok(format!("{}\n\n{view}", hook::RULES))
+        let conflicts = context::conflict_details(&vault);
+        let whole = format!(
+            "{}\n\n{view}{}",
+            context::rules(false),
+            index::conflicts_block(&conflicts)
+        );
+        let sections = index::sections(&vault, |place| index::in_session(place, project));
+        let topics = index::topics_line(&vault);
+        let head = format!("{}\n", context::rules(true));
+        page_of(
+            &sections,
+            topics.as_deref(),
+            &conflicts,
+            &head,
+            whole,
+            req.page,
+            max,
+        )
     }
 
     #[tool(description = "Read one note, or a sync conflict copy of one.")]
@@ -138,7 +193,7 @@ impl Server {
     }
 
     #[tool(
-        description = "For a memory cleanup review, in pages: the notes, one line each under their folder (every note in a small vault, else preferences, changed folders and recently used folders), then the problems found in the whole vault. Reading the last page marks the cleanup done; `done: true` marks it again once its fixes are applied. Only for the memory-cleanup agent and the tidy-memory skill."
+        description = "For a memory cleanup review, in pages: the notes, one line each under their folder (every note in a small vault, else preferences, changed folders and recently used folders), then the problems found in the whole vault. Page 1 builds the review; the next pages come from it unchanged. Reading the last page marks the cleanup done; `done: true` marks it again once its fixes are applied. Only for the memory-cleanup agent and the tidy-memory skill."
     )]
     fn memory_review(
         &self,
@@ -153,7 +208,7 @@ impl Server {
                 "cleanup recorded: its fixes won't count towards the next reminder".to_string(),
             );
         }
-        review::review(
+        self.review.page(
             &self.config,
             req.page.unwrap_or(1),
             req.full.unwrap_or(false),
@@ -172,8 +227,9 @@ impl Server {
     ) -> Result<String, String> {
         let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
-        if let Some(path) = &req.path {
-            self.reads.check(&self.config.vault, &note_file(path))?;
+        if let Some(name) = &req.path {
+            let path = self.resolve(name)?;
+            self.reads.check(&self.config.vault, &note_file(&path))?;
         }
         let (path, reply) = save::save(&self.config, req, &agent)?;
         self.reads
@@ -199,9 +255,9 @@ impl Server {
             self.reads.forget(&conflict.copy);
             return Ok(reply);
         }
+        let path = self.resolve(&req.path)?;
         self.reads
-            .check_delete(&self.config.vault, &note_file(&req.path))?;
-        let path = req.path.trim_end_matches(".md").to_string();
+            .check_delete(&self.config.vault, &note_file(&path))?;
         let (reply, rewritten) = delete::delete(&self.config, req, &agent)?;
         self.reads.forget(&note_file(&path));
         for file in &rewritten {
@@ -220,7 +276,7 @@ impl Server {
     ) -> Result<String, String> {
         let agent = agent_name(&client, &meta);
         let _lock = self.lock()?;
-        let path = req.path.trim_end_matches(".md").to_string();
+        let path = self.resolve(&req.path)?;
         let new_path = req.new_path.trim_end_matches(".md").to_string();
         let (reply, rewritten) = move_note::move_note(&self.config, req, &agent)?;
         self.reads.forget(&note_file(&path));
@@ -257,9 +313,10 @@ impl Server {
             .iter()
             .map(|n| {
                 format!(
-                    "- [[{}]] — {}",
+                    "- [[{}]] — {}{}",
                     n.path,
-                    n.summary().unwrap_or(index::NO_SUMMARY)
+                    n.summary().unwrap_or(index::NO_SUMMARY),
+                    index::when_suffix(n)
                 )
             })
             .collect();
@@ -284,6 +341,7 @@ pub fn serve(config: Config) -> Result<(), String> {
     let server = Server {
         config,
         reads: ReadLog::default(),
+        review: ReviewSession::default(),
         tool_router: Server::tool_router(),
     };
     let runtime = tokio::runtime::Builder::new_current_thread()

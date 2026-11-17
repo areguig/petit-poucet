@@ -42,6 +42,13 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 has() { printf '%s\n' "$1" | grep -q -- "$2" || fail "expected /$2/ in:
 $1"; }
 
+# The test binary is the installed PATH binary; the fixture has an explicit git identity and stays offline.
+doctor() {
+  PATH="$(dirname "$pp"):$PATH" PETIT_POUCET_NO_UPDATE_CHECK=1 \
+    GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid \
+    GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid "$pp" doctor
+}
+
 # start_model: runs the mock model (model.mjs, after `npm ci --prefix tests/agents`); agents reach it at $model_url.
 start_model() {
   calls="$HOME/calls.jsonl"
@@ -63,9 +70,38 @@ start_model() {
   export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
 }
 
+# session_view_of <agent> <file>: what that agent's hook replies at session start, from a folder without a project.
+session_view_of() {
+  (cd "$(mktemp -d)" && echo '{}' | "$pp" hook session-start --agent "$1") > "$2"
+}
+
+# oversize_memory <agent>: more preferences than a session loads within its budget; check_calls then expects
+# the whole session view that agent's hook produces for them, and removes them; one more is situational (#216): the view
+# names it without listing it.
+# The view before the update check has found a release is taken now, with the check off so it starts nothing:
+# the session's own hook starts the check, and check_update still waits for it.
+oversize_memory() {
+  session_agent=$1
+  i=0
+  while [ "$i" -lt 150 ]; do
+    printf -- '---\ntype: user\nscope: all repos\nsummary: preference %s, worded like a real one-line summary of a rule the user stated about how they work\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n**Why:** x\n' "$i" > "$HOME/agent-memory/Preferences/oversize-$i.md"
+    i=$((i + 1))
+  done
+  printf -- '---\ntype: user\nscope: all repos\nsummary: situational-probe-7c2e\ncreated: 2026-09-01\napplies_when: the agent test probes a situational preference\ntags: [agent-memory]\n---\n**Why:** x\n' > "$HOME/agent-memory/Preferences/oversize-situational.md"
+  PETIT_POUCET_NO_UPDATE_CHECK=1 session_view_of "$1" "$HOME/session-start-before.json"
+}
+
 # check_calls <tools marker> [calls.mjs options]: what the session sent the model; see calls.mjs.
 check_calls() {
+  if [ -n "${session_agent:-}" ]; then
+    # A call carries the view from before the update check or, once it has recorded its release, the one with its notice.
+    check_update
+    session_view_of "$session_agent" "$HOME/session-start-after.json"
+    budget=$(sed -n 's/^session_start_max_bytes = //p' "$HOME/.config/petit-poucet/config.toml")
+    set -- "$@" "--session=$HOME/session-start-before.json" "--session=$HOME/session-start-after.json" "--budget=$budget"
+  fi
   node "$repo/tests/agents/calls.mjs" "$calls" "$@" || fail "petit-poucet didn't reach the model as expected"
+  rm -f "$HOME"/agent-memory/Preferences/oversize-*.md
 }
 
 # check_update: the update check that session start leaves running in the background outlived the agent's hook.
@@ -103,4 +139,28 @@ big_vault() {
 # check_review: the first review page reached the model whole, in a tool result, not saved to a file or cut; see review.mjs.
 check_review() {
   node "$repo/tests/agents/review.mjs" "$calls" || fail "the first memory_review page didn't reach the model whole and inline"
+}
+
+# probe_note <agent>: a note whose long slug the session view shortens; the mock model reads it by the name the view shows
+# when a prompt says petit-poucet-read (model.mjs). check_read then expects the note's body in a tool result.
+probe_body="probe-body-3f9a1c"
+probe_note() {
+  printf -- '---\ntype: user\nscope: all repos\nsummary: short-name probe\ncreated: 2026-09-01\ntags: [agent-memory]\n---\n# Probe\n\n%s\n' "$probe_body" > "$HOME/agent-memory/Preferences/always-probe-the-short-name-before-reading.md"
+  PETIT_POUCET_NO_UPDATE_CHECK=1 session_view_of "$1" "$HOME/probe-view.json"
+  grep -q -F '[[always-probe-the-short]] — short-name probe' "$HOME/probe-view.json" || fail "the session view doesn't show the probe note by its short name"
+  : > "$calls"
+}
+
+check_read() {
+  node "$repo/tests/agents/holds.mjs" "$calls" "$probe_body" || fail "the note read by its short name didn't reach the model"
+}
+
+# The mock model creates a preference when a prompt says petit-poucet-save (model.mjs); check_save then expects the scope
+# reminder (#215) in a tool result. preference_json is the call's arguments.
+scope_reminder="Preferences are cross-project: make sure this one is, and confirm with the user when unsure; otherwise move it to the project or a topic (memory_move). If it applies only in some situations (one stack, one kind of task), give it \`applies_when\`: it then stays out of the session view and memory_search finds it."
+preference_json='{"type": "feedback", "scope": "all repos", "title": "Scope probe", "summary": "scope probe", "fact": "A fact.", "source": "the agent test", "how_to_apply": "Never."}'
+before_save() { : > "$calls"; }
+
+check_save() {
+  node "$repo/tests/agents/holds.mjs" "$calls" "$scope_reminder" || fail "the scope reminder of a new preference didn't reach the model"
 }

@@ -100,7 +100,7 @@ fn own_file(root: &Path) -> Result<PathBuf, String> {
 }
 
 // A Syncthing conflict copy holds counts its machine's own file already has: it is left alone, uncounted.
-fn machine_files(root: &Path) -> Vec<PathBuf> {
+pub fn machine_files(root: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(root.join(DIR)) else {
         return Vec::new();
     };
