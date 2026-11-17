@@ -63,9 +63,11 @@ impl Install {
     }
 }
 
+// Git's background maintenance after setup's commit can still be changing .git (#250): the vault's commits and status stand for it.
 fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    walkdir::WalkDir::new(root)
+    let mut files: BTreeMap<PathBuf, Vec<u8>> = walkdir::WalkDir::new(root)
         .into_iter()
+        .filter_entry(|e| e.file_name() != ".git")
         .map(Result::unwrap)
         .filter(|e| e.file_type().is_file())
         .map(|e| {
@@ -74,7 +76,58 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
                 fs::read(e.path()).unwrap(),
             )
         })
-        .collect()
+        .collect();
+    let vault = root.join("agent-memory");
+    if vault.join(".git").exists() {
+        for args in [
+            &["rev-parse", "HEAD"][..],
+            &["--no-optional-locks", "status", "--porcelain"],
+        ] {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&vault)
+                .args(args)
+                .output()
+                .unwrap();
+            let name = format!("git {}", args.join(" "));
+            assert!(
+                output.status.success(),
+                "{name}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            files.insert(PathBuf::from(name), output.stdout);
+        }
+    }
+    files
+}
+
+#[test]
+fn the_snapshot_ignores_git_maintenance_but_not_a_change_to_the_vault() {
+    let install = Install::ready();
+    let before = snapshot(install.home.path());
+    let lock = install.vault().join(".git/objects/maintenance.lock");
+    fs::write(&lock, "").unwrap();
+    assert_eq!(snapshot(install.home.path()), before);
+    fs::remove_file(lock).unwrap();
+
+    let note = install.vault().join("note.md");
+    fs::write(&note, "x").unwrap();
+    assert_ne!(snapshot(install.home.path()), before, "an untracked note");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(install.vault())
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    git(&["add", "note.md"]);
+    git(&["commit", "-q", "-m", "note"]);
+    fs::remove_file(note).unwrap();
+    git(&["commit", "-q", "-am", "gone"]);
+    assert_ne!(snapshot(install.home.path()), before, "two new commits");
 }
 
 #[test]
